@@ -1,0 +1,34 @@
+Texinfo authors.
+
+  Copyright 2003-2024 Free Software Foundation, Inc.
+  
+  Copying and distribution of this file, with or without modification,
+  are permitted in any medium without royalty provided the copyright
+  notice and this notice are preserved.
+
+Karl Berry		all files.
+Per Bothner		js/*
+Torsten Bronger         texinfo.dtd.
+Bob Chassell		texinfo.tex, original texinfo.txi.
+Akim Demaille		texi2dvi, util/* tests.
+Patrice Dumas		texinfo.txi, tp author.
+Brian Fox		all info/* files, info-stnd.texi.
+Noah Friedman		original texi2dvi.
+Oleg Katsitadze		doc/*
+Matthieu Lirzin		js/*
+Sergey Poznyakoff	all files.
+Arnold Robbins		literate (texi+awk) texindex.
+Andreas Schwab		texinfo.tex, configure.ac
+Gavin Smith		all files.
+Richard Stallman	original texinfo.tex, install-info.c,
+			texindex.c, texinfo.txi.
+Zack Weinberg		texinfo.tex: @macro implementation.
+Ralf Wildenhues		util/gendocs.sh, doc/texinfo.txi,
+			Makefile.am, configure.ac.
+Eli Zaretskii		all files.
+
+See http://translationproject.org/team/index.html for the
+translation teams for a given language LL.
+
+Many files included in the Texinfo distribution are copied from other
+locations, no author information is given for those.  See util/srclist*.
