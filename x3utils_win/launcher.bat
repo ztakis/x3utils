@@ -7,7 +7,7 @@ set "display_name="
 :menu_top
 cls
 echo =======================================================================
-echo                ST-LINK UTILITIES FOR X3 scooters - v1.0
+echo                ST-LINK UTILITIES FOR X3 scooters - v1.1
 echo =======================================================================
 echo.
 
@@ -21,7 +21,7 @@ if not "%dragged_file%"=="" (
 
 :: Show menu options
 echo.
-echo  [1] Flash SHU compatible
+echo  [1] Flash SHU compatible (Not GT3/GT3 Pro)
 echo  [2] Run Full Memory Dump (128 KB)
 echo  [3] Flash Loaded File to Chip
 echo  [4] Load / Change Target .bin File
