@@ -2,6 +2,8 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+version="1.2.0"
+
 dragged_file=""
 display_name=""
 
@@ -9,7 +11,7 @@ while true; do
     clear
 
     echo "======================================================================="
-    echo "               ST-LINK UTILITIES FOR X3 scooters - v1"
+    echo "             ST-LINK UTILITIES FOR X3 scooters - v$version"
     echo "======================================================================="
     echo
 
@@ -21,21 +23,22 @@ while true; do
     fi
 
     echo
-    echo " [1] Flash SHU compatible (Not GT3/GT3 Pro)"
-    echo " [2] Run Full Memory Dump (128 KB)"
-    echo " [3] Flash Loaded File to Chip"
-    echo " [4] Load / Change Target .bin File"
-    echo " [5] Exit"
+    echo " [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)"
+    echo " [2] Flash SHU compatible (GT3)"
+    echo " [3] Run Full Memory Dump (128 KB)"
+    echo " [4] Flash Loaded File to Chip"
+    echo " [5] Load / Change Target .bin File"
+    echo " [6] Exit"
     echo
     echo "======================================================================="
     echo
 
-    read -rp "Select an option [1-5]: " choice
+    read -rp "Select an option [1-6]: " choice
 
     case "$choice" in
         1)
             echo
-            echo "Launching Flash SHU compatible..."
+            echo "Launching Flash SHU compatible (ZT3/G3/F3/F3Pro)..."
             echo
 
             if [[ -f "$SCRIPT_DIR/flash_cmp.sh" ]]; then
@@ -45,8 +48,19 @@ while true; do
                 read -rp "Press ENTER to continue..."
             fi
             ;;
-
         2)
+            echo
+            echo "Launching Flash GT3 SHU compatible..."
+            echo
+
+            if [[ -f "$SCRIPT_DIR/flash_gt3_cmp.sh" ]]; then
+                bash "$SCRIPT_DIR/flash_gt3_cmp.sh"
+            else
+                echo "[FAIL] Could not find flash_gt3_cmp.sh."
+                read -rp "Press ENTER to continue..."
+            fi
+            ;;
+        3)
             echo
             echo "Launching Full Memory Dump Utility..."
             echo
@@ -59,11 +73,11 @@ while true; do
             fi
             ;;
 
-        3)
+        4)
             if [[ -z "$dragged_file" ]]; then
                 echo
                 echo "[FAIL] You cannot flash without loading a file first."
-                echo "       Please select Option [4] to load a file."
+                echo "       Please select Option [5] to load a file."
                 echo
                 read -rp "Press ENTER to continue..."
                 continue
@@ -82,7 +96,7 @@ while true; do
             fi
             ;;
 
-        4)
+        5)
             echo
             echo "======================================================="
             echo " Please enter the path to your .bin file"
@@ -96,11 +110,8 @@ while true; do
             fi
 
             # Remove surrounding single or double quotes
-            input_file="${input_file%\'}"
-            input_file="${input_file#\'}"
-
-            input_file="${input_file%\"}"
-            input_file="${input_file#\"}"
+            input_file="${input_file//\"/}"
+            input_file="${input_file//\'/}"
 
             if [[ -z "$input_file" ]]; then
                 continue
@@ -128,11 +139,11 @@ while true; do
                 continue
             fi
 
-            dragged_file="$(realpath "$input_file")"
+            dragged_file="$(readlink -f "$input_file" 2>/dev/null || echo "$input_file")"
             display_name="$(basename "$dragged_file")"
             ;;
 
-        5)
+        6)
             clear
             echo
             echo "Exiting utility. Bye!"
@@ -143,7 +154,7 @@ while true; do
         *)
             echo
             echo "[FAIL] Invalid selection."
-            echo "       Please choose 1, 2, 3, 4 or 5."
+            echo "       Please choose 1, 2, 3, 4, 5 or 6."
             sleep 2
             ;;
     esac
