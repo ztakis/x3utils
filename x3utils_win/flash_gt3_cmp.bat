@@ -9,7 +9,7 @@ if not exist "%~dp0config.cmd" (
 
 call "%~dp0config.cmd"
 
-set "bin_file_path=%~dp0\rescue\gt3_vcu_v1.7.0.bin"
+set "bin_file_path=%~dp0rescue\gt3_vcu_v1.7.0.bin"
 
 if not exist "%bin_file_path%" (
     echo [FAIL] Rescue image not found:
