@@ -7,7 +7,7 @@ set "display_name="
 :menu_top
 cls
 echo =======================================================================
-echo                ST-LINK UTILITIES FOR X3 scooters - v1.1
+echo                ST-LINK UTILITIES FOR X3 scooters - v1
 echo =======================================================================
 echo.
 

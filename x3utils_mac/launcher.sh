@@ -9,7 +9,7 @@ while true; do
     clear
 
     echo "======================================================================="
-    echo "               ST-LINK UTILITIES FOR X3 scooters - v1.1"
+    echo "               ST-LINK UTILITIES FOR X3 scooters - v1"
     echo "======================================================================="
     echo
 
