@@ -1,13 +1,15 @@
 @echo off
 setlocal
 
+set "VERSION=1.2.0"
+
 set "dragged_file="
 set "display_name="
 
 :menu_top
 cls
 echo =======================================================================
-echo                ST-LINK UTILITIES FOR X3 scooters - v1
+echo           ST-LINK UTILITIES FOR X3 scooters - v%VERSION%
 echo =======================================================================
 echo.
 
@@ -21,29 +23,31 @@ if not "%dragged_file%"=="" (
 
 :: Show menu options
 echo.
-echo  [1] Flash SHU compatible (Not GT3/GT3 Pro)
-echo  [2] Run Full Memory Dump (128 KB)
-echo  [3] Flash Loaded File to Chip
-echo  [4] Load / Change Target .bin File
-echo  [5] Exit
+echo  [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)
+echo  [2] Flash SHU compatible (GT3)
+echo  [3] Run Full Memory Dump (128 KB)
+echo  [4] Flash Loaded File to Chip
+echo  [5] Load / Change Target .bin File
+echo  [6] Exit
 echo.
 echo =======================================================================
 echo.
 
 :: Get user choice
 set "choice="
-set /p "choice=Select an option [1-5]: "
+set /p "choice=Select an option [1-6]: "
 if "%choice%"=="" goto :menu_top
 if "%choice%"=="1" goto :opt_cmp
-if "%choice%"=="2" goto :opt_dump
-if "%choice%"=="3" goto :opt_flash
-if "%choice%"=="4" goto :opt_load
-if "%choice%"=="5" goto :exit_menu
+if "%choice%"=="2" goto :opt_gt3_cmp
+if "%choice%"=="3" goto :opt_dump
+if "%choice%"=="4" goto :opt_flash
+if "%choice%"=="5" goto :opt_load
+if "%choice%"=="6" goto :exit_menu
 
 :: Invalid choice handling
 echo.
 echo [FAIL] Invalid selection.
-echo        Please choose 1, 2, 3, 4 or 5.
+echo        Please choose 1, 2, 3, 4, 5 or 6.
 timeout /t 2 >nul
 goto :menu_top
 
@@ -56,6 +60,19 @@ if exist "%~dp0flash_cmp.bat" (
     call "%~dp0flash_cmp.bat"
 ) else (
     echo [FAIL] Could not find flash_cmp.bat.
+    pause
+)
+goto :menu_top
+    
+:: Call flash_gt3_cmp.bat
+:opt_gt3_cmp
+echo.
+echo Launching Flash GT3 SHU compatible...
+echo.
+if exist "%~dp0flash_gt3_cmp.bat" (
+    call "%~dp0flash_gt3_cmp.bat"
+) else (
+    echo [FAIL] Could not find flash_gt3_cmp.bat.
     pause
 )
 goto :menu_top
@@ -78,7 +95,7 @@ goto :menu_top
 if "%dragged_file%"=="" (
     echo.
     echo [FAIL] You cannot flash without loading a file first.
-    echo        Please select Option [4] to load a file.
+    echo        Please select Option [5] to load a file.
     echo.
     pause
     goto :menu_top
@@ -107,7 +124,7 @@ echo.
 
 set /p "dragged_file=Drop file here (or type 'back'): "
 if /i "%dragged_file%"=="back" goto :menu_top
-for %%A in (%dragged_file%) do (
+for %%A in ("%dragged_file%") do (
     set "dragged_file=%%~fA"
 )
 if "%dragged_file%"=="" goto :menu_top
