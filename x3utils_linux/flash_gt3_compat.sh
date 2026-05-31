@@ -12,7 +12,7 @@ fi
 
 source "$CONFIG_FILE"
 
-bin_file_path="$SCRIPT_DIR/rescue/gt3_vcu_v1.7.0.bin"
+bin_file_path="$SCRIPT_DIR/special/gt3_vcu_v1.7.0.bin"
 
 # Check file existence
 if [[ ! -f "$bin_file_path" ]]; then

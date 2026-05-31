@@ -35,13 +35,13 @@ while true; do
     esac
 done
 
-# Set up cmp directory
-cmp_dir="$SCRIPT_DIR/cmp"
+# Set up compat directory
+compat_dir="$SCRIPT_DIR/compat"
 
-if [[ ! -d "$cmp_dir" ]]; then
-    mkdir -p "$cmp_dir" || {
+if [[ ! -d "$compat_dir" ]]; then
+    mkdir -p "$compat_dir" || {
         echo
-        echo "[FAIL] Failed to create cmp directory."
+        echo "[FAIL] Failed to create compat directory."
         exit 1
     }
 fi
@@ -56,8 +56,8 @@ if [[ -z "$timestamp" ]]; then
 fi
 
 # Build file paths
-raw_dump="$cmp_dir/dump_${timestamp}.bin"
-patched_dump="$cmp_dir/dump_${timestamp}_patched.bin"
+raw_dump="$compat_dir/dump_${timestamp}.bin"
+patched_dump="$compat_dir/dump_${timestamp}_patched.bin"
 
 echo
 echo "======================================================="

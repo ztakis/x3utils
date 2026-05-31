@@ -41,10 +41,10 @@ while true; do
             echo "Launching Flash SHU compatible (ZT3/G3/F3/F3Pro)..."
             echo
 
-            if [[ -f "$SCRIPT_DIR/flash_cmp.sh" ]]; then
-                bash "$SCRIPT_DIR/flash_cmp.sh"
+            if [[ -f "$SCRIPT_DIR/flash_compat.sh" ]]; then
+                bash "$SCRIPT_DIR/flash_compat.sh"
             else
-                echo "[FAIL] Could not find flash_cmp.sh."
+                echo "[FAIL] Could not find flash_compat.sh."
                 read -rp "Press ENTER to continue..."
             fi
             ;;
@@ -53,10 +53,10 @@ while true; do
             echo "Launching Flash GT3 SHU compatible..."
             echo
 
-            if [[ -f "$SCRIPT_DIR/flash_gt3_cmp.sh" ]]; then
-                bash "$SCRIPT_DIR/flash_gt3_cmp.sh"
+            if [[ -f "$SCRIPT_DIR/flash_gt3_compat.sh" ]]; then
+                bash "$SCRIPT_DIR/flash_gt3_compat.sh"
             else
-                echo "[FAIL] Could not find flash_gt3_cmp.sh."
+                echo "[FAIL] Could not find flash_gt3_compat.sh."
                 read -rp "Press ENTER to continue..."
             fi
             ;;
