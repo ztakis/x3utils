@@ -3,3 +3,5 @@ Dependencies include
 python3, usbutils, hidapi(libhidapi-hidraw0) 
 
 Also copy oocd/contrib/60-openocd.rules to /etc/udev/rules.d/ and reload rules
+
+chmod +x scripts if needed
