@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-set "VERSION=1.2.0"
+set "VERSION=1.3.0"
 
 set "dragged_file="
 set "display_name="
@@ -37,8 +37,8 @@ echo.
 set "choice="
 set /p "choice=Select an option [1-6]: "
 if "%choice%"=="" goto :menu_top
-if "%choice%"=="1" goto :opt_cmp
-if "%choice%"=="2" goto :opt_gt3_cmp
+if "%choice%"=="1" goto :opt_compat
+if "%choice%"=="2" goto :opt_gt3_compat
 if "%choice%"=="3" goto :opt_dump
 if "%choice%"=="4" goto :opt_flash
 if "%choice%"=="5" goto :opt_load
@@ -51,28 +51,28 @@ echo        Please choose 1, 2, 3, 4, 5 or 6.
 timeout /t 2 >nul
 goto :menu_top
 
-:: Call flash_cmp.bat
-:opt_cmp
+:: Call flash_compat.bat
+:opt_compat
 echo.
 echo Launching Flash SHU compatible...
 echo.
-if exist "%~dp0flash_cmp.bat" (
-    call "%~dp0flash_cmp.bat"
+if exist "%~dp0flash_compat.bat" (
+    call "%~dp0flash_compat.bat"
 ) else (
-    echo [FAIL] Could not find flash_cmp.bat.
+    echo [FAIL] Could not find flash_compat.bat.
     pause
 )
 goto :menu_top
     
-:: Call flash_gt3_cmp.bat
-:opt_gt3_cmp
+:: Call flash_gt3_compat.bat
+:opt_gt3_compat
 echo.
 echo Launching Flash GT3 SHU compatible...
 echo.
-if exist "%~dp0flash_gt3_cmp.bat" (
-    call "%~dp0flash_gt3_cmp.bat"
+if exist "%~dp0flash_gt3_compat.bat" (
+    call "%~dp0flash_gt3_compat.bat"
 ) else (
-    echo [FAIL] Could not find flash_gt3_cmp.bat.
+    echo [FAIL] Could not find flash_gt3_compat.bat.
     pause
 )
 goto :menu_top

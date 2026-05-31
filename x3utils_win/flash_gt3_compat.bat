@@ -9,10 +9,10 @@ if not exist "%~dp0config.cmd" (
 
 call "%~dp0config.cmd"
 
-set "bin_file_path=%~dp0rescue\gt3_vcu_v1.7.0.bin"
+set "bin_file_path=%~dp0special\gt3_vcu_v1.7.0.bin"
 
 if not exist "%bin_file_path%" (
-    echo [FAIL] Rescue image not found:
+    echo [FAIL] Binary file not found:
     echo        %bin_file_path%
     goto :fail_exit
 )
@@ -24,7 +24,7 @@ for %%i in ("%bin_file_path%") do (
 set "normalized_path=%bin_file_path:\=/%"
 
 echo.
-echo Rescue image: %bin_file%
+echo Binary file: %bin_file%
 echo Location: %bin_file_path%
 echo Flash address: 0x08001000
 echo.

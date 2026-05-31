@@ -33,12 +33,12 @@ goto :end
 :do_flash
 
 :: Set up 'compatible' directory for dumps
-set "cmp_dir=%~dp0cmp"
-if not exist "%cmp_dir%" (
-    mkdir "%cmp_dir%"
+set "compat_dir=%~dp0compat"
+if not exist "%compat_dir%" (
+    mkdir "%compat_dir%"
     if errorlevel 1 (
         echo.
-        echo [FAIL] Failed to create cmp directory.
+        echo [FAIL] Failed to create compat directory.
         goto :fail_exit
     )
 )
@@ -55,8 +55,8 @@ if "%timestamp%"=="" (
 )
 
 :: Build final paths for raw and patched dumps
-set "raw_dump=%cmp_dir%\dump_%timestamp%.bin"
-set "patched_dump=%cmp_dir%\dump_%timestamp%_patched.bin"
+set "raw_dump=%compat_dir%\dump_%timestamp%.bin"
+set "patched_dump=%compat_dir%\dump_%timestamp%_patched.bin"
 
 :: OpenOCD prefers forward slashes
 set "norm_raw_dump=%raw_dump:\=/%"
