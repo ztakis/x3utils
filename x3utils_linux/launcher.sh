@@ -2,7 +2,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-version="1.2.0"
+version="1.3.0"
 
 dragged_file=""
 display_name=""
