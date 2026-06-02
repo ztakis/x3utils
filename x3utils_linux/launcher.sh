@@ -1,8 +1,7 @@
 #!/bin/bash
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-version="1.3.1"
+VERSION=$(<"$SCRIPT_DIR/VERSION")
 
 dragged_file=""
 display_name=""
@@ -11,7 +10,7 @@ while true; do
     clear
 
     echo "======================================================================="
-    echo "             ST-LINK UTILITIES FOR X3 scooters - v$version"
+    echo "             ST-LINK UTILITIES FOR X3 scooters - v$VERSION"
     echo "======================================================================="
     echo
 
