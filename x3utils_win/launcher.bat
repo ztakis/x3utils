@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-set "VERSION=1.3.0"
+set "SCRIPT_DIR=%~dp0"
+set /p VERSION=<"%SCRIPT_DIR%VERSION"
 
 set "dragged_file="
 set "display_name="
