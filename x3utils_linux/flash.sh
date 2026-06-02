@@ -24,9 +24,9 @@ if [[ -z "$bin_file_path" ]]; then
     read -rp "File path: " bin_file_path
 fi
 
-# Strip accidental surrounding quotes
-bin_file_path="${bin_file_path%\"}"
-bin_file_path="${bin_file_path#\"}"
+# Remove all surrounding quote characters
+bin_file_path="${bin_file_path//\"/}"
+bin_file_path="${bin_file_path//\'/}"
 
 # Resolve full path
 bin_file_path="$(realpath "$bin_file_path" 2>/dev/null)"
