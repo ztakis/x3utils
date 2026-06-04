@@ -1,4 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
-# Treat all Tcl files as vendored
-*.tcl linguist-vendored
+
+# Bundled OpenOCD scripts
+x3utils_linux/oocd/** linguist-vendored
+x3utils_mac/xpack-openocd-*/** linguist-vendored
+x3utils_win/oocd/** linguist-vendored
