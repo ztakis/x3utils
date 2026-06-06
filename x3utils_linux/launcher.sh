@@ -23,7 +23,7 @@ while true; do
 
     echo
     echo " [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)"
-    echo " [2] Flash SHU compatible (GT3)"
+    echo " [2] Flash SHU compatible (GT3 - Experimental)"
     echo " [3] Run Full Memory Dump (128 KB)"
     echo " [4] Flash Loaded File to Chip"
     echo " [5] Load / Change Target .bin File"
