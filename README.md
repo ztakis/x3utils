@@ -19,5 +19,6 @@ To use the scripts, you need to enter special mode:
 
 Main cable connectors
 
-<img width="2224" height="1748" alt="G3" src="https://github.com/user-attachments/assets/fefebdf3-f2a4-4b32-bb81-60f2481c596c" />
-<img width="2400" height="1665" alt="ZT3" src="https://github.com/user-attachments/assets/bf4bd2bf-5e22-4fe4-907c-55a6c2ebbe22" />
+<img width="288" height="200" alt="zt3_small" src="https://github.com/user-attachments/assets/9a989737-333b-4bdd-8879-dfdd00a4ea58" />
+<img width="254" height="200" alt="g3_small" src="https://github.com/user-attachments/assets/c8bc4af6-4416-4d20-9ff8-a117523b4646" />
+
