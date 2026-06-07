@@ -12,7 +12,7 @@ To use the scripts, you need to enter special mode:
 * Remove all power from the dash, like disconnect main cable (julet).
 * Connect st-link pins correctly and in a secure way but not the 3.3V pin.
 * Plug st-link to usb.
-* Hold blinker buttons.
+* Hold both blinker buttons & keep holding.
 * Plug main power cable.
 * Release blinker buttons.
 * As a connection test, run option [3] in Launcher script, or the dump.bat(sh) script directly.
