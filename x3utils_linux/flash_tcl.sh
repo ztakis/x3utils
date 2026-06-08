@@ -1,0 +1,158 @@
+#!/bin/bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load configuration settings
+CONFIG_FILE="$SCRIPT_DIR/config.sh"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "[FAIL] Missing config.sh"
+    exit 1
+fi
+
+source "$CONFIG_FILE"
+
+bin_file_path="$1"
+
+# Detect direct execution without argument
+if [[ -z "$bin_file_path" ]]; then
+    echo "======================================================="
+    echo " No file detected. Please enter your .bin file path"
+    echo "======================================================="
+    echo
+
+    read -rp "File path: " bin_file_path
+fi
+
+# Remove all surrounding quote characters
+bin_file_path="${bin_file_path//\"/}"
+bin_file_path="${bin_file_path//\'/}"
+
+# Resolve full path
+bin_file_path="$(realpath "$bin_file_path" 2>/dev/null)"
+
+# Check if path is empty
+if [[ -z "$bin_file_path" ]]; then
+    echo "[FAIL] No file provided."
+    exit 1
+fi
+
+# Check file existence
+if [[ ! -f "$bin_file_path" ]]; then
+    echo "[FAIL] File does not exist."
+    exit 1
+fi
+
+# Validate extension
+extension="${bin_file_path##*.}"
+
+if [[ "${extension,,}" != "bin" ]]; then
+    echo "[FAIL] Invalid file type .$extension, only .bin is allowed."
+    exit 1
+fi
+
+echo "[ OK ] File extension is valid."
+
+# Get file size and name
+bin_file_size=$(stat -c%s "$bin_file_path")
+bin_file=$(basename "$bin_file_path")
+
+# Validate exact size
+if [[ "$bin_file_size" != "$EXPECTED_SIZE" ]]; then
+    echo "[FAIL] Invalid file size."
+    echo "       Expected: $EXPECTED_SIZE bytes"
+    echo "       Got:      $bin_file_size bytes"
+    exit 1
+fi
+
+echo "[ OK ] File size matches expected size: $EXPECTED_SIZE bytes."
+echo
+
+# Check for { and } that can break TCL curly-brace quoting
+if [[ "$bin_file_path" =~ [{}] ]]; then
+    echo "[FAIL] Path contains curly braces { } which break OpenOCD TCL quoting."
+    echo "       Path: $bin_file_path"
+    echo "       Please rename the file to remove them."
+    exit 1
+fi
+echo "[ OK ] Path is OpenOCD-compatible."
+
+# Prompt confirmation
+while true; do
+    read -rp "Do you want to flash [$bin_file]? [Y/N]: " user_choice
+
+    case "${user_choice,,}" in
+        y|yes)
+            break
+            ;;
+        n|no)
+            echo
+            echo "Flash cancelled by user."
+            echo
+            read -rp "Press ENTER to continue..."
+            exit 0
+            ;;
+        *)
+            echo
+            echo "Invalid entry. Please type Y for Yes or N for No."
+            echo
+            ;;
+    esac
+done
+
+echo
+echo "======================================================="
+echo "      Step 1: Invoking External Backup Script..."
+echo "======================================================="
+echo
+
+if [[ -f "$SCRIPT_DIR/dump.sh" ]]; then
+    bash "$SCRIPT_DIR/dump.sh"
+else
+    echo "[FAIL] External component dump.sh was not found."
+    exit 1
+fi
+
+# Catch backup script failure
+if [[ $? -ne 0 ]]; then
+    echo
+    echo "[FAIL] Backup script reported an error!"
+    echo "       Aborting flash sequence for hardware safety."
+    exit 1
+fi
+
+echo
+echo "======================================================="
+echo "     Step 2: Starting flash process via OpenOCD..."
+echo "======================================================="
+echo
+
+# Run OpenOCD flash using relative configuration mappings
+# Still no unlock operation.
+# We assume the target is not read-protected.
+# TCL curly brace quoting as a defensive measure against any special characters in the path.
+
+"$OPENOCD_BIN" -s "$SCRIPTS_DIR" \
+    -f "$INTERFACE" \
+    -f "$TARGET" \
+    -c "init" \
+    -c "reset halt" \
+    -c "flash erase_address 0x08000000 0x20000" \
+    -c "flash write_bank 0 {$bin_file_path}" \
+    -c "verify_image {$bin_file_path} 0x08000000" \
+    -c "reset run" \
+    -c "exit"
+
+# Check OpenOCD result
+if [[ $? -ne 0 ]]; then
+    echo
+    echo "[FAIL] OpenOCD failed during flashing."
+    echo "       Check hardware connections."
+    exit 1
+fi
+
+echo
+echo "[ OK ] Flashing completed and verified successfully!"
+
+echo
+read -rp "Press ENTER to continue..."
