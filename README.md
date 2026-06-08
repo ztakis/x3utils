@@ -32,3 +32,6 @@ ST-LINK pinout for ZT3
 
 <img width="2244" height="1024" alt="ZT3" src="https://github.com/user-attachments/assets/871d3c47-254d-4872-bf83-a824e4387cff" />
 
+ST-LINK pinout for X3 MCU
+
+<img width="800" height="286" alt="x3_mcu" src="https://github.com/user-attachments/assets/6d536191-0fbe-464a-8e86-58a8f21566fc" />
