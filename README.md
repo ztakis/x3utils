@@ -11,9 +11,9 @@ To use the scripts, you need to enter special mode:
 * Plug in main power cable.
 * You can now release the blinker buttons.
 * As a connection test, run option [3] in Launcher script, or the dump.bat(sh) script directly.
+
 <br>
-<br>
-<br>
+
 Main cable connectors
 
 <img width="288" height="200" alt="rsz_zt3" src="https://github.com/user-attachments/assets/a59aa2a8-e809-4a37-8c9c-a0f1ed13e7d3" />
