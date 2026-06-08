@@ -17,7 +17,6 @@ To use the scripts, you need to enter special mode:
 * You can now release the blinker buttons.
 * As a connection test, run option [3] in Launcher script, or the dump.bat(sh) script directly.
 
-<br/>
 Main cable connectors
 
 <img width="288" height="200" alt="zt3_small" src="https://github.com/user-attachments/assets/9a989737-333b-4bdd-8879-dfdd00a4ea58" />
