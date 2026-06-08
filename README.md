@@ -26,6 +26,7 @@ Main cable connectors
 You can also ground the blinker connectors instead
 
 <img width="771" height="665" alt="rsz_420260605_103335" src="https://github.com/user-attachments/assets/7042371e-f17b-4a1f-bef5-1ef7dc5cc3dc" />
-<img width="345" height="300" alt="rsz_120260605_103301" src="https://github.com/user-attachments/assets/9e7a999a-8e1d-4351-815e-14c5af1089e2" />
+
 <img width="688" height="442" alt="rsz_20260605_103345" src="https://github.com/user-attachments/assets/74a37a88-610f-456e-98a1-fef830fb5a37" />
 
+<img width="345" height="300" alt="rsz_120260605_103301" src="https://github.com/user-attachments/assets/9e7a999a-8e1d-4351-815e-14c5af1089e2" />
