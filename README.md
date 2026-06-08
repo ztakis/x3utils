@@ -21,8 +21,8 @@ Main cable connectors
 <img width="433" height="200" alt="rsz_julet_4" src="https://github.com/user-attachments/assets/510cfc8c-c3ff-4a59-92da-0f1ac024fe9a" />
 
 <br />
+
 You can also ground the blinker connectors instead of pressing the buttons.
-<br />
 <img width="771" height="665" alt="rsz_420260605_103335" src="https://github.com/user-attachments/assets/7042371e-f17b-4a1f-bef5-1ef7dc5cc3dc" />
 <img width="688" height="442" alt="rsz_20260605_103345" src="https://github.com/user-attachments/assets/74a37a88-610f-456e-98a1-fef830fb5a37" />
 
