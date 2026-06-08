@@ -14,11 +14,11 @@ To use the scripts, you need to enter special mode:
 * As a connection test, run option [3] in Launcher script, or the dump.bat(sh) script directly.
 <br><br>
 Main cable connectors
-
+<br>
 <img width="288" height="200" alt="zt3_small" src="https://github.com/user-attachments/assets/9a989737-333b-4bdd-8879-dfdd00a4ea58" />
 <img width="254" height="200" alt="g3_small" src="https://github.com/user-attachments/assets/c8bc4af6-4416-4d20-9ff8-a117523b4646" />
 <img width="433" height="200" alt="julet_small" src="https://github.com/user-attachments/assets/05a8659a-933e-4754-a727-393f61e06c2e" />
-<br><br><br>
+<br><br>
 You can also ground the blinker connectors instead of pressing the buttons.
 <br><br>
 <img width="771" height="665" alt="rsz_420260605_103335" src="https://github.com/user-attachments/assets/7042371e-f17b-4a1f-bef5-1ef7dc5cc3dc" />
