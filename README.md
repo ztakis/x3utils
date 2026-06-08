@@ -23,3 +23,14 @@ You can also ground the blinker connectors instead of pressing the buttons.
 
 <img width="771" height="665" alt="rsz_420260605_103335" src="https://github.com/user-attachments/assets/7042371e-f17b-4a1f-bef5-1ef7dc5cc3dc" />
 <img width="688" height="442" alt="rsz_20260605_103345" src="https://github.com/user-attachments/assets/74a37a88-610f-456e-98a1-fef830fb5a37" />
+
+==========================
+
+ST-LINK pinout for G3/F3
+
+<img width="667" height="443" alt="g3" src="https://github.com/user-attachments/assets/e40bea51-4374-4d9d-bd09-cbbc52b15e85" />
+
+ST-LINK pinout for ZT3
+
+<img width="2244" height="1024" alt="ZT3" src="https://github.com/user-attachments/assets/871d3c47-254d-4872-bf83-a824e4387cff" />
+
