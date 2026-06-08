@@ -15,7 +15,7 @@ To use the scripts, you need to enter special mode:
 
 Main cable connectors
 
-<img width="2400" height="1665" alt="ZT3" src="https://github.com/user-attachments/assets/4bd08503-785d-4c65-bbeb-1f32951f4565" />
+<img width="288" height="200" alt="rsz_zt3" src="https://github.com/user-attachments/assets/a59aa2a8-e809-4a37-8c9c-a0f1ed13e7d3" />
 <img width="254" height="200" alt="rsz_g3" src="https://github.com/user-attachments/assets/2ab575c5-9338-4d6a-9041-74aa619f8460" />
 <img width="433" height="200" alt="julet_small" src="https://github.com/user-attachments/assets/05a8659a-933e-4754-a727-393f61e06c2e" />
 
