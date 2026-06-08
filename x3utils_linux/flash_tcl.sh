@@ -66,7 +66,6 @@ if [[ "$bin_file_size" != "$EXPECTED_SIZE" ]]; then
 fi
 
 echo "[ OK ] File size matches expected size: $EXPECTED_SIZE bytes."
-echo
 
 # Check for { and } that can break TCL curly-brace quoting
 if [[ "$bin_file_path" =~ [{}] ]]; then
@@ -76,6 +75,7 @@ if [[ "$bin_file_path" =~ [{}] ]]; then
     exit 1
 fi
 echo "[ OK ] Path is OpenOCD-compatible."
+echo
 
 # Prompt confirmation
 while true; do
@@ -153,6 +153,8 @@ fi
 
 echo
 echo "[ OK ] Flashing completed and verified successfully!"
+echo
 
 echo
 read -rp "Press ENTER to continue..."
+echo

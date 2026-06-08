@@ -138,15 +138,6 @@ while true; do
                 continue
             fi
 
-            if [[ "$input_file" == *"{"* || "$input_file" == *"}"* ]]; then
-                echo "[FAIL] Path contains unsupported character: { or }"
-                read -rp "Press ENTER to continue..."
-
-                dragged_file=""
-                display_name=""
-                continue
-            fi
-
             dragged_file="$(readlink -f "$input_file" 2>/dev/null || echo "$input_file")"
             display_name="$(basename "$dragged_file")"
             ;;

@@ -66,15 +66,6 @@ if [[ "$bin_file_size" != "$EXPECTED_SIZE" ]]; then
 fi
 
 echo "[ OK ] File size matches expected size: $EXPECTED_SIZE bytes."
-
-# Check for { and } that can break TCL curly-brace quoting
-if [[ "$bin_file_path" =~ [{}] ]]; then
-    echo "[FAIL] Path contains curly braces { } which break OpenOCD TCL quoting."
-    echo "       Path: $bin_file_path"
-    echo "       Please rename the file to remove them."
-    exit 1
-fi
-echo "[ OK ] Path is OpenOCD-compatible."
 echo
 
 # Prompt confirmation
@@ -130,7 +121,6 @@ echo
 # Run OpenOCD flash using relative configuration mappings
 # Still no unlock operation.
 # We assume the target is not read-protected.
-# TCL curly brace quoting as a defensive measure against any special characters in the path.
 
 "$OPENOCD_BIN" -s "$SCRIPTS_DIR" \
     -f "$INTERFACE" \
@@ -138,8 +128,8 @@ echo
     -c "init" \
     -c "reset halt" \
     -c "flash erase_address 0x08000000 0x20000" \
-    -c "flash write_bank 0 {$bin_file_path}" \
-    -c "verify_image {$bin_file_path} 0x08000000" \
+    -c "flash write_bank 0 $bin_file_path" \
+    -c "verify_image $bin_file_path 0x08000000" \
     -c "reset run" \
     -c "exit"
 
@@ -153,8 +143,6 @@ fi
 
 echo
 echo "[ OK ] Flashing completed and verified successfully!"
-echo
 
 echo
 read -rp "Press ENTER to continue..."
-echo
