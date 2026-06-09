@@ -43,6 +43,14 @@ if [[ ! -f "$bin_file_path" ]]; then
     exit 1
 fi
 
+# Check for { and } that can break TCL curly-brace quoting
+if [[ "$bin_file_path" =~ [{}] ]]; then
+    echo "[FAIL] Path contains unsupported character: { or }"
+    echo "       Please rename."
+    exit 1
+fi
+echo "[ OK ] Path is OpenOCD-compatible."
+
 # Validate extension
 extension="${bin_file_path##*.}"
 
@@ -67,16 +75,7 @@ fi
 
 echo "[ OK ] File size matches expected size: $EXPECTED_SIZE bytes."
 
-# Check for { and } that can break TCL curly-brace quoting
-if [[ "$bin_file_path" =~ [{}] ]]; then
-    echo "[FAIL] Path contains curly braces { } which break OpenOCD TCL quoting."
-    echo "       Path: $bin_file_path"
-    echo "       Please rename the file to remove them."
-    exit 1
-fi
-echo "[ OK ] Path is OpenOCD-compatible."
 echo
-
 # Prompt confirmation
 while true; do
     read -rp "Do you want to flash [$bin_file]? [Y/N]: " user_choice

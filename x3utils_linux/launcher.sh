@@ -126,11 +126,9 @@ while true; do
                 continue
             fi
 
-            extension="${input_file##*.}"
-
-            if [[ "${extension,,}" != "bin" ]]; then
-                echo
-                echo "[FAIL] Only .bin files are allowed."
+            if [[ "$input_file" =~ [{}] ]]; then
+                echo "[FAIL] Path contains unsupported character: { or }"
+                echo "       Please rename."
                 read -rp "Press ENTER to continue..."
 
                 dragged_file=""
@@ -138,8 +136,11 @@ while true; do
                 continue
             fi
 
-            if [[ "$input_file" == *"{"* || "$input_file" == *"}"* ]]; then
-                echo "[FAIL] Path contains unsupported character: { or }"
+            extension="${input_file##*.}"
+
+            if [[ "${extension,,}" != "bin" ]]; then
+                echo
+                echo "[FAIL] Only .bin files are allowed."
                 read -rp "Press ENTER to continue..."
 
                 dragged_file=""

@@ -76,8 +76,8 @@ echo
     -f "$TARGET" \
     -c "init" \
     -c "reset halt" \
-    -c "flash write_image erase $bin_file_path 0x08001000 bin" \
-    -c "verify_image $bin_file_path 0x08001000 bin" \
+    -c "flash write_image erase {$bin_file_path} 0x08001000 bin" \
+    -c "verify_image {$bin_file_path} 0x08001000 bin" \
     -c "reset run" \
     -c "exit"
 

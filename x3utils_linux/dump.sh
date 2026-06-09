@@ -68,7 +68,7 @@ echo
     -c "init" \
     -c "reset halt" \
     -c "flash probe 0" \
-    -c "dump_image $dump_file 0x08000000 0x20000" \
+    -c "dump_image {$dump_file} 0x08000000 0x20000" \
     -c "exit"
 
 # Ensure dump file exists
