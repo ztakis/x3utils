@@ -82,7 +82,7 @@ echo.
     -c "init" ^
     -c "reset halt" ^
     -c "flash probe 0" ^
-    -c "dump_image %norm_raw_dump% 0x08000000 0x20000" ^
+    -c "dump_image {%norm_raw_dump%} 0x08000000 0x20000" ^
     -c "exit"
 
 if errorlevel 1 (
@@ -186,8 +186,8 @@ echo.
     -c "init" ^
     -c "reset halt" ^
     -c "flash erase_address 0x08000000 0x20000" ^
-    -c "flash write_bank 0 %norm_patched_dump%" ^
-    -c "verify_image %norm_patched_dump% 0x08000000" ^
+    -c "flash write_bank 0 {%norm_patched_dump%}" ^
+    -c "verify_image {%norm_patched_dump%} 0x08000000" ^
     -c "reset run" ^
     -c "exit"
 

@@ -38,6 +38,31 @@ if not exist "%bin_file_path%" (
     goto :fail_exit
 )
 
+:: Reject unsupported characters in user-supplied path
+for %%C in ("{" "}") do (
+    echo(%bin_file_path%| findstr /L /C:"%%~C" >nul
+    if not errorlevel 1 (
+        echo [FAIL] Path contains unsupported character: %%~C
+        echo        Please rename.
+        pause
+        goto :fail_exit
+    )
+)
+
+:: Reject non-ASCII characters in user-supplied path
+for /f "delims=" %%R in ('powershell -NoProfile -Command ^
+    "if ('%bin_file_path%' -match '[^\x00-\x7F]') { 'NON_ASCII' } else { 'OK' }"') do (
+    set "ascii_result=%%R"
+)
+
+if "%ascii_result%"=="NON_ASCII" (
+    echo [FAIL] Path contains non-ASCII characters.
+    echo        Path: %bin_file_path%
+    echo        Please rename using only English letters.
+    goto :fail_exit
+)
+echo [ OK ] Path contains only ASCII characters.
+
 :: Validate the extension
 if /i not "%extension%"==".bin" (
     echo [FAIL] Invalid file type "%extension%", only .bin is allowed.
@@ -122,8 +147,8 @@ echo =======================================================
     -c "init" ^
     -c "reset halt" ^
     -c "flash erase_address 0x08000000 0x20000" ^
-    -c "flash write_bank 0 %normalized_path%" ^
-    -c "verify_image %normalized_path% 0x08000000" ^
+    -c "flash write_bank 0 {%normalized_path%}" ^
+    -c "verify_image {%normalized_path%} 0x08000000" ^
     -c "reset run" ^
     -c "exit"
 

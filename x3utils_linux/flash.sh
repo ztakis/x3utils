@@ -43,7 +43,7 @@ if [[ ! -f "$bin_file_path" ]]; then
     exit 1
 fi
 
-# Check for { and } that can break TCL curly-brace quoting
+# Reject unsupported characters in user-supplied path
 if [[ "$bin_file_path" =~ [{}] ]]; then
     echo "[FAIL] Path contains unsupported character: { or }"
     echo "       Please rename."

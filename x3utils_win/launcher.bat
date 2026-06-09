@@ -137,6 +137,30 @@ if not exist "%dragged_file%" (
     set "display_name="
     goto :menu_top
 )
+for %%C in ("{" "}") do (
+    echo(%dragged_file%| findstr /L /C:"%%~C" >nul
+    if not errorlevel 1 (
+        echo [FAIL] Path contains unsupported character: %%~C
+        echo        Please rename.
+        pause
+        set "dragged_file="
+        set "display_name="
+        goto :menu_top
+    )
+)
+for /f "delims=" %%R in ('powershell -NoProfile -Command ^
+    "if ('%dragged_file%' -match '[^\x00-\x7F]') { 'NON_ASCII' } else { 'OK' }"') do (
+    set "ascii_result=%%R"
+)
+if "%ascii_result%"=="NON_ASCII" (
+    echo [FAIL] Path contains non-ASCII characters.
+    echo        Path: %dragged_file%
+    echo        Please rename using only English letters.
+    pause
+    set "dragged_file="
+    set "display_name="
+    goto :menu_top
+)
 set "extension="
 for %%A in ("%dragged_file%") do (
     set "extension=%%~xA"
