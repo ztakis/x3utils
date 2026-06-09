@@ -6,8 +6,8 @@ README in progress ...
 ## Main Menu
 
 **[1] Flash SHU compatible (ZT3, G3, F3/F3Pro)**  
-This option dumps your current vcu firmware, patches it and then flashes it back.  
-Then you can use SHU to flash from repo, change serial etc.
+This option dumps your current vcu firmware, patches it and then flashes it back,  
+so that you can use SHU to flash from repo, change serial etc.
 
 **[2] Flash SHU compatible (GT3 - Experimental)**  
 Same as above for GT3 — experimental, use with caution.
