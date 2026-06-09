@@ -210,4 +210,6 @@ fi
 echo
 echo "[ OK ] Flashing completed successfully!"
 echo
+echo
 read -rp "Press ENTER to continue..."
+echo

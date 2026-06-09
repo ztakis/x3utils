@@ -91,6 +91,7 @@ fi
 
 echo
 echo "[ OK ] Flashing completed and verified successfully!"
-
+echo
 echo
 read -rp "Press ENTER to continue..."
+echo
