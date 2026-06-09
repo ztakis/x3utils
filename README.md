@@ -3,6 +3,32 @@ README in progress ...
 
 <img width="497" height="283" alt="image" src="https://github.com/user-attachments/assets/7adcf98e-1c63-4947-878b-c57f4a2880ed" />
 
+## Main Menu
+
+**[1] Flash SHU compatible (ZT3, G3, F3/F3Pro)**  
+This option dumps your current vcu firmware, patches it and then flashes it back.  
+Then you can use SHU to flash from repo, change serial etc.
+
+**[2] Flash SHU compatible (GT3 - Experimental)**  
+Same as above for GT3 — experimental, use with caution.
+
+**[3] Run Full Memory Dump (128 KB)**  
+Reads and saves the entire 128 KB flash memory to a backup file.  
+Recommended before making any changes.
+
+**[4] Flash Loaded File to Chip**  
+Flash the file selected in option 5 to the device.
+
+**[5] Load / Change Target .bin File**  
+Select the `.bin` file you want to flash. Do this before using option 4.
+
+**[6] Exit**  
+Close the utility.  
+
+**Options [1], [2] and [4] force a full bakup first** 
+
+<br />
+
 To use the scripts, you need to enter special mode:  
 * Remove all power from the dash, like disconnect main cable (julet).
 * Connect st-link pins correctly and in a secure way but not the 3.3V pin.
