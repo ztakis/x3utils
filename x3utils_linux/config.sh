@@ -13,3 +13,23 @@ TARGET="target/at32f415xx.cfg"
 # --- COMMON SETTINGS ---
 
 EXPECTED_SIZE=131072
+
+# --- VALIDATION ---
+
+if [[ ! -f "$OPENOCD_BIN" ]]; then
+    echo "[FAIL] OpenOCD binary not found."
+    echo "       Expected: $OPENOCD_BIN"
+    exit 1
+fi
+
+if [[ ! -x "$OPENOCD_BIN" ]]; then
+    echo "[FAIL] OpenOCD binary is not executable."
+    echo "       Run: chmod +x $OPENOCD_BIN"
+    exit 1
+fi
+
+if [[ ! -d "$SCRIPTS_DIR" ]]; then
+    echo "[FAIL] OpenOCD scripts directory not found."
+    echo "       Expected: $SCRIPTS_DIR"
+    exit 1
+fi

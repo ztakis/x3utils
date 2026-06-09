@@ -9,6 +9,20 @@ if not exist "%~dp0config.cmd" (
 
 call "%~dp0config.cmd"
 
+:: Validate OpenOCD binary exists
+if not exist "%OPENOCD_BIN%" (
+    echo [FAIL] OpenOCD binary not found.
+    echo        Expected: %OPENOCD_BIN%
+    goto :fail_exit
+)
+
+:: Validate OpenOCD scripts directory exists
+if not exist "%SCRIPTS_DIR%" (
+    echo [FAIL] OpenOCD scripts directory not found.
+    echo        Expected: %SCRIPTS_DIR%
+    goto :fail_exit
+)
+
 :: Prompt user for confirmation before proceeding with flash operation
 :prompt_loop
 set "user_choice="
