@@ -75,14 +75,12 @@ if "%ascii_result%"=="NON_ASCII" (
     echo        Please rename using only English letters.
     goto :fail_exit
 )
-echo [ OK ] Path contains only ASCII characters.
 
 :: Validate the extension
 if /i not "%extension%"==".bin" (
     echo [FAIL] Invalid file type "%extension%", only .bin is allowed.
     goto :fail_exit
 )
-echo [ OK ] File extension is valid.
 
 :: Get file size and name in a single loop
 for %%i in ("%bin_file_path%") do (
@@ -97,7 +95,6 @@ if not "%bin_file_size%"=="%EXPECTED_SIZE%" (
     echo        Got:      %bin_file_size% bytes
     goto :fail_exit
 )
-echo [ OK ] File size matches expected size: %EXPECTED_SIZE% bytes.
 
 :: Normalize path for OpenOCD
 set "normalized_path=%bin_file_path:\=/%"

@@ -9,9 +9,9 @@ display_name=""
 while true; do
     clear
 
-    echo "======================================================================="
-    echo "             ST-LINK UTILITIES FOR X3 scooters - v$VERSION"
-    echo "======================================================================="
+    echo "=================================================================="
+    echo "          ST-LINK UTILITIES FOR X3 scooters - v$VERSION"          
+    echo "=================================================================="
     echo
 
     if [[ -n "$dragged_file" ]]; then
@@ -29,7 +29,7 @@ while true; do
     echo " [5] Load / Change Target .bin File"
     echo " [6] Exit"
     echo
-    echo "======================================================================="
+    echo "=================================================================="
     echo
 
     read -rp "Select an option [1-6]: " choice
@@ -97,9 +97,9 @@ while true; do
 
         5)
             echo
-            echo "======================================================="
-            echo " Please enter the path to your .bin file"
-            echo "======================================================="
+            echo "======================================================"
+            echo "       Please enter the path to your .bin file"        
+            echo "======================================================"
             echo
 
             read -rp "File path (or type 'back'): " input_file

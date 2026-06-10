@@ -9,9 +9,9 @@ set "display_name="
 
 :menu_top
 cls
-echo =======================================================================
-echo           ST-LINK UTILITIES FOR X3 scooters - v%VERSION%
-echo =======================================================================
+echo ==================================================================
+echo           ST-LINK UTILITIES FOR X3 scooters - v%VERSION%          
+echo ==================================================================
 echo.
 
 :: Show dragged file if present
@@ -31,7 +31,7 @@ echo  [4] Flash Loaded File to Chip
 echo  [5] Load / Change Target .bin File
 echo  [6] Exit
 echo.
-echo =======================================================================
+echo ==================================================================
 echo.
 
 :: Get user choice

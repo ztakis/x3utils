@@ -17,7 +17,7 @@ bin_file_path="$1"
 # Detect direct execution without argument
 if [[ -z "$bin_file_path" ]]; then
     echo "======================================================="
-    echo " No file detected. Please enter your .bin file path"
+    echo "  No file detected. Please enter your .bin file path"
     echo "======================================================="
     echo
 
@@ -49,7 +49,6 @@ if [[ "$bin_file_path" =~ [{}] ]]; then
     echo "       Please rename."
     exit 1
 fi
-echo "[ OK ] Path is OpenOCD-compatible."
 
 # Validate extension
 extension="${bin_file_path##*.}"
@@ -58,8 +57,6 @@ if [[ "${extension,,}" != "bin" ]]; then
     echo "[FAIL] Invalid file type .$extension, only .bin is allowed."
     exit 1
 fi
-
-echo "[ OK ] File extension is valid."
 
 # Get file size and name
 bin_file_size=$(stat -c%s "$bin_file_path")
@@ -72,8 +69,6 @@ if [[ "$bin_file_size" != "$EXPECTED_SIZE" ]]; then
     echo "       Got:      $bin_file_size bytes"
     exit 1
 fi
-
-echo "[ OK ] File size matches expected size: $EXPECTED_SIZE bytes."
 
 echo
 # Prompt confirmation
