@@ -1,7 +1,7 @@
 
 README in progress ...
 
-<img width="497" height="283" alt="image" src="https://github.com/user-attachments/assets/7adcf98e-1c63-4947-878b-c57f4a2880ed" />
+<img width="656" height="340" alt="main_menu_v1 3 4" src="https://github.com/user-attachments/assets/bf9a9110-7c22-470c-a9a2-3e2ad08d6277" />
 
 ## Main Menu
 
@@ -28,6 +28,8 @@ Close the utility.
 **Options [1], [2] and [4] force a full bakup first** 
 
 <br />
+
+## Connection procedure
 
 To use the scripts, you need to enter special mode:  
 * Remove all power from the dash, like disconnect main cable (julet).
