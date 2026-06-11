@@ -47,7 +47,7 @@ echo.
 if "!ALT!"=="X" (
     powershell -NoProfile -Command "Write-Host ' [A] [!ALT!] Alternative target configuration (connect-under-reset)' -ForegroundColor DarkYellow"
 ) else (
-    echo  [A] [!ALT!] Alternative target configuration (connect-under-reset)
+    echo  [A] [!ALT!] Alternative target configuration (connect-under-reset^)
 )
 echo.
 echo  [6] Exit
