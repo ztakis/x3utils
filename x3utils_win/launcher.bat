@@ -1,17 +1,31 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
 set "SCRIPT_DIR=%~dp0"
 set /p VERSION=<"%SCRIPT_DIR%VERSION"
 
+
+:: --- VALIDATE config.cmd exists ---
+if not exist "%~dp0config.cmd" (
+    echo [FAIL] Missing config.cmd
+    pause
+    exit /b 1
+)
+
 set "dragged_file="
 set "display_name="
 
+:: Detect current connect-under-reset state from config.cmd
+set "ALT= "
+for /f "tokens=*" %%L in ('findstr /i "TARGET" "%~dp0config.cmd"') do (
+    echo %%L | findstr /i "alt" >nul && set "ALT=X"
+)
+
 :menu_top
 cls
-echo ==============================================================
+echo ==================================================================
 echo           ST-LINK UTILITIES FOR X3 scooters - %VERSION%          
-echo ==============================================================
+echo ==================================================================
 echo.
 
 :: Show dragged file if present
@@ -29,15 +43,19 @@ echo  [2] Flash SHU compatible (GT3 - Experimental)
 echo  [3] Run Full Memory Dump (128 KB)
 echo  [4] Flash Loaded File to Chip
 echo  [5] Load / Change Target .bin File
+echo.
+echo  [A] [!ALT!] Alterative target configuration (connect-under-reset)
+echo.
 echo  [6] Exit
 echo.
-echo ==============================================================
+echo ==================================================================
 echo.
 
 :: Get user choice
 set "choice="
-set /p "choice=Select an option [1-6]: "
+set /p "choice=Select an option [1-6, A]: "
 if "%choice%"=="" goto :menu_top
+if /i "%choice%"=="a" goto :toggle_alt
 if "%choice%"=="1" goto :opt_compat
 if "%choice%"=="2" goto :opt_gt3_compat
 if "%choice%"=="3" goto :opt_dump
@@ -48,8 +66,37 @@ if "%choice%"=="6" goto :exit_menu
 :: Invalid choice handling
 echo.
 echo [FAIL] Invalid selection.
-echo        Please choose 1, 2, 3, 4, 5 or 6.
+echo        Please choose 1-6 or A.
 timeout /t 2 >nul
+goto :menu_top
+
+:: Toggle connect-under-reset (edits TARGET line in config.cmd in place)
+:toggle_alt
+if "!ALT!"==" " (
+    powershell -NoProfile -Command "(Get-Content '%~dp0config.cmd') -replace 'at32f415\.cfg', 'at32f415_alt.cfg' | Set-Content '%~dp0config.tmp'"
+) else (
+    powershell -NoProfile -Command "(Get-Content '%~dp0config.cmd') -replace 'at32f415_alt\.cfg', 'at32f415.cfg' | Set-Content '%~dp0config.tmp'"
+)
+:: Verify temp file was written before replacing
+if not exist "%~dp0config.tmp" (
+    echo.
+    echo [FAIL] Could not write config update. config.cmd unchanged.
+    pause
+    goto :menu_top
+)
+move /y "%~dp0config.tmp" "%~dp0config.cmd" >nul
+:: Confirm the change actually took effect
+set "ALT_CHECK= "
+for /f "tokens=*" %%L in ('findstr /i "TARGET" "%~dp0config.cmd"') do (
+    echo %%L | findstr /i "alt" >nul && set "ALT_CHECK=X"
+)
+if "!ALT!"=="!ALT_CHECK!" (
+    echo.
+    echo [FAIL] config.cmd did not update correctly.
+    pause
+    goto :menu_top
+)
+set "ALT=!ALT_CHECK!"
 goto :menu_top
 
 :: Call flash_compat.bat
@@ -105,7 +152,7 @@ echo.
 echo Launching Flash Utility for:
 echo        "%display_name%"
 echo.
-:: Pass the loaded file path as an argument to flash.bat
+:: Pass the loaded file path as argument to flash.bat
 if exist "%~dp0flash.bat" (
     call "%~dp0flash.bat" "%dragged_file%"
 ) else (
