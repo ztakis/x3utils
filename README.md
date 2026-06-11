@@ -1,35 +1,39 @@
 
-## This is the testing README and will soon be updated ...
+README in progress ...
 
-<img width="656" height="340" alt="main_menu_v1 3 4" src="https://github.com/user-attachments/assets/bf9a9110-7c22-470c-a9a2-3e2ad08d6277" />
+<img width="598" height="361" alt="image" src="https://github.com/user-attachments/assets/283a745f-4359-4fb3-898f-041ec2c57d83" />
 
-## Main Menu
+# Main Menu
 
 **[1] Flash SHU compatible (ZT3, G3, F3/F3Pro)**  
-This option dumps your current vcu firmware, patches it and then flashes it back,  
+This option dumps your current vcu firmware, patches it and then flashes it back,
 so that you can use SHU to flash from repo, change serial etc.
 
 **[2] Flash SHU compatible (GT3 - Experimental)**  
 Same as above for GT3 — experimental, use with caution.
 
 **[3] Run Full Memory Dump (128 KB)**  
-Reads and saves the entire 128 KB flash memory to a backup file.  
+Reads and saves the entire 128 KB flash memory to a backup file.
 Recommended before making any changes.
 
 **[4] Flash Loaded File to Chip**  
 Flash the file selected in option 5 to the device.
 
 **[5] Load / Change Target .bin File**  
-Select the `.bin` file you want to flash. Do this before using option 4.
+Select the .bin file you want to flash. Do this before using option 4.
+
+**[A] [ ] Alternative target configuration (connect-under-reset)**  
+Toggles alt target mode. Currently is configured for connect-under-reset.
+The setting is persistent — it stays active across sessions until toggled off.
 
 **[6] Exit**  
-Close the utility.  
+Close the utility.
 
-**Options [1], [2] and [4] force a full bakup first** 
+**Options [1], [2] and [4] force a full backup first**
 
 <br />
 
-## Connection procedure
+## Connection procedure - needs update
 
 To use the scripts, you need to enter special mode:  
 * Remove all power from the dash, like disconnect main cable (julet).
