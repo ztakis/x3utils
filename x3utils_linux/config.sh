@@ -8,7 +8,7 @@ OPENOCD_BIN="$SCRIPT_DIR/oocd/bin/openocd"
 SCRIPTS_DIR="$SCRIPT_DIR/oocd/scripts"
 
 INTERFACE="interface/stlink.cfg"
-TARGET="target/at32f415xx.cfg"
+TARGET="target/at32f415xx_alt.cfg"
 
 # --- COMMON SETTINGS ---
 
