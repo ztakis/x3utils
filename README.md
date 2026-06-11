@@ -1,5 +1,5 @@
 
-README in progress ...
+## This is the testing README and will soon be updated ...
 
 <img width="656" height="340" alt="main_menu_v1 3 4" src="https://github.com/user-attachments/assets/bf9a9110-7c22-470c-a9a2-3e2ad08d6277" />
 
