@@ -6,14 +6,14 @@ README in progress ...
 # Main Menu
 
 **[1] Flash SHU compatible (ZT3, G3, F3/F3Pro)**  
-This option dumps your current vcu firmware, patches it and then flashes it back,
+This option dumps your current vcu firmware, patches it and then flashes it back,  
 so that you can use SHU to flash from repo, change serial etc.
 
 **[2] Flash SHU compatible (GT3 - Experimental)**  
 Same as above for GT3 — experimental, use with caution.
 
 **[3] Run Full Memory Dump (128 KB)**  
-Reads and saves the entire 128 KB flash memory to a backup file.
+Reads and saves the entire 128 KB flash memory to a backup file.  
 Recommended before making any changes.
 
 **[4] Flash Loaded File to Chip**  
@@ -23,7 +23,7 @@ Flash the file selected in option 5 to the device.
 Select the .bin file you want to flash. Do this before using option 4.
 
 **[A] [ ] Alternative target configuration (connect-under-reset)**  
-Toggles alt target mode. Currently is configured for connect-under-reset.
+Toggles alternative target mode. Currently is configured for connect-under-reset.  
 The setting is persistent — it stays active across sessions until toggled off.
 
 **[6] Exit**  
@@ -33,12 +33,49 @@ Close the utility.
 
 <br />
 
-## Connection procedure - needs update
+## Alternative connection procedure
+
+For this I used the st-link part from a cheap Nucleo board (~20 Euros).  
+I had no success with st-link clones. Genuine worked.  
+The left part is the st-link part and you need to remove those two jumpers,
+to work with external devices.
+
+<img width="508" height="400" alt="1" src="https://github.com/user-attachments/assets/ba7bc74e-3518-41c0-879e-d26320d2bdaf" />
+<img width="655" height="400" alt="2" src="https://github.com/user-attachments/assets/aa459904-4488-4d0f-ac22-e64ad9c9466c" />
+<img width="492" height="400" alt="3" src="https://github.com/user-attachments/assets/34e98608-913e-4f02-a773-74d2f41dc39b" />
+<br /><br />
+
+Those are the SWD pins and the pinout table (top pin is #1).
+
+<img width="447" height="400" alt="4" src="https://github.com/user-attachments/assets/0532c18f-7df7-449b-afb8-d52235ebf6b5" />
+<img width="574" height="206" alt="image" src="https://github.com/user-attachments/assets/2ed2984d-146b-4aa8-a6b2-06c15d95ed9d" />
+<br /><br />
+
+Red cable does not provide power to the dashboard.  
+It measures the voltage of the target's 3.3V line.  
+You have to connect this at the dashboard's SWD 3.3V pin  
+and give power from the main connector.   
+Yellow, Black & White are SWCLK, GND & SWDIO respectively.  
+Green is the reset (NRST) and you need to connect this to the C45 capacitor.
+<br />
+
+<img width="593" height="400" alt="5" src="https://github.com/user-attachments/assets/5c747751-9676-495f-b44c-c469b1063764" />
+<img width="710" height="400" alt="6" src="https://github.com/user-attachments/assets/a6fcaec9-7326-4076-884b-670c0e14332d" />
+<img width="365" height="400" alt="7" src="https://github.com/user-attachments/assets/53c5ccf4-cc61-4ab3-935c-187bc2bd4bfe" />
+<br /><br />
+
+Connection sequence, doesn't seem to matter:  
+Power the dashboard, plug in st-link's USB,  
+touch & hold C45 continuously and run the scripts.
+
+<br /><br />
+
+## Default connection procedure
 
 To use the scripts, you need to enter special mode:  
 * Remove all power from the dash, like disconnect main cable (julet).
 * Connect st-link pins correctly and in a secure way but not the 3.3V pin.
-* Plug st-link to usb.
+* Plug st-link to USB.
 * Hold both blinker buttons & keep holding.
 * Plug in main power cable.
 * You can now release the blinker buttons.
