@@ -87,7 +87,11 @@ while true; do
     echo " [4] Flash Loaded File to Chip"
     echo " [5] Load / Change Target .bin File"
     echo
-    echo " [A] [$ALT] Alternative target configuration (connect-under-reset)"
+    if [[ "$ALT" == "X" ]]; then
+        echo -e " \033[33m[A] [X] Alternative target configuration (connect-under-reset)\033[0m"
+    else
+        echo " [A] [ ] Alternative target configuration (connect-under-reset)"
+    fi
     echo
     echo " [6] Exit"
     echo
