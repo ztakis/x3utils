@@ -44,7 +44,11 @@ echo  [3] Run Full Memory Dump (128 KB)
 echo  [4] Flash Loaded File to Chip
 echo  [5] Load / Change Target .bin File
 echo.
-echo  [A] [!ALT!] Alterative target configuration (connect-under-reset)
+if "!ALT!"=="X" (
+    powershell -NoProfile -Command "Write-Host ' [A] [!ALT!] Alternative target configuration (connect-under-reset)' -ForegroundColor DarkYellow"
+) else (
+    echo  [A] [!ALT!] Alternative target configuration (connect-under-reset)
+)
 echo.
 echo  [6] Exit
 echo.
