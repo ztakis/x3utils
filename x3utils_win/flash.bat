@@ -160,7 +160,6 @@ echo =======================================================
     -c "flash erase_address 0x08000000 0x20000" ^
     -c "flash write_bank 0 {%normalized_path%}" ^
     -c "verify_image {%normalized_path%} 0x08000000" ^
-    -c "reset run" ^
     -c "exit"
 
 :: Check if OpenOCD execution was successful

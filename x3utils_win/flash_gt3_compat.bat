@@ -102,7 +102,6 @@ echo =======================================================
     -c "reset halt" ^
     -c "flash write_image erase {%normalized_path%} 0x08001000 bin" ^
     -c "verify_image {%normalized_path%} 0x08001000 bin" ^
-    -c "reset run" ^
     -c "exit"
 
 :: Check if OpenOCD execution was successful
