@@ -64,9 +64,10 @@ Green is the reset (NRST) and you need to connect this to the C45 capacitor.
 <img width="365" height="400" alt="7" src="https://github.com/user-attachments/assets/53c5ccf4-cc61-4ab3-935c-187bc2bd4bfe" />
 <br /><br />
 
-Connection sequence, doesn't seem to matter:  
+Connection sequence:  
 Power the dashboard, plug in st-link's USB,  
-touch & hold C45 continuously and run the scripts.
+touch & hold C45 continuously and run the scripts.  
+After successful flash, power cycle the dashboard.
 
 <br /><br />
 
