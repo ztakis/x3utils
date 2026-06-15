@@ -112,6 +112,17 @@ if not "%dump_size%"=="%EXPECTED_SIZE%" (
     goto :fail_exit
 )
 
+:: Ensure dump file is not all zeros (indicating a failed read)
+for /f %%i in ('powershell -NoProfile -Command "$bytes = [System.IO.File]::ReadAllBytes('%dump_file%'); ($bytes | Select-Object -Unique).Count -eq 1"') do set "all_zeros=%%i"
+
+if "%all_zeros%"=="True" (
+    echo.
+    echo [%CL_R%FAIL%CL_NC%] Dump file contains only zeros.
+    echo        nRST was not released correctly during step 3.
+    echo        Please try again.
+    goto :fail_exit
+)
+
 echo.
 echo [ OK ] Dump completed successfully!
 echo [ OK ] Verified file size: %EXPECTED_SIZE% bytes.
