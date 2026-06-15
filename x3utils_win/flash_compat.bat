@@ -128,6 +128,16 @@ if not "%dump_size%"=="%EXPECTED_SIZE%" (
     goto :fail_exit
 )
 
+:: Ensure dump file is not all zeros (indicating a failed read)
+for /f %%i in ('powershell -NoProfile -Command "$bytes = [System.IO.File]::ReadAllBytes('%raw_dump%'); ($bytes | Select-Object -Unique).Count -eq 1"') do set "all_zeros=%%i"
+
+if "%all_zeros%"=="True" (
+    echo.
+    echo [FAIL] Dump file contains only zeros.
+    echo        Please try again.
+    goto :fail_exit
+)
+
 echo [ OK ] Raw dump verified successfully.
 echo.
 pause
