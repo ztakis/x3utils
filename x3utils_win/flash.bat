@@ -27,10 +27,10 @@ set "bin_file_path=%~1"
 
 :: Detect double-click (No file passed as an argument)
 if "%bin_file_path%"=="" (
-    echo =======================================================
+    echo ============================================================
     echo  %CL_Y%No file detected. Please Drag and Drop your .bin file 
     echo  directly into this window and press ENTER.%CL_NC%
-    echo =======================================================
+    echo ============================================================
     echo.
     set /p "bin_file_path=Drop file here: "
 )
@@ -134,9 +134,9 @@ goto :end
 
 :: External call to dump.bat
 echo.
-echo =======================================================
-echo       Step 1: Invoking External Backup Script...
-echo =======================================================
+echo ============================================================
+echo          Step 1: Invoking External Backup Script...
+echo ============================================================
 echo.
 
 if exist "%~dp0dump.bat" (
@@ -154,9 +154,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo =======================================================
-echo      Step 2: Starting flash process via OpenOCD...
-echo =======================================================
+echo ============================================================
+echo        Step 2: Starting flash process via OpenOCD...
+echo ============================================================
 echo.
 
 :: Run OpenOCD flash using relative configuration mappings

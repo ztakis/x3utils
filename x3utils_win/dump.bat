@@ -22,12 +22,11 @@ if not exist "%SCRIPTS_DIR%" (
     echo        Expected: %SCRIPTS_DIR%
     goto :fail_exit
 )
-
 echo.
-echo =======================================================
-echo         Press ENTER to dump current chip data
-echo               to your backup folder.
-echo =======================================================
+echo ============================================================
+echo            Press ENTER to dump current chip data
+echo                   to your backup folder.
+echo ============================================================
 echo.
 pause
 
@@ -65,9 +64,9 @@ echo Output File:
 echo        "%dump_file%"
 echo.
 
-echo =======================================================
-echo          Executing Full 128 KB Memory Dump...
-echo =======================================================
+echo ============================================================
+echo             Executing Full 128 KB Memory Dump...
+echo ============================================================
 echo.
 
 :: IMPORTANT:

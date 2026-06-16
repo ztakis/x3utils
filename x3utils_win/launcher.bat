@@ -4,13 +4,13 @@ setlocal enabledelayedexpansion
 set "SCRIPT_DIR=%~dp0"
 set /p VERSION=<"%SCRIPT_DIR%VERSION"
 
-
-:: --- VALIDATE config.cmd exists ---
+:: Validate config.cmd exists
 if not exist "%~dp0config.cmd" (
-    echo [FAIL] Missing config.cmd
+    echo [%CL_R%FAIL%CL_NC%] Missing config.cmd
     pause
     exit /b 1
 )
+call "%~dp0config.cmd"
 
 set "dragged_file="
 set "display_name="
@@ -45,7 +45,7 @@ echo  [4] Flash Loaded File to Chip
 echo  [5] Load / Change Target .bin File
 echo.
 if "!ALT!"=="X" (
-    powershell -NoProfile -Command "Write-Host ' [A] [!ALT!] Alternative target configuration (connect-under-reset)' -ForegroundColor DarkYellow"
+    echo  [A] %CL_Y%[!ALT!] Alternative target configuration (connect-under-reset^)%CL_NC%
 ) else (
     echo  [A] [!ALT!] Alternative target configuration (connect-under-reset^)
 )
@@ -69,7 +69,7 @@ if "%choice%"=="6" goto :exit_menu
 
 :: Invalid choice handling
 echo.
-echo [FAIL] Invalid selection.
+echo [%CL_R%FAIL%CL_NC%] Invalid selection.
 echo        Please choose 1-6 or A.
 timeout /t 2 >nul
 goto :menu_top
@@ -84,7 +84,7 @@ if "!ALT!"==" " (
 :: Verify temp file was written before replacing
 if not exist "%~dp0config.tmp" (
     echo.
-    echo [FAIL] Could not write config update. config.cmd unchanged.
+    echo [%CL_R%FAIL%CL_NC%] Could not write config update. config.cmd unchanged.
     pause
     goto :menu_top
 )
@@ -96,7 +96,7 @@ for /f "tokens=*" %%L in ('findstr /i "TARGET" "%~dp0config.cmd"') do (
 )
 if "!ALT!"=="!ALT_CHECK!" (
     echo.
-    echo [FAIL] config.cmd did not update correctly.
+    echo [%CL_R%FAIL%CL_NC%] config.cmd did not update correctly.
     pause
     goto :menu_top
 )
@@ -111,7 +111,7 @@ echo.
 if exist "%~dp0flash_compat.bat" (
     call "%~dp0flash_compat.bat"
 ) else (
-    echo [FAIL] Could not find flash_compat.bat.
+    echo [%CL_R%FAIL%CL_NC%] Could not find flash_compat.bat.
     pause
 )
 goto :menu_top
@@ -124,7 +124,7 @@ echo.
 if exist "%~dp0flash_gt3_compat.bat" (
     call "%~dp0flash_gt3_compat.bat"
 ) else (
-    echo [FAIL] Could not find flash_gt3_compat.bat.
+    echo [%CL_R%FAIL%CL_NC%] Could not find flash_gt3_compat.bat.
     pause
 )
 goto :menu_top
@@ -137,7 +137,7 @@ echo.
 if exist "%~dp0dump.bat" (
     call "%~dp0dump.bat"
 ) else (
-    echo [FAIL] Could not find dump.bat.
+    echo [%CL_R%FAIL%CL_NC%] Could not find dump.bat.
     pause
 )
 goto :menu_top
@@ -146,7 +146,7 @@ goto :menu_top
 :opt_flash
 if "%dragged_file%"=="" (
     echo.
-    echo [FAIL] You cannot flash without loading a file first.
+    echo [%CL_R%FAIL%CL_NC%] You cannot flash without loading a file first.
     echo        Please select Option [5] to load a file.
     echo.
     pause
@@ -160,7 +160,7 @@ echo.
 if exist "%~dp0flash.bat" (
     call "%~dp0flash.bat" "%dragged_file%"
 ) else (
-    echo [FAIL] Could not find flash.bat.
+    echo [%CL_R%FAIL%CL_NC%] Could not find flash.bat.
     pause
 )
 goto :menu_top
@@ -182,7 +182,7 @@ for %%A in ("%dragged_file%") do (
 if "%dragged_file%"=="" goto :menu_top
 if not exist "%dragged_file%" (
     echo.
-    echo [FAIL] File does not exist.
+    echo [%CL_R%FAIL%CL_NC%] File does not exist.
     pause
     set "dragged_file="
     set "display_name="
@@ -191,7 +191,7 @@ if not exist "%dragged_file%" (
 for %%C in ("{" "}") do (
     echo(%dragged_file%| findstr /L /C:"%%~C" >nul
     if not errorlevel 1 (
-        echo [FAIL] Path contains unsupported character: %%~C
+        echo [%CL_R%FAIL%CL_NC%] Path contains unsupported character: %%~C
         echo        Please rename.
         pause
         set "dragged_file="
@@ -204,7 +204,7 @@ for /f "delims=" %%R in ('powershell -NoProfile -Command ^
     set "ascii_result=%%R"
 )
 if "%ascii_result%"=="NON_ASCII" (
-    echo [FAIL] Path contains non-ASCII characters.
+    echo [%CL_R%FAIL%CL_NC%] Path contains non-ASCII characters.
     echo        Path: %dragged_file%
     echo        Please rename using only English letters.
     pause
@@ -218,7 +218,7 @@ for %%A in ("%dragged_file%") do (
 )
 if /i not "%extension%"==".bin" (
     echo.
-    echo [FAIL] Only .bin files are allowed.
+    echo [%CL_R%FAIL%CL_NC%] Only .bin files are allowed.
     pause
     set "dragged_file="
     set "display_name="
@@ -234,4 +234,3 @@ echo.
 echo Exiting utility. Bye!
 timeout /t 2 >nul
 exit /b 0
-
