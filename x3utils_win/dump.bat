@@ -123,7 +123,7 @@ for /f %%i in ('powershell -NoProfile -Command "$bytes = [System.IO.File]::ReadA
 if "%all_zeros%"=="True" (
     echo.
     echo [%CL_R%FAIL%CL_NC%] Dump file contains only zeros.
-    echo        nRST was not released correctly during step 3.
+    echo        nRST was not released correctly during step 2.
     echo        Please try again.
     goto :fail_exit
 )
