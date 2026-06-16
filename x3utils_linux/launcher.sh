@@ -72,7 +72,7 @@ while true; do
     clear
 
     echo "==============================================================="
-    echo "          ST-LINK UTILITIES FOR X3 scooters - v$VERSION"
+    echo "          ST-LINK UTILITIES FOR X3 scooters - $VERSION"
     echo "==============================================================="
     echo
 

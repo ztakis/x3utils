@@ -19,7 +19,7 @@ SCRIPTS_DIR="$SCRIPT_DIR/oocd/scripts"
 INTERFACE="interface/stlink.cfg"
 TARGET="target/at32f415xx.cfg"
 
-CONNECT_TIMEOUT=7
+CONNECT_TIMEOUT=3
 
 # --- COMMON SETTINGS ---
 
