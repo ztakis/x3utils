@@ -77,9 +77,9 @@ set "norm_raw_dump=%raw_dump:\=/%"
 set "norm_patched_dump=%patched_dump:\=/%"
 
 echo.
-echo =======================================================
-echo            Step 1: Dumping Current Memory
-echo =======================================================
+echo ============================================================
+echo              Step 1: Dumping Current Memory
+echo ============================================================
 echo.
 echo Output File:
 echo        "%raw_dump%"
@@ -141,9 +141,9 @@ echo.
 pause
 
 echo.
-echo =======================================================
-echo          Step 2: Injecting Patch Sequence
-echo =======================================================
+echo ============================================================
+echo              Step 2: Injecting Patch Sequence
+echo ============================================================
 echo.
 
 powershell -NoProfile -Command ^
@@ -193,9 +193,9 @@ echo.
 pause
 
 echo.
-echo =======================================================
-echo          Step 3: Flashing Modified Firmware
-echo =======================================================
+echo ============================================================
+echo             Step 3: Flashing Modified Firmware
+echo ============================================================
 echo.
 
 :: Run OpenOCD flash using relative configuration mappings
