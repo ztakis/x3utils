@@ -70,6 +70,16 @@ if [[ "$bin_file_size" != "$EXPECTED_SIZE" ]]; then
     exit 1
 fi
 
+# Ensure bin file is not all the same byte value
+unique_bytes=$(od -An -tx1 "$bin_file_path" | tr -s ' \n' '\n' | grep -E '^[0-9a-f]{2}$' | sort -u | wc -l)
+
+if [ "$unique_bytes" -eq 1 ]; then
+    echo
+    echo -e "[${CL_R}FAIL${CL_NC}] Bin file contains only a single repeated byte value."
+    echo "       Please try again."
+    exit 1
+fi
+
 echo
 # Prompt confirmation
 while true; do
