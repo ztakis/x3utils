@@ -96,7 +96,7 @@ if not "%bin_file_size%"=="%EXPECTED_SIZE%" (
     goto :fail_exit
 )
 
-:: Ensure bin file is not all zeros
+:: Check bin file bytes
 for /f %%i in ('powershell -NoProfile -Command "$bytes = [System.IO.File]::ReadAllBytes('%bin_file_path%'); ($bytes | Select-Object -Unique).Count -eq 1"') do set "all_zeros=%%i"
 
 if "%all_zeros%"=="True" (

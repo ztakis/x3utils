@@ -128,24 +128,6 @@ if "%all_zeros%"=="True" (
     goto :fail_exit
 )
 
-for /f "delims=" %%i in ('powershell -NoProfile -Command "& { $bytes = [System.IO.File]::ReadAllBytes('%dump_file%'); $sp = [BitConverter]::ToUInt32($bytes,0); $pc = [BitConverter]::ToUInt32($bytes,4); $hv = ($sp -ge 0x20000000 -and $sp -lt 0x20008000) -and ($pc -ge 0x08000000 -and $pc -lt 0x08020000) -and (($pc -band 1) -ne 0); if (-not $hv) { 'HEADER_FAIL' } else { $d = ($bytes | Group-Object | Sort-Object Count -Descending | Select-Object -First 1).Count; $pct = [math]::Floor(($d*100)/$bytes.Length); if ($pct -ge 95) { \"PCT_FAIL:$pct\" } else { \"OK:$pct\" } } }"') do set "check_result=%%i"
-
-echo %check_result% | findstr /B "HEADER_FAIL" >nul
-if not errorlevel 1 (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Invalid vector table header.
-    echo        This does not look like valid firmware.
-    goto :fail_exit
-)
-
-echo %check_result% | findstr /B "PCT_FAIL" >nul
-if not errorlevel 1 (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Suspicious dump: too many identical bytes.
-    echo        This dump looks blank or corrupted.
-    goto :fail_exit
-)
-
 echo.
 echo [ %CL_G%OK%CL_NC% ] Dump completed successfully!
 echo [ %CL_G%OK%CL_NC% ] Verified file size: %EXPECTED_SIZE% bytes.

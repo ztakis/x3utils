@@ -39,10 +39,9 @@ if not "%dragged_file%"=="" (
 :: Show menu options
 echo.
 echo  [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)
-echo  [2] Flash SHU compatible (GT3 - Experimental)
-echo  [3] Run Full Memory Dump (128 KB)
-echo  [4] Flash Loaded File to Chip
-echo  [5] Load / Change Target .bin File
+echo  [2] Run Full Memory Dump (128 KB)
+echo  [3] Flash Loaded File to Chip
+echo  [4] Load / Change Target .bin File
 echo.
 if "!ALT!"=="X" (
     echo  [A] %CL_Y%[!ALT!] Alternative target configuration (connect-under-reset^)%CL_NC%
@@ -50,27 +49,26 @@ if "!ALT!"=="X" (
     echo  [A] [!ALT!] Alternative target configuration (connect-under-reset^)
 )
 echo.
-echo  [6] Exit
+echo  [5] Exit
 echo.
 echo ==================================================================
 echo.
 
 :: Get user choice
 set "choice="
-set /p "choice=Select an option [1-6, A]: "
+set /p "choice=Select an option [1-5, A]: "
 if "%choice%"=="" goto :menu_top
 if /i "%choice%"=="a" goto :toggle_alt
 if "%choice%"=="1" goto :opt_compat
-if "%choice%"=="2" goto :opt_gt3_compat
-if "%choice%"=="3" goto :opt_dump
-if "%choice%"=="4" goto :opt_flash
-if "%choice%"=="5" goto :opt_load
-if "%choice%"=="6" goto :exit_menu
+if "%choice%"=="2" goto :opt_dump
+if "%choice%"=="3" goto :opt_flash
+if "%choice%"=="4" goto :opt_load
+if "%choice%"=="5" goto :exit_menu
 
 :: Invalid choice handling
 echo.
 echo [%CL_R%FAIL%CL_NC%] Invalid selection.
-echo        Please choose 1-6 or A.
+echo        Please choose 1-5 or A.
 timeout /t 2 >nul
 goto :menu_top
 
@@ -115,19 +113,6 @@ if exist "%~dp0flash_compat.bat" (
     pause
 )
 goto :menu_top
-    
-:: Call flash_gt3_compat.bat
-:opt_gt3_compat
-echo.
-echo Launching Flash GT3 SHU compatible...
-echo.
-if exist "%~dp0flash_gt3_compat.bat" (
-    call "%~dp0flash_gt3_compat.bat"
-) else (
-    echo [%CL_R%FAIL%CL_NC%] Could not find flash_gt3_compat.bat.
-    pause
-)
-goto :menu_top
 
 :: Call dump.bat
 :opt_dump
@@ -147,7 +132,7 @@ goto :menu_top
 if "%dragged_file%"=="" (
     echo.
     echo [%CL_R%FAIL%CL_NC%] You cannot flash without loading a file first.
-    echo        Please select Option [5] to load a file.
+    echo        Please select Option [4] to load a file.
     echo.
     pause
     goto :menu_top
