@@ -74,7 +74,7 @@ echo.
 :: If the target is read-protected, dumping should fail
 :: safely without erasing firmware contents.
 
-if "%TARGET%"=="target\at32f415_alt.cfg" (
+if "%TARGET%"=="target\at32f415_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
         -f "%TARGET%" ^
         -c "guided_connect {%CONNECT_TIMEOUT%}" ^
