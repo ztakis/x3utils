@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -e
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load configuration settings
@@ -62,7 +60,7 @@ echo
 # If the target is read-protected, dumping should fail
 # safely without erasing firmware contents.
 
-if [[ "$TARGET" == "target/at32f415xx_alt.cfg" ]]; then
+if [[ "$TARGET" == "target/at32f415xx_c45.cfg" ]]; then
     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
         -f "$TARGET" \
         -c "guided_connect {$CONNECT_TIMEOUT}" \

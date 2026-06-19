@@ -71,7 +71,7 @@ echo
 # Still no unlock operation.
 # We assume the target is not read-protected.
 
-if [[ "$TARGET" == "target/at32f415xx_alt.cfg" ]]; then
+if [[ "$TARGET" == "target/at32f415xx_c45.cfg" ]]; then
     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
         -f "$TARGET" \
         -c "guided_flash_connect {$CONNECT_TIMEOUT}" \

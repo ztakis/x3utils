@@ -1,13 +1,5 @@
 #!/bin/bash
 
-# --- COLORS ---
-export CL_NC="\033[0m"
-export CL_R="\033[1;31m"
-export CL_G="\033[1;32m"
-export CL_Y="\033[1;33m"
-export CL_M="\033[1;35m"
-export CL_C="\033[1;36m"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION=$(<"$SCRIPT_DIR/VERSION")
 
@@ -129,19 +121,19 @@ while true; do
     echo
     echo -e " [ ${CL_C}Connection Options - Enter A, B, or C to change${CL_NC} ]"
     if [[ "$current_radio" == "A" ]]; then
-        echo -e "  [${CL_C}X${CL_NC}] A - Default /  Hold blinker buttons"
+        echo -e "  [${CL_C}X${CL_NC}] A - Hold blinker buttons"
     else
-        echo "  [ ] A - Default /  Hold blinker buttons"
+        echo "  [ ] A - Hold blinker buttons"
     fi
     if [[ "$current_radio" == "B" ]]; then
-        echo -e "  [${CL_Y}X${CL_NC}] B - C45     /  Clone ST-Link"
+        echo -e "  [${CL_Y}X${CL_NC}] B - C45 / Clone ST-Link"
     else
-        echo "  [ ] B - C45     /  Clone ST-Link"
+        echo "  [ ] B - C45 / Clone ST-Link"
     fi
     if [[ "$current_radio" == "C" ]]; then
-        echo -e "  [${CL_M}X${CL_NC}] C - nRST    /  Genuine ST-Link"
+        echo -e "  [${CL_M}X${CL_NC}] C - C45 / Genuine ST-Link"
     else
-        echo "  [ ] C - nRST    /  Genuine ST-Link"
+        echo "  [ ] C - C45 / Genuine ST-Link"
     fi
     echo
 
