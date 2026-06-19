@@ -17,9 +17,9 @@ OPENOCD_BIN="$SCRIPT_DIR/oocd/bin/openocd"
 SCRIPTS_DIR="$SCRIPT_DIR/oocd/scripts"
 
 INTERFACE="interface/stlink.cfg"
-TARGET="target/at32f415xx.cfg"
+TARGET="target/at32f415xx_c45.cfg"
 
-CONNECT_TIMEOUT=3
+CONNECT_TIMEOUT=5
 
 # --- COMMON SETTINGS ---
 

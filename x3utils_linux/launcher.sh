@@ -1,7 +1,12 @@
 #!/bin/bash
 
-CL_NC="\033[0m"
-CL_R="\033[1;31m"
+# --- COLORS ---
+export CL_NC="\033[0m"
+export CL_R="\033[1;31m"
+export CL_G="\033[1;32m"
+export CL_Y="\033[1;33m"
+export CL_M="\033[1;35m"
+export CL_C="\033[1;36m"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION=$(<"$SCRIPT_DIR/VERSION")
@@ -25,93 +30,160 @@ if [[ ! -w "$SCRIPT_DIR/config.sh" ]]; then
     fi
 fi
 
-# Detect current ALT state from config.sh
-detect_alt() {
-    if grep -q 'TARGET="target/at32f415xx_alt\.cfg"' "$SCRIPT_DIR/config.sh"; then
-        echo "X"
+source "$SCRIPT_DIR/config.sh"
+
+# --- RADIO GROUP: detect current TARGET from config.sh ---
+detect_radio() {
+    if grep -q 'at32f415xx_c45\.cfg' "$SCRIPT_DIR/config.sh"; then
+        echo "B"
+    elif grep -q 'at32f415xx_nrst\.cfg' "$SCRIPT_DIR/config.sh"; then
+        echo "C"
     else
-        echo " "
+        echo "A"
     fi
 }
 
-# Toggle ALT: swap TARGET filename in config.sh
-toggle_alt() {
-    local tmp="$SCRIPT_DIR/config.tmp"
+# --- RADIO GROUP: write new TARGET to config.sh ---
+set_radio() {
+    local new_radio="$1"
+    local new_cfg tmp
 
-    if [[ "$ALT" == " " ]]; then
-        sed 's|at32f415xx\.cfg|at32f415xx_alt.cfg|' "$SCRIPT_DIR/config.sh" > "$tmp"
-    else
-        sed 's|at32f415xx_alt\.cfg|at32f415xx.cfg|' "$SCRIPT_DIR/config.sh" > "$tmp"
-    fi
+    [[ "$new_radio" == "$current_radio" ]] && return 0
+
+    case "$new_radio" in
+        A) new_cfg="at32f415xx.cfg" ;;
+        B) new_cfg="at32f415xx_c45.cfg" ;;
+        C) new_cfg="at32f415xx_nrst.cfg" ;;
+    esac
+
+    tmp="$SCRIPT_DIR/config.tmp"
+    sed "s|target/[^\"]*\.cfg|target/$new_cfg|" "$SCRIPT_DIR/config.sh" > "$tmp"
 
     if [[ ! -f "$tmp" ]]; then
         echo
         echo -e "[${CL_R}FAIL${CL_NC}] Could not write config update. config.sh unchanged."
         read -rp "Press ENTER to continue..."
-        return
+        return 1
     fi
 
     mv "$tmp" "$SCRIPT_DIR/config.sh"
 
     # Verify the change took effect
-    local new_alt
-    new_alt=$(detect_alt)
-    if [[ "$new_alt" == "$ALT" ]]; then
+    local check
+    check=$(detect_radio)
+    if [[ "$check" != "$new_radio" ]]; then
         echo
         echo -e "[${CL_R}FAIL${CL_NC}] config.sh did not update correctly."
         read -rp "Press ENTER to continue..."
-        return
+        return 1
     fi
 
-    ALT="$new_alt"
+    current_radio="$new_radio"
+    # Keep in-memory TARGET in sync
+    TARGET="target/$new_cfg"
 }
 
-ALT=$(detect_alt)
+# --- TIMEOUT: write new CONNECT_TIMEOUT to config.sh ---
+set_timeout() {
+    local new_val="$1"
+    local tmp="$SCRIPT_DIR/config.tmp"
+
+    sed "s|CONNECT_TIMEOUT=[0-9]*|CONNECT_TIMEOUT=$new_val|" "$SCRIPT_DIR/config.sh" > "$tmp"
+
+    if [[ ! -f "$tmp" ]]; then
+        echo
+        echo -e "[${CL_R}FAIL${CL_NC}] Could not write config update. config.sh unchanged."
+        read -rp "Press ENTER to continue..."
+        return 1
+    fi
+
+    mv "$tmp" "$SCRIPT_DIR/config.sh"
+    timeout_val="$new_val"
+}
+
+current_radio=$(detect_radio)
+timeout_val="$CONNECT_TIMEOUT"
 
 while true; do
     clear
 
-    echo "==============================================================="
-    echo "          ST-LINK UTILITIES FOR X3 scooters - $VERSION"
-    echo "==============================================================="
+    echo " ==============================================================="
+    echo "           ST-LINK UTILITIES FOR X3 scooters - $VERSION"
+    echo " ==============================================================="
     echo
 
     if [[ -n "$dragged_file" ]]; then
         echo " [LOADED] Target File:"
-        echo "          \"$display_name\""
+        echo -e "          ${CL_Y}\"$display_name\"${CL_NC}"
     else
         echo " [LOADED] No file loaded"
     fi
 
     echo
-    echo " [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)"
-    echo " [2] Flash SHU compatible (GT3 - Experimental)"
-    echo " [3] Run Full Memory Dump (128 KB)"
-    echo " [4] Flash Loaded File to Chip"
-    echo " [5] Load / Change Target .bin File"
+    echo -e " [ ${CL_C}Actions - Enter 1-5 to execute${CL_NC} ]"
+    echo "  [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)"
+    echo "  [2] Run Full Memory Dump (128 KB)"
+    echo "  [3] Flash Loaded File to Chip"
+    echo "  [4] Load / Change Target .bin File"
+    echo "  [5] Exit"
     echo
-    if [[ "$ALT" == "X" ]]; then
-        echo -e " \033[33m[A] [X] Alternative target configuration (connect-under-reset)\033[0m"
+    echo -e " [ ${CL_C}Connection Options - Enter A, B, or C to change${CL_NC} ]"
+    if [[ "$current_radio" == "A" ]]; then
+        echo -e "  [${CL_C}X${CL_NC}] A - Default /  Hold blinker buttons"
     else
-        echo " [A] [ ] Alternative target configuration (connect-under-reset)"
+        echo "  [ ] A - Default /  Hold blinker buttons"
+    fi
+    if [[ "$current_radio" == "B" ]]; then
+        echo -e "  [${CL_Y}X${CL_NC}] B - C45     /  Clone ST-Link"
+    else
+        echo "  [ ] B - C45     /  Clone ST-Link"
+    fi
+    if [[ "$current_radio" == "C" ]]; then
+        echo -e "  [${CL_M}X${CL_NC}] C - nRST    /  Genuine ST-Link"
+    else
+        echo "  [ ] C - nRST    /  Genuine ST-Link"
     fi
     echo
-    echo " [6] Exit"
-    echo
-    echo "==============================================================="
+
+    if [[ "$current_radio" == "B" ]]; then
+        echo -e " [ ${CL_C}Configuration${CL_NC} ]"
+        echo "  [T] Set countdown timer (Current: ${timeout_val}s)"
+        echo
+    fi
+
+    echo " ==============================================================="
     echo
 
-    read -rp "Select an option [1-6, A]: " choice
+    read -rp "> Enter option: " choice
 
     case "$choice" in
-        a|A)
-            toggle_alt
+
+        a|A) set_radio A ;;
+        b|B) set_radio B ;;
+        c|C) set_radio C ;;
+
+        t|T)
+            if [[ "$current_radio" != "B" ]]; then
+                echo
+                echo -e "[${CL_R}FAIL${CL_NC}] Invalid selection."
+                sleep 2
+                continue
+            fi
+            echo
+            read -rp "Enter new countdown timer value (0-60): " new_timeout
+            if ! [[ "$new_timeout" =~ ^[0-9]+$ ]] || (( new_timeout > 60 )); then
+                echo
+                echo -e "[${CL_R}FAIL${CL_NC}] Invalid value. Please enter a number between 0 and 60."
+                read -rp "Press ENTER to continue..."
+            else
+                set_timeout "$new_timeout"
+            fi
             ;;
+
         1)
             echo
             echo "Launching Flash SHU compatible (ZT3/G3/F3/F3Pro)..."
             echo
-
             if [[ -f "$SCRIPT_DIR/flash_compat.sh" ]]; then
                 bash "$SCRIPT_DIR/flash_compat.sh"
                 if [[ $? -ne 0 ]]; then
@@ -123,27 +195,11 @@ while true; do
                 read -rp "Press ENTER to continue..."
             fi
             ;;
-        2)
-            echo
-            echo "Launching Flash GT3 SHU compatible..."
-            echo
 
-            if [[ -f "$SCRIPT_DIR/flash_gt3_compat.sh" ]]; then
-                bash "$SCRIPT_DIR/flash_gt3_compat.sh"
-                if [[ $? -ne 0 ]]; then
-                    echo -e "[${CL_R}FAIL${CL_NC}] Failed to launch Flash GT3 SHU compatible."
-                    read -rp "Press ENTER to continue..."
-                fi
-            else
-                echo -e "[${CL_R}FAIL${CL_NC}] Could not find flash_gt3_compat.sh."
-                read -rp "Press ENTER to continue..."
-            fi
-            ;;
-        3)
+        2)
             echo
             echo "Launching Full Memory Dump Utility..."
             echo
-
             if [[ -f "$SCRIPT_DIR/dump.sh" ]]; then
                 bash "$SCRIPT_DIR/dump.sh"
                 if [[ $? -ne 0 ]]; then
@@ -155,21 +211,20 @@ while true; do
                 read -rp "Press ENTER to continue..."
             fi
             ;;
-        4)
+
+        3)
             if [[ -z "$dragged_file" ]]; then
                 echo
                 echo -e "[${CL_R}FAIL${CL_NC}] You cannot flash without loading a file first."
-                echo "       Please select Option [5] to load a file."
+                echo "       Please select Option [4] to load a file."
                 echo
                 read -rp "Press ENTER to continue..."
                 continue
             fi
-
             echo
             echo "Launching Flash Utility for:"
             echo "       \"$display_name\""
             echo
-
             if [[ -f "$SCRIPT_DIR/flash.sh" ]]; then
                 bash "$SCRIPT_DIR/flash.sh" "$dragged_file"
                 if [[ $? -ne 0 ]]; then
@@ -180,7 +235,8 @@ while true; do
                 read -rp "Press ENTER to continue..."
             fi
             ;;
-        5)
+
+        4)
             echo
             echo "======================================================"
             echo "       Please enter the path to your .bin file"
@@ -220,7 +276,6 @@ while true; do
             fi
 
             extension="${input_file##*.}"
-
             if [[ "${extension,,}" != "bin" ]]; then
                 echo
                 echo -e "[${CL_R}FAIL${CL_NC}] Only .bin files are allowed."
@@ -233,18 +288,21 @@ while true; do
             dragged_file="$(readlink -f "$input_file" 2>/dev/null || echo "$input_file")"
             display_name="$(basename "$dragged_file")"
             ;;
-        6)
+
+        5)
             clear
             echo
             echo "Exiting utility. Bye!"
-            sleep 2
+            sleep 1
             exit 0
             ;;
+
         *)
             echo
             echo -e "[${CL_R}FAIL${CL_NC}] Invalid selection."
-            echo "       Please choose 1-6 or A."
-            sleep 2
+            echo "       Please choose 1-5, A-C$(  [[ "$current_radio" == "B" ]] && echo ", or T")."
+            sleep 1
             ;;
+
     esac
 done
