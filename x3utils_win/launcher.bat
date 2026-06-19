@@ -15,91 +15,150 @@ call "%~dp0config.cmd"
 set "dragged_file="
 set "display_name="
 
-:: Detect current connect-under-reset state from config.cmd
-set "ALT= "
-for /f "tokens=*" %%L in ('findstr /i "TARGET" "%~dp0config.cmd"') do (
-    echo %%L | findstr /i "alt" >nul && set "ALT=X"
-)
+:: Initial settings
+set "timeout_val=%CONNECT_TIMEOUT%"
 
-:menu_top
+:: Detect current radio state from config.cmd TARGET line
+call :detect_radio
+
+:menu_loop
 cls
-echo ==================================================================
-echo           ST-LINK UTILITIES FOR X3 scooters - %VERSION%          
-echo ==================================================================
+echo  ============================================================
+echo           ST-LINK UTILITIES FOR X3 scooters - %VERSION%
+echo  ============================================================
 echo.
 
 :: Show dragged file if present
 if not "%dragged_file%"=="" (
     echo  [LOADED] Target File:
-    echo           "%display_name%"
+    echo           %CL_Y%"%display_name%"%CL_NC%
 ) else (
     echo  [LOADED] No file loaded
 )
+echo.
 
-:: Show menu options
+echo  [ %CL_C%Actions - Press 1-5 to execute%CL_NC% ]
+echo   [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)
+echo   [2] Run Full Memory Dump (128 KB)
+echo   [3] Flash Loaded File to Chip
+echo   [4] Load / Change Target .bin File
+echo   [5] Exit
 echo.
-echo  [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)
-echo  [2] Run Full Memory Dump (128 KB)
-echo  [3] Flash Loaded File to Chip
-echo  [4] Load / Change Target .bin File
+echo  [ %CL_C%Connection Options - Press A, B, or C to change%CL_NC% ]
+if "%current_radio%"=="A" (echo   [%CL_C%X%CL_NC%] A - Hold blinker buttons) else (echo   [ ] A - Hold blinker buttons)
+if "%current_radio%"=="B" (echo   [%CL_Y%X%CL_NC%] B - C45 / Clone ST-Link) else (echo   [ ] B - C45 / Clone ST-Link)
+if "%current_radio%"=="C" (echo   [%CL_M%X%CL_NC%] C - C45 / Genuine ST-Link) else (echo   [ ] C - C45 / Genuine ST-Link)
 echo.
-if "!ALT!"=="X" (
-    echo  [A] %CL_Y%[!ALT!] Alternative target configuration (connect-under-reset^)%CL_NC%
-) else (
-    echo  [A] [!ALT!] Alternative target configuration (connect-under-reset^)
+if "%current_radio%"=="B" (
+    echo  [ %CL_C%Configuration%CL_NC% ]
+    echo   T. Set countdown timer ^(Current: %timeout_val%s^)
+    echo.
 )
-echo.
-echo  [5] Exit
-echo.
-echo ==================================================================
-echo.
+if "%current_radio%"=="B" goto :menu_choice_B
+choice /c 12345ABC /n /m "> Press a key (1-5, A-C): "
+goto :menu_choice_done
+:menu_choice_B
+choice /c 12345ABCT /n /m "> Press a key (1-5, A-C, or T): "
+:menu_choice_done
+set "key=%errorlevel%"
 
-:: Get user choice
-set "choice="
-set /p "choice=Select an option [1-5, A]: "
-if "%choice%"=="" goto :menu_top
-if /i "%choice%"=="a" goto :toggle_alt
-if "%choice%"=="1" goto :opt_compat
-if "%choice%"=="2" goto :opt_dump
-if "%choice%"=="3" goto :opt_flash
-if "%choice%"=="4" goto :opt_load
-if "%choice%"=="5" goto :exit_menu
+:: Handle A, B, C Radio Toggles (Errorlevels 6, 7, 8)
+if %key% equ 6 (call :set_radio A & goto :menu_loop)
+if %key% equ 7 (call :set_radio B & goto :menu_loop)
+if %key% equ 8 (call :set_radio C & goto :menu_loop)
 
-:: Invalid choice handling
-echo.
-echo [%CL_R%FAIL%CL_NC%] Invalid selection.
-echo        Please choose 1-5 or A.
-timeout /t 2 >nul
-goto :menu_top
-
-:: Toggle connect-under-reset (edits TARGET line in config.cmd in place)
-:toggle_alt
-if "!ALT!"==" " (
-    powershell -NoProfile -Command "(Get-Content '%~dp0config.cmd') -replace 'at32f415\.cfg', 'at32f415_alt.cfg' | Set-Content '%~dp0config.tmp'"
-) else (
-    powershell -NoProfile -Command "(Get-Content '%~dp0config.cmd') -replace 'at32f415_alt\.cfg', 'at32f415.cfg' | Set-Content '%~dp0config.tmp'"
+:: Handle changing the Timeout variable (Errorlevel 9)
+if %key% equ 9 (
+    echo.
+    set /p "timeout_val=Enter new countdown timer value (0-60): "
+    :: Validate: must be a number between 0 and 60
+    echo !timeout_val!| findstr /r "^[0-9][0-9]*$" >nul
+    if errorlevel 1 (
+        echo.
+        echo [%CL_R%FAIL%CL_NC%] Invalid value. Please enter a number between 0 and 60.
+        set "timeout_val=%CONNECT_TIMEOUT%"
+        pause
+        goto :menu_loop
+    )
+    if !timeout_val! GTR 60 (
+        echo.
+        echo [%CL_R%FAIL%CL_NC%] Value out of range. Please enter a number between 0 and 60.
+        set "timeout_val=%CONNECT_TIMEOUT%"
+        pause
+        goto :menu_loop
+    )
+    call :set_timeout
+    goto :menu_loop
 )
+
+:: Handle 1-5 GOTO jumps (Errorlevels 1-5)
+if %key% equ 1 goto :opt_compat
+if %key% equ 2 goto :opt_dump
+if %key% equ 3 goto :opt_flash
+if %key% equ 4 goto :opt_load
+if %key% equ 5 goto :exit_menu
+
+goto :menu_loop
+
+:: ----------------------------------------------------
+:: Radio group detection / writing
+:: ----------------------------------------------------
+
+:: Reads config.cmd TARGET line and sets current_radio to A, B, or C
+:detect_radio
+set "current_radio=A"
+for /f "tokens=*" %%L in ('findstr /i "TARGET" "%~dp0config.cmd"') do (
+    echo %%L | findstr /i "at32f415_c45.cfg" >nul && set "current_radio=B"
+    echo %%L | findstr /i "at32f415_nrst.cfg" >nul && set "current_radio=C"
+)
+exit /b 0
+
+:: Writes the chosen radio option's .cfg into config.cmd's TARGET line
+:set_radio
+set "new_radio=%~1"
+if "%new_radio%"=="%current_radio%" exit /b 0
+
+if "%new_radio%"=="A" set "new_cfg=at32f415.cfg"
+if "%new_radio%"=="B" set "new_cfg=at32f415_c45.cfg"
+if "%new_radio%"=="C" set "new_cfg=at32f415_nrst.cfg"
+
+powershell -NoProfile -Command "(Get-Content '%~dp0config.cmd') -replace 'target\\[^\\]+\.cfg', 'target\%new_cfg%' | Set-Content '%~dp0config.tmp' -Encoding Ascii"
+
 :: Verify temp file was written before replacing
 if not exist "%~dp0config.tmp" (
     echo.
     echo [%CL_R%FAIL%CL_NC%] Could not write config update. config.cmd unchanged.
     pause
-    goto :menu_top
+    exit /b 1
 )
 move /y "%~dp0config.tmp" "%~dp0config.cmd" >nul
+
 :: Confirm the change actually took effect
-set "ALT_CHECK= "
-for /f "tokens=*" %%L in ('findstr /i "TARGET" "%~dp0config.cmd"') do (
-    echo %%L | findstr /i "alt" >nul && set "ALT_CHECK=X"
-)
-if "!ALT!"=="!ALT_CHECK!" (
+call :detect_radio
+if not "%current_radio%"=="%new_radio%" (
     echo.
     echo [%CL_R%FAIL%CL_NC%] config.cmd did not update correctly.
     pause
-    goto :menu_top
+    exit /b 1
 )
-set "ALT=!ALT_CHECK!"
-goto :menu_top
+exit /b 0
+
+:: Writes the new timeout value into config.cmd's CONNECT_TIMEOUT line
+:set_timeout
+powershell -NoProfile -Command "(Get-Content '%~dp0config.cmd') -replace 'CONNECT_TIMEOUT=\d+', 'CONNECT_TIMEOUT=!timeout_val!' | Set-Content '%~dp0config.tmp' -Encoding Ascii"
+
+if not exist "%~dp0config.tmp" (
+    echo.
+    echo [%CL_R%FAIL%CL_NC%] Could not write config update. config.cmd unchanged.
+    pause
+    exit /b 1
+)
+move /y "%~dp0config.tmp" "%~dp0config.cmd" >nul
+exit /b 0
+
+:: ----------------------------------------------------
+:: Action Labels (logic carried over from original script)
+:: ----------------------------------------------------
 
 :: Call flash_compat.bat
 :opt_compat
@@ -112,7 +171,7 @@ if exist "%~dp0flash_compat.bat" (
     echo [%CL_R%FAIL%CL_NC%] Could not find flash_compat.bat.
     pause
 )
-goto :menu_top
+goto :menu_loop
 
 :: Call dump.bat
 :opt_dump
@@ -125,7 +184,7 @@ if exist "%~dp0dump.bat" (
     echo [%CL_R%FAIL%CL_NC%] Could not find dump.bat.
     pause
 )
-goto :menu_top
+goto :menu_loop
 
 :: Call flash.bat
 :opt_flash
@@ -135,7 +194,7 @@ if "%dragged_file%"=="" (
     echo        Please select Option [4] to load a file.
     echo.
     pause
-    goto :menu_top
+    goto :menu_loop
 )
 echo.
 echo Launching Flash Utility for:
@@ -148,7 +207,7 @@ if exist "%~dp0flash.bat" (
     echo [%CL_R%FAIL%CL_NC%] Could not find flash.bat.
     pause
 )
-goto :menu_top
+goto :menu_loop
 
 :: Load bin file by drag n drop or cancel
 :opt_load
@@ -160,18 +219,18 @@ echo =======================================================
 echo.
 
 set /p "dragged_file=Drop file here (or type 'back'): "
-if /i "%dragged_file%"=="back" goto :menu_top
+if /i "%dragged_file%"=="back" goto :menu_loop
 for %%A in ("%dragged_file%") do (
     set "dragged_file=%%~fA"
 )
-if "%dragged_file%"=="" goto :menu_top
+if "%dragged_file%"=="" goto :menu_loop
 if not exist "%dragged_file%" (
     echo.
     echo [%CL_R%FAIL%CL_NC%] File does not exist.
     pause
     set "dragged_file="
     set "display_name="
-    goto :menu_top
+    goto :menu_loop
 )
 for %%C in ("{" "}") do (
     echo(%dragged_file%| findstr /L /C:"%%~C" >nul
@@ -181,7 +240,7 @@ for %%C in ("{" "}") do (
         pause
         set "dragged_file="
         set "display_name="
-        goto :menu_top
+        goto :menu_loop
     )
 )
 for /f "delims=" %%R in ('powershell -NoProfile -Command ^
@@ -195,7 +254,7 @@ if "%ascii_result%"=="NON_ASCII" (
     pause
     set "dragged_file="
     set "display_name="
-    goto :menu_top
+    goto :menu_loop
 )
 set "extension="
 for %%A in ("%dragged_file%") do (
@@ -207,10 +266,10 @@ if /i not "%extension%"==".bin" (
     pause
     set "dragged_file="
     set "display_name="
-    goto :menu_top
+    goto :menu_loop
 )
 for %%i in ("%dragged_file%") do set "display_name=%%~nxi"
-goto :menu_top
+goto :menu_loop
 
 :: Exit option
 :exit_menu
