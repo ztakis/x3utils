@@ -45,7 +45,7 @@ echo   [4] Load / Change Target .bin File
 echo   [5] Exit
 echo.
 echo  [ %CL_C%Connection Options - Press A, B, or C to change%CL_NC% ]
-if "%current_radio%"=="A" (echo   [%CL_C%X%CL_NC%] A - Hold blinker buttons) else (echo   [ ] A - Hold blinker buttons)
+if "%current_radio%"=="A" (echo   [%CL_C%X%CL_NC%] A - Default / Blinker buttons) else (echo   [ ] A - Default / Blinker buttons)
 if "%current_radio%"=="B" (echo   [%CL_Y%X%CL_NC%] B - C45 / Clone ST-Link) else (echo   [ ] B - C45 / Clone ST-Link)
 if "%current_radio%"=="C" (echo   [%CL_M%X%CL_NC%] C - C45 / Genuine ST-Link) else (echo   [ ] C - C45 / Genuine ST-Link)
 echo.
