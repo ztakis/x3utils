@@ -94,7 +94,9 @@ You can also ground the blinker connectors instead of pressing the buttons.
 
 This a guided connect-under-reset procedure, where the user grounds and releases C45  
 following on screen prompts.  
-
+<br />
+<img width="594" height="796" alt="image" src="https://github.com/user-attachments/assets/afbff8ce-2ff7-4534-bbaa-4ea43c558885" />
+<br /><br />
 <img width="365" height="400" alt="7" src="https://github.com/user-attachments/assets/53c5ccf4-cc61-4ab3-935c-187bc2bd4bfe" />
 <img width="1428" height="964" alt="image" src="https://github.com/user-attachments/assets/d591110c-1ac4-4e9c-849d-8442738f4258" />
 <br /><br />
