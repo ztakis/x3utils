@@ -4,9 +4,9 @@
 set "OPENOCD_BIN=%~dp0oocd\at32f415\bin\openocd.exe"
 set "SCRIPTS_DIR=%~dp0oocd\at32f415\scripts"
 set "INTERFACE=interface\stlink.cfg"
-set "TARGET=target\at32f415.cfg"
+set "TARGET=target\at32f415_c45.cfg"
 
-set "CONNECT_TIMEOUT=5"
+set "CONNECT_TIMEOUT=3"
 
 :: --- COMMON SETTINGS ---
 set "EXPECTED_SIZE=131072"
