@@ -1,1 +1,3 @@
 README in progress ...
+
+<img width="566" height="479" alt="terminal" src="https://github.com/user-attachments/assets/39b56695-68e1-4b1e-ae01-d7472b9570c3" />
