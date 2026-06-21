@@ -1,6 +1,6 @@
 README in progress ...
 
-<img width="566" height="479" alt="terminal" src="https://github.com/user-attachments/assets/39b56695-68e1-4b1e-ae01-d7472b9570c3" />
+<img width="567" height="535" alt="terminal4" src="https://github.com/user-attachments/assets/1248fe25-7a34-4b01-b2d7-100b0c89a941" />
 
 # Main Menu
 
@@ -24,7 +24,7 @@ Close the utility.
 **Options [1] and [3] force a full backup first**
 <br /><br />
 
-**[A] Default mode (SWD available)**  
+**[A] Default mode (SWD available) / Hold blinker buttons**  
 This mode assumes that the chip's st-link interface (SWD) is available.  
 In many cases, holding the blinker buttons before powering the chip
 is enought for this mode to work.
