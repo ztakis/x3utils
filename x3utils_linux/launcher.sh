@@ -121,9 +121,9 @@ while true; do
     echo
     echo -e " [ ${CL_C}Connection Options - Enter A, B, or C to change${CL_NC} ]"
     if [[ "$current_radio" == "A" ]]; then
-        echo -e "  [${CL_C}X${CL_NC}] A - Hold blinker buttons"
+        echo -e "  [${CL_C}X${CL_NC}] A - Default / Blinker buttons"
     else
-        echo "  [ ] A - Hold blinker buttons"
+        echo "  [ ] A - Default / Blinker buttons"
     fi
     if [[ "$current_radio" == "B" ]]; then
         echo -e "  [${CL_Y}X${CL_NC}] B - C45 / Clone ST-Link"
