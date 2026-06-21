@@ -37,7 +37,7 @@ This is a connect-under-reset mode using a genuine ST-Link.
 
 *The mode settings above are persistent — stay active across sessions until switched.
 
-**[T] [ ] Set countdow timer**  
+**[T] Set countdow timer**  
 Set countdown timer (0-60sec) for "option B".
 
 <br />
