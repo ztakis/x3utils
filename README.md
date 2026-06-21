@@ -44,21 +44,24 @@ Set countdown timer (0-60sec) for "option B".
 
 ## ST-LINK pinouts
 
-ST-LINK pinout for G3/F3
-
 <img width="667" height="443" alt="g3" src="https://github.com/user-attachments/assets/e40bea51-4374-4d9d-bd09-cbbc52b15e85" />
+
+ST-LINK pinout for G3/F3  
+<br />
+
 <img width="486" height="628" alt="image" src="https://github.com/user-attachments/assets/6daf3c14-ad6c-463f-8675-a1c00fc49457" />
 
-<br /><br />
-
-ST-LINK pinout for ZT3
+ST-LINK pinout for new G3  
+<br />
 
 <img width="2244" height="1024" alt="ZT3" src="https://github.com/user-attachments/assets/871d3c47-254d-4872-bf83-a824e4387cff" />
-<br /><br />
 
-ST-LINK pinout for X3 MCU
+ST-LINK pinout for ZT3  
+<br />
 
 <img width="800" height="286" alt="x3_mcu" src="https://github.com/user-attachments/assets/6d536191-0fbe-464a-8e86-58a8f21566fc" />
+
+ST-LINK pinout for X3 MCU
 <br /><br />
 
 # Default connection procedure
@@ -72,7 +75,7 @@ If SWD is not available, you might need to enter special mode:
 * Hold both blinker buttons & keep holding.
 * Plug in main power cable.
 * You can now release the blinker buttons.
-* As a connection test, run option [3] in Launcher script, or the dump.bat(sh) script directly.  
+* As a connection test, run option [2] in Launcher script, or the dump.bat(sh) script directly.  
 
 ***It is possible that latest firmwares have disabled this scpecial mode.***  
 <br />
