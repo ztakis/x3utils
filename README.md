@@ -21,7 +21,7 @@ Select the .bin file you want to flash. Do this before using option 4.
 **[5] Exit**  
 Close the utility.
 
-**Options [1], [2] and [4] force a full backup first**
+**Options [1] and [3] force a full backup first**
 <br /><br />
 
 **[A] Default mode (SWD available)**  
@@ -35,17 +35,33 @@ This is a connect-under-reset mode using a clone ST-Link.
 **[C] C45 / Genuine ST-Link (connect-under-reset)**  
 This is a connect-under-reset mode using a genuine ST-Link.
 
-The mode settings above are persistent — stay active across sessions until switched.
+*The mode settings above are persistent — stay active across sessions until switched.
 
 **[T] [ ] Set countdow timer**  
 Set countdown timer (0-60sec) for "option B".
 
 <br />
 
+## ST-LINK pinouts
 
+ST-LINK pinout for G3/F3
 
+<img width="667" height="443" alt="g3" src="https://github.com/user-attachments/assets/e40bea51-4374-4d9d-bd09-cbbc52b15e85" />
+<img width="486" height="628" alt="image" src="https://github.com/user-attachments/assets/6daf3c14-ad6c-463f-8675-a1c00fc49457" />
 
-## Default connection procedure
+<br /><br />
+
+ST-LINK pinout for ZT3
+
+<img width="2244" height="1024" alt="ZT3" src="https://github.com/user-attachments/assets/871d3c47-254d-4872-bf83-a824e4387cff" />
+<br /><br />
+
+ST-LINK pinout for X3 MCU
+
+<img width="800" height="286" alt="x3_mcu" src="https://github.com/user-attachments/assets/6d536191-0fbe-464a-8e86-58a8f21566fc" />
+<br /><br />
+
+# Default connection procedure
 
 To use the scripts, you need to enter special mode:  
 * Remove all power from the dash, like disconnect main cable (julet).
@@ -71,22 +87,17 @@ You can also ground the blinker connectors instead of pressing the buttons.
 <img width="688" height="442" alt="rsz_20260605_103345" src="https://github.com/user-attachments/assets/74a37a88-610f-456e-98a1-fef830fb5a37" />
 <br /><br />
 
-ST-LINK pinout for G3/F3
+# Connect-under-reset mode using a clone ST-Link
 
-<img width="667" height="443" alt="g3" src="https://github.com/user-attachments/assets/e40bea51-4374-4d9d-bd09-cbbc52b15e85" />
+This a guided connect-under-reset procedure, where the user grounds and releases C45  
+following on screen prompts.  
+
+<img width="365" height="400" alt="7" src="https://github.com/user-attachments/assets/53c5ccf4-cc61-4ab3-935c-187bc2bd4bfe" />
+<img width="1428" height="964" alt="image" src="https://github.com/user-attachments/assets/d591110c-1ac4-4e9c-849d-8442738f4258" />
 <br /><br />
 
-ST-LINK pinout for ZT3
 
-<img width="2244" height="1024" alt="ZT3" src="https://github.com/user-attachments/assets/871d3c47-254d-4872-bf83-a824e4387cff" />
-<br /><br />
-
-ST-LINK pinout for X3 MCU
-
-<img width="800" height="286" alt="x3_mcu" src="https://github.com/user-attachments/assets/6d536191-0fbe-464a-8e86-58a8f21566fc" />
-<br /><br />
-
-## Alternative connection procedure
+# Connect-under-reset mode using a genuine ST-Link
 
 For this I used the st-link part from a cheap Nucleo board (~20 Euros).  
 I had no success with st-link clones. Genuine worked.  
@@ -115,11 +126,9 @@ Green is the reset (NRST) and you need to connect this to the C45 capacitor.
 <img width="593" height="400" alt="5" src="https://github.com/user-attachments/assets/5c747751-9676-495f-b44c-c469b1063764" />
 <img width="710" height="400" alt="6" src="https://github.com/user-attachments/assets/a6fcaec9-7326-4076-884b-670c0e14332d" />
 <img width="365" height="400" alt="7" src="https://github.com/user-attachments/assets/53c5ccf4-cc61-4ab3-935c-187bc2bd4bfe" />
-<img width="1428" height="964" alt="image" src="https://github.com/user-attachments/assets/d591110c-1ac4-4e9c-849d-8442738f4258" />
-
 <br /><br />
 
-Connection sequence:  
+**Connection sequence:**  
 Power the dashboard, plug in st-link's USB,  
 touch & hold C45 continuously and run the scripts.  
 After successful flash, power cycle the dashboard.
