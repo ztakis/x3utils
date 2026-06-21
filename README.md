@@ -63,15 +63,18 @@ ST-LINK pinout for X3 MCU
 
 # Default connection procedure
 
-To use the scripts, you need to enter special mode:  
+**In this mode we assume that SWD is enabled & available.**  
+<br />
+If SWD is not available, you might need to enter special mode:  
 * Remove all power from the dash, like disconnect main cable (julet).
 * Connect st-link pins correctly and in a secure way but not the 3.3V pin.
 * Plug st-link to USB.
 * Hold both blinker buttons & keep holding.
 * Plug in main power cable.
 * You can now release the blinker buttons.
-* As a connection test, run option [3] in Launcher script, or the dump.bat(sh) script directly.
+* As a connection test, run option [3] in Launcher script, or the dump.bat(sh) script directly.  
 
+***It is possible that latest firmwares have disabled this scpecial mode.***  
 <br />
 
 Main cable connectors
