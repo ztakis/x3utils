@@ -1,5 +1,19 @@
 @echo off
 
+:: --- ENSURE ANSI/VT COLOR CODES RENDER IN THIS CONSOLE ---
+set "VT_NEEDS_FIX=0"
+reg query "HKCU\Console" /v VirtualTerminalLevel >nul 2>nul
+if errorlevel 1 (
+    set "VT_NEEDS_FIX=1"
+) else (
+    set "VT_LEVEL="
+    for /f "tokens=3" %%A in ('reg query "HKCU\Console" /v VirtualTerminalLevel 2^>nul') do set "VT_LEVEL=%%A"
+    if not "%VT_LEVEL%"=="0x1" set "VT_NEEDS_FIX=1"
+)
+if "%VT_NEEDS_FIX%"=="1" (
+    reg add "HKCU\Console" /v VirtualTerminalLevel /t REG_DWORD /d 1 /f >nul 2>nul
+)
+
 :: --- OPENOCD CONFIGURATION ---
 set "OPENOCD_BIN=%~dp0oocd\at32f415\bin\openocd.exe"
 set "SCRIPTS_DIR=%~dp0oocd\at32f415\scripts"
