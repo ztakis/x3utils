@@ -149,6 +149,25 @@ if "%all_zeros%"=="True" (
 
 echo [ %CL_G%OK%CL_NC% ] Raw dump verified successfully.
 echo.
+
+:: Create secondary AppData backup location
+set "appdata_backup=%LOCALAPPDATA%\x3utils_backup"
+
+if not exist "%appdata_backup%" (
+    mkdir "%appdata_backup%"
+)
+
+:: Copy verified dump to AppData
+copy /Y "%raw_dump%" "%appdata_backup%\dump_%timestamp%.bin" >nul
+
+if errorlevel 1 (
+    echo.
+    echo [%CL_R%WARN%CL_NC%] Failed to create AppData backup copy.
+) else (
+    echo [ %CL_G%OK%CL_NC% ] Secondary backup stored in:
+    echo        "%appdata_backup%\dump_%timestamp%.bin"
+)
+echo.
 pause
 
 echo.

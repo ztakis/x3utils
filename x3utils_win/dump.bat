@@ -133,6 +133,25 @@ echo [ %CL_G%OK%CL_NC% ] Dump completed successfully!
 echo [ %CL_G%OK%CL_NC% ] Verified file size: %EXPECTED_SIZE% bytes.
 echo [ %CL_G%OK%CL_NC% ] Backup stored in:
 echo        "%dump_file%"
+
+:: Create secondary AppData backup location
+set "appdata_backup=%LOCALAPPDATA%\x3utils_backup"
+
+if not exist "%appdata_backup%" (
+    mkdir "%appdata_backup%"
+)
+
+:: Copy verified dump to AppData
+copy /Y "%dump_file%" "%appdata_backup%\dump_%timestamp%.bin" >nul
+
+if errorlevel 1 (
+    echo.
+    echo [%CL_R%WARN%CL_NC%] Failed to create AppData backup copy.
+) else (
+    echo [ %CL_G%OK%CL_NC% ] Secondary backup stored in:
+    echo        "%appdata_backup%\dump_%timestamp%.bin"
+)
+
 goto :end
 
 
