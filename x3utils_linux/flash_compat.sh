@@ -131,6 +131,13 @@ fi
 
 echo -e "[ ${CL_G}OK${CL_NC} ] Raw dump verified successfully."
 echo
+
+mkdir -p "$HOME/.x3utils_backup"
+cp "$raw_dump" "$HOME/.x3utils_backup/dump_${timestamp}.bin"
+echo -e "[ ${CL_G}OK${CL_NC} ] Secondary backup stored in:"
+echo "       \"$HOME/.x3utils_backup/dump_${timestamp}.bin\""
+echo
+
 read -rp "Press ENTER to continue..."
 
 echo

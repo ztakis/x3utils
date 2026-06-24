@@ -112,5 +112,10 @@ echo -e "[ ${CL_G}OK${CL_NC} ] Verified file size: $EXPECTED_SIZE bytes."
 echo -e "[ ${CL_G}OK${CL_NC} ] Backup stored in:"
 echo "       \"$dump_file\""
 
+mkdir -p "$HOME/.x3utils_backup"
+cp "$dump_file" "$HOME/.x3utils_backup/dump_${timestamp}.bin"
+echo -e "[ ${CL_G}OK${CL_NC} ] Secondary backup stored in:"
+echo "       \"$HOME/.x3utils_backup/dump_${timestamp}.bin\""
+
 echo
 read -rp "Press ENTER to continue..."
