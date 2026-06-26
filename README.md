@@ -47,24 +47,7 @@ Set countdown timer (0-60sec) for "option B".
 
 ## ST-LINK pinouts
 
-<img width="667" height="443" alt="g3" src="https://github.com/user-attachments/assets/e40bea51-4374-4d9d-bd09-cbbc52b15e85" />
-
-ST-LINK pinout for G3/F3  
-<br />
-
-<img width="486" height="628" alt="image" src="https://github.com/user-attachments/assets/6daf3c14-ad6c-463f-8675-a1c00fc49457" />
-
-ST-LINK pinout for new G3  
-<br />
-
-<img width="2244" height="1024" alt="ZT3" src="https://github.com/user-attachments/assets/871d3c47-254d-4872-bf83-a824e4387cff" />
-
-ST-LINK pinout for ZT3  
-<br />
-
-<img width="800" height="286" alt="x3_mcu" src="https://github.com/user-attachments/assets/6d536191-0fbe-464a-8e86-58a8f21566fc" />
-
-ST-LINK pinout for X3 MCU
+Check the link for more info: [ST-LINK pinouts](https://github.com/ztakis/x3utils/wiki/1.-ST%E2%80%90LINK-pinouts)
 <br /><br />
 
 # Default connection procedure
@@ -106,13 +89,11 @@ following on screen prompts.
 <img width="365" height="400" alt="7" src="https://github.com/user-attachments/assets/53c5ccf4-cc61-4ab3-935c-187bc2bd4bfe" />
 <img width="1428" height="964" alt="image" src="https://github.com/user-attachments/assets/d591110c-1ac4-4e9c-849d-8442738f4258" />
 <img width="999" height="505" alt="image" src="https://github.com/user-attachments/assets/747f79e4-8409-400c-bc68-3d5b1e5e70aa" />
-
 <br /><br />
-
 
 # Connect-under-reset mode using a genuine ST-Link
 
-Check the link for more info
+Check the link for more info: [Using a genuine ST-Link](https://github.com/ztakis/x3utils/wiki/Connect%E2%80%90under%E2%80%90reset-mode-using-a-genuine-ST%E2%80%90Link)
+<br /><br />
 
-[Using a genuine ST-Link](https://github.com/ztakis/x3utils/wiki/Connect%E2%80%90under%E2%80%90reset-mode-using-a-genuine-ST%E2%80%90Link)
-
+#
