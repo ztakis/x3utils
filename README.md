@@ -47,36 +47,14 @@ Set countdown timer (0-60sec) for "option B".
 
 ## ST-LINK pinouts
 
-Check the link for more info: [ST-LINK pinouts](https://github.com/ztakis/x3utils/wiki/1.-ST%E2%80%90LINK-pinouts)
+Check the link for more info: [ST-LINK pinouts](https://github.com/ztakis/x3utils/wiki/1.-ST%E2%80%90LINK-pinouts)  
 <br /><br />
 
 # Default connection procedure
 
-**In this mode we assume that SWD is enabled & available.**  
-<br />
-If SWD is not available, you might need to enter special mode:  
-* Remove all power from the dash, like disconnect main cable (julet).
-* Connect st-link pins correctly and in a secure way but not the 3.3V pin.
-* Plug st-link to USB.
-* Hold both blinker buttons & keep holding.
-* Plug in main power cable.
-* You can now release the blinker buttons.
-* As a connection test, run option [2] in Launcher script, or the dump.bat(sh) script directly.  
+In this mode we assume that SWD is enabled & available.  
 
-***It is possible that latest firmwares have disabled this scpecial mode.***  
-<br />
-
-Main cable connectors
-
-<img width="288" height="200" alt="rsz_zt3" src="https://github.com/user-attachments/assets/a59aa2a8-e809-4a37-8c9c-a0f1ed13e7d3" />
-<img width="254" height="200" alt="rsz_g3" src="https://github.com/user-attachments/assets/2ab575c5-9338-4d6a-9041-74aa619f8460" />
-<img width="433" height="200" alt="rsz_julet_4" src="https://github.com/user-attachments/assets/510cfc8c-c3ff-4a59-92da-0f1ac024fe9a" />
-<br /><br />
-
-You can also ground the blinker connectors instead of pressing the buttons.
-
-<img width="771" height="665" alt="rsz_420260605_103335" src="https://github.com/user-attachments/assets/7042371e-f17b-4a1f-bef5-1ef7dc5cc3dc" />
-<img width="688" height="442" alt="rsz_20260605_103345" src="https://github.com/user-attachments/assets/74a37a88-610f-456e-98a1-fef830fb5a37" />
+If SWD is not available, you might need to enter [Special mode](https://github.com/ztakis/x3utils/wiki/6.-Special-mode-(blinker-buttons))  
 <br /><br />
 
 # Connect-under-reset mode using a clone ST-Link
