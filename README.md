@@ -109,36 +109,7 @@ following on screen prompts.
 
 # Connect-under-reset mode using a genuine ST-Link
 
-For this I used the st-link part from a cheap Nucleo board (~20 Euros).  
-I had no success with st-link clones. Genuine worked.  
-The left part is the st-link part and you need to remove those two jumpers,
-to work with external devices.
+Check the link for more info
 
-<img width="508" height="400" alt="1" src="https://github.com/user-attachments/assets/ba7bc74e-3518-41c0-879e-d26320d2bdaf" />
-<img width="655" height="400" alt="2" src="https://github.com/user-attachments/assets/aa459904-4488-4d0f-ac22-e64ad9c9466c" />
-<img width="492" height="400" alt="3" src="https://github.com/user-attachments/assets/34e98608-913e-4f02-a773-74d2f41dc39b" />
-<br /><br />
+[Using a genuine ST-Link](https://github.com/ztakis/x3utils/wiki/Connect%E2%80%90under%E2%80%90reset-mode-using-a-genuine-ST%E2%80%90Link)
 
-Those are the SWD pins and the pinout table (top pin is #1).
-
-<img width="447" height="400" alt="4" src="https://github.com/user-attachments/assets/0532c18f-7df7-449b-afb8-d52235ebf6b5" />
-<img width="574" height="206" alt="image" src="https://github.com/user-attachments/assets/2ed2984d-146b-4aa8-a6b2-06c15d95ed9d" />
-<br /><br />
-
-Red cable does not provide power to the dashboard.  
-It measures the voltage of the target's 3.3V line.  
-You have to connect this at the dashboard's SWD 3.3V pin  
-and give power from the main connector.   
-Yellow, Black & White are SWCLK, GND & SWDIO respectively.  
-Green is the reset (NRST) and you need to connect this to the C45 capacitor.
-<br />
-
-<img width="593" height="400" alt="5" src="https://github.com/user-attachments/assets/5c747751-9676-495f-b44c-c469b1063764" />
-<img width="710" height="400" alt="6" src="https://github.com/user-attachments/assets/a6fcaec9-7326-4076-884b-670c0e14332d" />
-<img width="365" height="400" alt="7" src="https://github.com/user-attachments/assets/53c5ccf4-cc61-4ab3-935c-187bc2bd4bfe" />
-<br /><br />
-
-**Connection sequence:**  
-Power the dashboard, plug in st-link's USB,  
-touch & hold C45 *continuously* and run the scripts.  
-After successful flash, power cycle the dashboard.
