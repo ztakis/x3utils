@@ -250,4 +250,3 @@ echo
 echo
 read -rp "Press ENTER to continue..."
 echo
-ß
