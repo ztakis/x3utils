@@ -28,57 +28,13 @@ fi
 bin_file_path="${bin_file_path//\"/}"
 bin_file_path="${bin_file_path//\'/}"
 
-# Resolve full path
-bin_file_path="$(realpath "$bin_file_path" 2>/dev/null)"
-
-# Check if path is empty
-if [[ -z "$bin_file_path" ]]; then
-    echo -e "[${CL_R}FAIL${CL_NC}] No file provided."
+source "$SCRIPT_DIR/validate_bin.sh" "$bin_file_path"
+if [[ "$VALIDATE_RESULT" != "OK" ]]; then
+    echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
     exit 1
 fi
-
-# Check file existence
-if [[ ! -f "$bin_file_path" ]]; then
-    echo -e "[${CL_R}FAIL${CL_NC}] File does not exist."
-    exit 1
-fi
-
-# Reject unsupported characters in user-supplied path
-if [[ "$bin_file_path" =~ [{}] ]]; then
-    echo -e "[${CL_R}FAIL${CL_NC}] Path contains unsupported character: { or }"
-    echo "       Please rename."
-    exit 1
-fi
-
-# Validate extension
-extension="${bin_file_path##*.}"
-
-if [[ "${extension,,}" != "bin" ]]; then
-    echo -e "[${CL_R}FAIL${CL_NC}] Invalid file type .$extension, only .bin is allowed."
-    exit 1
-fi
-
-# Get file size and name
-bin_file_size=$(stat -c%s "$bin_file_path")
-bin_file=$(basename "$bin_file_path")
-
-# Validate exact size
-if [[ "$bin_file_size" != "$EXPECTED_SIZE" ]]; then
-    echo -e "[${CL_R}FAIL${CL_NC}] Invalid file size."
-    echo "       Expected: $EXPECTED_SIZE bytes"
-    echo "       Got:      $bin_file_size bytes"
-    exit 1
-fi
-
-# Ensure bin file is not all the same byte value
-unique_bytes=$(od -An -tx1 "$bin_file_path" | tr -s ' \n' '\n' | grep -E '^[0-9a-f]{2}$' | sort -u | wc -l)
-
-if [ "$unique_bytes" -eq 1 ]; then
-    echo
-    echo -e "[${CL_R}FAIL${CL_NC}] Bin file contains only a single repeated byte value."
-    echo "       Please try again."
-    exit 1
-fi
+bin_file="$BIN_FILE_NAME"
+bin_file_path="$BIN_FILE_PATH"
 
 echo
 # Prompt confirmation
@@ -142,14 +98,6 @@ echo
 # guided_flash_connect prompts on the live console (no redirect) while
 # still failing hard on a mid-write link drop or verify mismatch.
 
-# if [[ "$TARGET" == "target/at32f415xx_c45.cfg" ]]; then
-#     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-#         -f "$TARGET" \
-#         -c "guided_flash_connect {$CONNECT_TIMEOUT}" \
-#         -c "flash erase_address 0x08000000 0x20000" \
-#         -c "flash write_bank 0 {$bin_file_path}" \
-#         -c "verify_image {$bin_file_path} 0x08000000" \
-#         -c "exit"
 if [[ "$TARGET" == "target/at32f415xx_c45.cfg" ]]; then
     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
         -f "$TARGET" \

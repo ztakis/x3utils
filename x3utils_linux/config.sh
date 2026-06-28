@@ -10,23 +10,18 @@ export CL_C="\033[1;36m"
 
 
 # --- OPENOCD CONFIGURATION ---
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 OPENOCD_BIN="$SCRIPT_DIR/oocd/bin/openocd"
 SCRIPTS_DIR="$SCRIPT_DIR/oocd/scripts"
-
 INTERFACE="interface/stlink.cfg"
-TARGET="target/at32f415xx_c45.cfg"
+TARGET="target/at32f415xx.cfg"
 
 CONNECT_TIMEOUT=3
 
 # --- COMMON SETTINGS ---
-
 EXPECTED_SIZE=131072
 
 # --- VALIDATION ---
-
 if [[ ! -f "$OPENOCD_BIN" ]]; then
     echo -e "[${CL_R}FAIL${CL_NC}] OpenOCD binary not found."
     echo "       Expected: $OPENOCD_BIN"

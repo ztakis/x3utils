@@ -77,34 +77,42 @@ else
         -c "exit"
 fi
 
-# Ensure dump file exists
-if [[ ! -f "$dump_file" ]]; then
-    echo
-    echo -e "[${CL_R}FAIL${CL_NC}] Dump file was not created on disk."
+# Validate bin file
+source "$SCRIPT_DIR/validate_bin.sh" "$dump_file"
+if [[ "$VALIDATE_RESULT" != "OK" ]]; then
+    echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
+    read -rp "Aborting..."
     exit 1
 fi
 
-# Verify dump size integrity
-dump_size=$(stat -c%s "$dump_file")
+# # Ensure dump file exists
+# if [[ ! -f "$dump_file" ]]; then
+#     echo
+#     echo -e "[${CL_R}FAIL${CL_NC}] Dump file was not created on disk."
+#     exit 1
+# fi
 
-if [[ "$dump_size" != "$EXPECTED_SIZE" ]]; then
-    echo
-    echo -e "[${CL_R}FAIL${CL_NC}] Memory dump integrity verification failed."
-    echo "       Expected: $EXPECTED_SIZE bytes"
-    echo "       Actual:   $dump_size bytes"
-    exit 1
-fi
+# # Verify dump size integrity
+# dump_size=$(stat -c%s "$dump_file")
 
-# Ensure dump file is not all the same byte value
-unique_bytes=$(od -An -tx1 "$dump_file" | tr -s ' \n' '\n' | grep -E '^[0-9a-f]{2}$' | sort -u | wc -l)
+# if [[ "$dump_size" != "$EXPECTED_SIZE" ]]; then
+#     echo
+#     echo -e "[${CL_R}FAIL${CL_NC}] Memory dump integrity verification failed."
+#     echo "       Expected: $EXPECTED_SIZE bytes"
+#     echo "       Actual:   $dump_size bytes"
+#     exit 1
+# fi
 
-if [ "$unique_bytes" -eq 1 ]; then
-    echo
-    echo -e "[${CL_R}FAIL${CL_NC}] Dump file contains only a single repeated byte value."
-    echo "       nRST was not released correctly during step 2."
-    echo "       Please try again."
-    exit 1
-fi
+# # Ensure dump file is not all the same byte value
+# unique_bytes=$(od -An -tx1 "$dump_file" | tr -s ' \n' '\n' | grep -E '^[0-9a-f]{2}$' | sort -u | wc -l)
+
+# if [ "$unique_bytes" -eq 1 ]; then
+#     echo
+#     echo -e "[${CL_R}FAIL${CL_NC}] Dump file contains only a single repeated byte value."
+#     echo "       nRST was not released correctly during step 2."
+#     echo "       Please try again."
+#     exit 1
+# fi
 
 echo
 echo -e "[ ${CL_G}OK${CL_NC} ] Dump completed successfully!"

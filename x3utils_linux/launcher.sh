@@ -179,7 +179,8 @@ while true; do
             if [[ -f "$SCRIPT_DIR/flash_compat.sh" ]]; then
                 bash "$SCRIPT_DIR/flash_compat.sh"
                 if [[ $? -ne 0 ]]; then
-                    echo -e "[${CL_R}FAIL${CL_NC}] Failed to launch Flash SHU compatible (ZT3/G3/F3/F3Pro)."
+                    # echo -e "[${CL_R}FAIL${CL_NC}] Failed to launch Flash SHU compatible (ZT3/G3/F3/F3Pro)."
+                    echo -e "[${CL_R}FAIL${CL_NC}] Flash script reported an error!"
                     read -rp "Press ENTER to continue..."
                 fi
             else
@@ -195,7 +196,8 @@ while true; do
             if [[ -f "$SCRIPT_DIR/dump.sh" ]]; then
                 bash "$SCRIPT_DIR/dump.sh"
                 if [[ $? -ne 0 ]]; then
-                    echo -e "[${CL_R}FAIL${CL_NC}] Failed to launch Full Memory Dump Utility."
+                    # echo -e "[${CL_R}FAIL${CL_NC}] Failed to launch Full Memory Dump Utility."
+                    echo -e "[${CL_R}FAIL${CL_NC}] Backup script reported an error!"
                     read -rp "Press ENTER to continue..."
                 fi
             else
@@ -245,40 +247,18 @@ while true; do
             input_file="${input_file//\"/}"
             input_file="${input_file//\'/}"
 
-            if [[ -z "$input_file" ]]; then
-                continue
-            fi
-
-            if [[ ! -f "$input_file" ]]; then
-                echo
-                echo -e "[${CL_R}FAIL${CL_NC}] File does not exist."
+            # Validate bin file
+            source "$SCRIPT_DIR/validate_bin.sh" "$input_file"
+            if [[ "$VALIDATE_RESULT" != "OK" ]]; then
+                echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
                 read -rp "Press ENTER to continue..."
                 dragged_file=""
                 display_name=""
                 continue
             fi
 
-            if [[ "$input_file" =~ [{}] ]]; then
-                echo -e "[${CL_R}FAIL${CL_NC}] Path contains unsupported character: { or }"
-                echo "       Please rename."
-                read -rp "Press ENTER to continue..."
-                dragged_file=""
-                display_name=""
-                continue
-            fi
-
-            extension="${input_file##*.}"
-            if [[ "${extension,,}" != "bin" ]]; then
-                echo
-                echo -e "[${CL_R}FAIL${CL_NC}] Only .bin files are allowed."
-                read -rp "Press ENTER to continue..."
-                dragged_file=""
-                display_name=""
-                continue
-            fi
-
-            dragged_file="$(readlink -f "$input_file" 2>/dev/null || echo "$input_file")"
-            display_name="$(basename "$dragged_file")"
+            dragged_file="$BIN_FILE_PATH"
+            display_name="$BIN_FILE_NAME"
             ;;
 
         5)

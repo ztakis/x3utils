@@ -100,34 +100,42 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-# Ensure dump exists
-if [[ ! -f "$raw_dump" ]]; then
-    echo
-    echo -e "[${CL_R}FAIL${CL_NC}] Raw dump file was not created."
+# Validate bin file
+source "$SCRIPT_DIR/validate_bin.sh" "$raw_dump"
+if [[ "$VALIDATE_RESULT" != "OK" ]]; then
+    echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
+    read -rp "Aborting..."
     exit 1
 fi
 
-# Verify raw dump size
-dump_size=$(stat -c%s "$raw_dump")
+# # Ensure dump exists
+# if [[ ! -f "$raw_dump" ]]; then
+#     echo
+#     echo -e "[${CL_R}FAIL${CL_NC}] Raw dump file was not created."
+#     exit 1
+# fi
 
-if [[ "$dump_size" != "$EXPECTED_SIZE" ]]; then
-    echo
-    echo -e "[${CL_R}FAIL${CL_NC}] Raw dump integrity verification failed."
-    echo "       Expected: $EXPECTED_SIZE bytes"
-    echo "       Actual:   $dump_size bytes"
-    exit 1
-fi
+# # Verify raw dump size
+# dump_size=$(stat -c%s "$raw_dump")
 
-# Ensure dump file is not all the same byte value
-unique_bytes=$(od -An -tx1 "$raw_dump" | tr -s ' \n' '\n' | grep -E '^[0-9a-f]{2}$' | sort -u | wc -l)
+# if [[ "$dump_size" != "$EXPECTED_SIZE" ]]; then
+#     echo
+#     echo -e "[${CL_R}FAIL${CL_NC}] Raw dump integrity verification failed."
+#     echo "       Expected: $EXPECTED_SIZE bytes"
+#     echo "       Actual:   $dump_size bytes"
+#     exit 1
+# fi
 
-if [ "$unique_bytes" -eq 1 ]; then
-    echo
-    echo -e "[${CL_R}FAIL${CL_NC}] Dump file contains only a single repeated byte value."
-    echo "       nRST was not released correctly during step 2."
-    echo "       Please try again."
-    exit 1
-fi
+# # Ensure dump file is not all the same byte value
+# unique_bytes=$(od -An -tx1 "$raw_dump" | tr -s ' \n' '\n' | grep -E '^[0-9a-f]{2}$' | sort -u | wc -l)
+
+# if [ "$unique_bytes" -eq 1 ]; then
+#     echo
+#     echo -e "[${CL_R}FAIL${CL_NC}] Dump file contains only a single repeated byte value."
+#     echo "       nRST was not released correctly during step 2."
+#     echo "       Please try again."
+#     exit 1
+# fi
 
 echo -e "[ ${CL_G}OK${CL_NC} ] Raw dump verified successfully."
 echo
@@ -212,14 +220,6 @@ echo
 # Still no unlock operation.
 # We assume the target is not read-protected.
 
-# if [[ "$TARGET" == "target/at32f415xx_c45.cfg" ]]; then
-#     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-#         -f "$TARGET" \
-#         -c "guided_flash_connect {$CONNECT_TIMEOUT}" \
-#         -c "flash erase_address 0x08000000 0x20000" \
-#         -c "flash write_bank 0 {$patched_dump}" \
-#         -c "verify_image {$patched_dump} 0x08000000" \
-#         -c "exit"
 if [[ "$TARGET" == "target/at32f415xx_c45.cfg" ]]; then
     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
         -f "$TARGET" \
