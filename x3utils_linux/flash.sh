@@ -135,14 +135,26 @@ echo
 # Still no unlock operation.
 # We assume the target is not read-protected.
 # TCL curly brace quoting as a defensive measure against any special characters in the path.
+#
+# AT32 branch: erase/write/verify are wrapped inside do_flash_and_verify
+# in the .cfg. Any failure there calls 'shutdown error' (exit code 1),
+# which the errorlevel gate below catches. This keeps the interactive
+# guided_flash_connect prompts on the live console (no redirect) while
+# still failing hard on a mid-write link drop or verify mismatch.
 
+# if [[ "$TARGET" == "target/at32f415xx_c45.cfg" ]]; then
+#     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+#         -f "$TARGET" \
+#         -c "guided_flash_connect {$CONNECT_TIMEOUT}" \
+#         -c "flash erase_address 0x08000000 0x20000" \
+#         -c "flash write_bank 0 {$bin_file_path}" \
+#         -c "verify_image {$bin_file_path} 0x08000000" \
+#         -c "exit"
 if [[ "$TARGET" == "target/at32f415xx_c45.cfg" ]]; then
     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
         -f "$TARGET" \
         -c "guided_flash_connect {$CONNECT_TIMEOUT}" \
-        -c "flash erase_address 0x08000000 0x20000" \
-        -c "flash write_bank 0 {$bin_file_path}" \
-        -c "verify_image {$bin_file_path} 0x08000000" \
+        -c "do_flash_and_verify {$bin_file_path}" \
         -c "exit"
 else
     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
