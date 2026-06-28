@@ -13,3 +13,6 @@ Desktop.ini
 # Linux
 .directory
 .Trash-*
+
+# Kilo
+.kilo/
