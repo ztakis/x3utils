@@ -179,7 +179,7 @@ while true; do
             if [[ -f "$SCRIPT_DIR/flash_compat.sh" ]]; then
                 bash "$SCRIPT_DIR/flash_compat.sh"
                 if [[ $? -ne 0 ]]; then
-                    echo -e "[${CL_R}FAIL${CL_NC}] Failed to launch Flash SHU compatible (ZT3/G3/F3/F3Pro)."
+                    echo -e "[${CL_R}FAIL${CL_NC}] Flash script reported an error!"
                     read -rp "Press ENTER to continue..."
                 fi
             else
@@ -195,7 +195,7 @@ while true; do
             if [[ -f "$SCRIPT_DIR/dump.sh" ]]; then
                 bash "$SCRIPT_DIR/dump.sh"
                 if [[ $? -ne 0 ]]; then
-                    echo -e "[${CL_R}FAIL${CL_NC}] Failed to launch Full Memory Dump Utility."
+                    echo -e "[${CL_R}FAIL${CL_NC}] Backup script reported an error!"
                     read -rp "Press ENTER to continue..."
                 fi
             else

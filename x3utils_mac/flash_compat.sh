@@ -217,9 +217,7 @@ if [[ "$TARGET" == "target/artery/at32f4x_c45.cfg" ]]; then
     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
         -f "$TARGET" \
         -c "guided_flash_connect {$CONNECT_TIMEOUT}" \
-        -c "flash erase_address 0x08000000 0x20000" \
-        -c "flash write_bank 0 {$patched_dump}" \
-        -c "verify_image {$patched_dump} 0x08000000" \
+        -c "do_flash_and_verify {$patched_dump}" \
         -c "exit"
 else
     "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
