@@ -8,20 +8,8 @@ if not exist "%~dp0config.cmd" (
 )
 
 call "%~dp0config.cmd"
+if errorlevel 1 goto :fail_exit
 
-:: Validate OpenOCD binary exists
-if not exist "%OPENOCD_BIN%" (
-    echo [%CL_R%FAIL%CL_NC%] OpenOCD binary not found.
-    echo        Expected: %OPENOCD_BIN%
-    goto :fail_exit
-)
-
-:: Validate OpenOCD scripts directory exists
-if not exist "%SCRIPTS_DIR%" (
-    echo [%CL_R%FAIL%CL_NC%] OpenOCD scripts directory not found.
-    echo        Expected: %SCRIPTS_DIR%
-    goto :fail_exit
-)
 echo.
 echo ============================================================
 echo            Press ENTER to dump current chip data
@@ -74,7 +62,7 @@ echo.
 :: If the target is read-protected, dumping should fail
 :: safely without erasing firmware contents.
 
-if "%TARGET%"=="target\at32f415_c45.cfg" (
+if "%TARGET%"=="target\at32f415xx_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
         -f "%TARGET%" ^
         -c "guided_connect {%CONNECT_TIMEOUT%}" ^
@@ -99,32 +87,10 @@ if errorlevel 1 (
     goto :fail_exit
 )
 
-:: Ensure dump file actually exists
-if not exist "%dump_file%" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Dump file was not created on disk.
-    goto :fail_exit
-)
-
-:: Verify dump size integrity
-for %%i in ("%dump_file%") do set "dump_size=%%~zi"
-
-if not "%dump_size%"=="%EXPECTED_SIZE%" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Memory dump integrity verification failed.
-    echo        Expected: %EXPECTED_SIZE% bytes
-    echo        Actual:   %dump_size% bytes
-    goto :fail_exit
-)
-
-:: Check dump file bytes
-for /f %%i in ('powershell -NoProfile -Command "$bytes = [System.IO.File]::ReadAllBytes('%dump_file%'); ($bytes | Select-Object -Unique).Count -eq 1"') do set "all_zeros=%%i"
-
-if "%all_zeros%"=="True" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Dump file contains only zeros.
-    echo        nRST was not released correctly during step 3.
-    echo        Please try again.
+:: Validate dumped bin file
+call "%~dp0validate_bin.cmd" "%dump_file%"
+if not "%VALIDATE_RESULT%"=="OK" (
+    echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     goto :fail_exit
 )
 
@@ -151,9 +117,7 @@ if errorlevel 1 (
     echo [ %CL_G%OK%CL_NC% ] Secondary backup stored in:
     echo        "%appdata_backup%\dump_%timestamp%.bin"
 )
-
 goto :end
-
 
 :fail_exit
 echo.

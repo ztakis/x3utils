@@ -11,6 +11,7 @@ if not exist "%~dp0config.cmd" (
     exit /b 1
 )
 call "%~dp0config.cmd"
+if errorlevel 1 goto :fail_exit
 
 set "dragged_file="
 set "display_name="
@@ -108,8 +109,8 @@ goto :menu_loop
 :detect_radio
 set "current_radio=A"
 for /f "tokens=*" %%L in ('findstr /i "TARGET" "%~dp0config.cmd"') do (
-    echo %%L | findstr /i "at32f415_c45.cfg" >nul && set "current_radio=B"
-    echo %%L | findstr /i "at32f415_nrst.cfg" >nul && set "current_radio=C"
+    echo %%L | findstr /i "at32f415xx_c45.cfg" >nul && set "current_radio=B"
+    echo %%L | findstr /i "at32f415xx_nrst.cfg" >nul && set "current_radio=C"
 )
 exit /b 0
 
@@ -118,9 +119,9 @@ exit /b 0
 set "new_radio=%~1"
 if "%new_radio%"=="%current_radio%" exit /b 0
 
-if "%new_radio%"=="A" set "new_cfg=at32f415.cfg"
-if "%new_radio%"=="B" set "new_cfg=at32f415_c45.cfg"
-if "%new_radio%"=="C" set "new_cfg=at32f415_nrst.cfg"
+if "%new_radio%"=="A" set "new_cfg=at32f415xx.cfg"
+if "%new_radio%"=="B" set "new_cfg=at32f415xx_c45.cfg"
+if "%new_radio%"=="C" set "new_cfg=at32f415xx_nrst.cfg"
 
 powershell -NoProfile -Command "(Get-Content '%~dp0config.cmd') -replace 'target\\[^\\]+\.cfg', 'target\%new_cfg%' | Set-Content '%~dp0config.tmp' -Encoding Ascii"
 
@@ -157,7 +158,7 @@ move /y "%~dp0config.tmp" "%~dp0config.cmd" >nul
 exit /b 0
 
 :: ----------------------------------------------------
-:: Action Labels (logic carried over from original script)
+:: Action Labels
 :: ----------------------------------------------------
 
 :: Call flash_compat.bat
@@ -223,55 +224,25 @@ if /i "%dragged_file%"=="back" goto :menu_loop
 for %%A in ("%dragged_file%") do (
     set "dragged_file=%%~fA"
 )
-if "%dragged_file%"=="" goto :menu_loop
-if not exist "%dragged_file%" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] File does not exist.
+
+call "%~dp0validate_bin.cmd" "%dragged_file%"
+if not "%VALIDATE_RESULT%"=="OK" (
+    echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     pause
     set "dragged_file="
     set "display_name="
     goto :menu_loop
 )
-for %%C in ("{" "}") do (
-    echo(%dragged_file%| findstr /L /C:"%%~C" >nul
-    if not errorlevel 1 (
-        echo [%CL_R%FAIL%CL_NC%] Path contains unsupported character: %%~C
-        echo        Please rename.
-        pause
-        set "dragged_file="
-        set "display_name="
-        goto :menu_loop
-    )
-)
-for /f "delims=" %%R in ('powershell -NoProfile -Command ^
-    "if ('%dragged_file%' -match '[^\x00-\x7F]') { 'NON_ASCII' } else { 'OK' }"') do (
-    set "ascii_result=%%R"
-)
-if "%ascii_result%"=="NON_ASCII" (
-    echo [%CL_R%FAIL%CL_NC%] Path contains non-ASCII characters.
-    echo        Path: %dragged_file%
-    echo        Please rename using only English letters.
-    pause
-    set "dragged_file="
-    set "display_name="
-    goto :menu_loop
-)
-set "extension="
-for %%A in ("%dragged_file%") do (
-    set "extension=%%~xA"
-)
-if /i not "%extension%"==".bin" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Only .bin files are allowed.
-    pause
-    set "dragged_file="
-    set "display_name="
-    goto :menu_loop
-)
-for %%i in ("%dragged_file%") do set "display_name=%%~nxi"
+set "display_name=%BIN_FILE_NAME%"
 goto :menu_loop
 
-:: Exit option
+:fail_exit
+echo.
+echo [%CL_R%FAIL%CL_NC%] Operation aborted.
+echo.
+pause
+exit /b 1
+
 :exit_menu
 cls
 echo.

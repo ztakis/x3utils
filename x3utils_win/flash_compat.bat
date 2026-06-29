@@ -8,20 +8,7 @@ if not exist "%~dp0config.cmd" (
 )
 
 call "%~dp0config.cmd"
-
-:: Validate OpenOCD binary exists
-if not exist "%OPENOCD_BIN%" (
-    echo [%CL_R%FAIL%CL_NC%] OpenOCD binary not found.
-    echo        Expected: %OPENOCD_BIN%
-    goto :fail_exit
-)
-
-:: Validate OpenOCD scripts directory exists
-if not exist "%SCRIPTS_DIR%" (
-    echo [%CL_R%FAIL%CL_NC%] OpenOCD scripts directory not found.
-    echo        Expected: %SCRIPTS_DIR%
-    goto :fail_exit
-)
+if errorlevel 1 goto :fail_exit
 
 :: Prompt user for confirmation before proceeding with flash operation
 :prompt_loop
@@ -90,7 +77,7 @@ echo.
 :: If the target is read-protected, dumping should fail
 :: safely without erasing firmware contents.
 
-if "%TARGET%"=="target\at32f415_c45.cfg" (
+if "%TARGET%"=="target\at32f415xx_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
         -f "%TARGET%" ^
         -c "guided_connect {%CONNECT_TIMEOUT%}" ^
@@ -116,34 +103,10 @@ if errorlevel 1 (
     goto :fail_exit
 )
 
-:: Ensure dump file actually exists
-if not exist "%raw_dump%" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Raw dump file was not created.
-    goto :fail_exit
-)
-
-:: Verify dump size integrity
-for %%i in ("%raw_dump%") do (
-    set "dump_size=%%~zi"
-)
-
-if not "%dump_size%"=="%EXPECTED_SIZE%" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Raw dump integrity verification failed.
-    echo        Expected: %EXPECTED_SIZE% bytes
-    echo        Actual:   %dump_size% bytes
-    goto :fail_exit
-)
-
-:: Ensure dump file is not all zeros
-for /f %%i in ('powershell -NoProfile -Command "$bytes = [System.IO.File]::ReadAllBytes('%raw_dump%'); ($bytes | Select-Object -Unique).Count -eq 1"') do set "all_zeros=%%i"
-
-if "%all_zeros%"=="True" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Dump file contains only zeros.
-    echo        nRST was not released correctly during step 2.
-    echo        Please try again.
+:: Validate bin file
+call "%~dp0validate_bin.cmd" "%raw_dump%"
+if not "%VALIDATE_RESULT%"=="OK" (
+    echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     goto :fail_exit
 )
 
@@ -198,23 +161,10 @@ if errorlevel 1 (
     goto :fail_exit
 )
 
-:: Ensure patched file actually exists
-if not exist "%patched_dump%" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Patched dump file was not created.
-    goto :fail_exit
-)
-
-:: Verify patched file size integrity
-for %%i in ("%patched_dump%") do (
-    set "patched_size=%%~zi"
-)
-
-if not "%patched_size%"=="%EXPECTED_SIZE%" (
-    echo.
-    echo [%CL_R%FAIL%CL_NC%] Patched binary integrity verification failed.
-    echo        Expected: %EXPECTED_SIZE% bytes
-    echo        Actual:   %patched_size% bytes
+:: Validate patched bin file
+call "%~dp0validate_bin.cmd" "%patched_dump%"
+if not "%VALIDATE_RESULT%"=="OK" (
+    echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     goto :fail_exit
 )
 
@@ -232,13 +182,11 @@ echo.
 :: Still no unlock operation.
 :: We assume the target is not read-protected.
 
-if  "%TARGET%"=="target\at32f415_c45.cfg" (
+if  "%TARGET%"=="target\at32f415xx_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
         -f "%TARGET%" ^
         -c "guided_flash_connect {%CONNECT_TIMEOUT%}" ^
-        -c "flash erase_address 0x08000000 0x20000" ^
-        -c "flash write_bank 0 {%norm_patched_dump%}" ^
-        -c "verify_image {%norm_patched_dump%} 0x08000000" ^
+        -c "do_flash_and_verify {%norm_patched_dump%}" ^
         -c "exit"
 ) else (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^

@@ -8,20 +8,7 @@ if not exist "%~dp0config.cmd" (
 )
 
 call "%~dp0config.cmd"
-
-:: Validate OpenOCD binary exists
-if not exist "%OPENOCD_BIN%" (
-    echo [%CL_R%FAIL%CL_NC%] OpenOCD binary not found.
-    echo        Expected: %OPENOCD_BIN%
-    goto :fail_exit
-)
-
-:: Validate OpenOCD scripts directory exists
-if not exist "%SCRIPTS_DIR%" (
-    echo [%CL_R%FAIL%CL_NC%] OpenOCD scripts directory not found.
-    echo        Expected: %SCRIPTS_DIR%
-    goto :fail_exit
-)
+if errorlevel 1 goto :fail_exit
 
 set "bin_file_path=%~dp0special\gt3_vcu_v1.7.0.bin"
 
@@ -95,12 +82,11 @@ echo ============================================================
 :: Still no unlock operation.
 :: We assume the target is not read-protected.
 
-if  "%TARGET%"=="target\at32f415_c45.cfg" (
+if  "%TARGET%"=="target\at32f415xx_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
         -f "%TARGET%" ^
         -c "guided_flash_connect {%CONNECT_TIMEOUT%}" ^
-        -c "flash write_image erase {%normalized_path%} 0x08001000 bin" ^
-        -c "verify_image {%normalized_path%} 0x08001000 bin" ^
+        -c "do_flash_and_verify_slot0 {%normalized_path%}" ^
         -c "exit"
 ) else (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
@@ -124,7 +110,6 @@ echo.
 echo [ %CL_G%OK%CL_NC% ] Flashing completed and verified successfully!
 echo.
 goto :end
-
 
 :fail_exit
 echo.
