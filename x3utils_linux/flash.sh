@@ -127,7 +127,6 @@ fi
 echo
 echo -e "[ ${CL_G}OK${CL_NC} ] Flashing completed and verified successfully!"
 echo
-
 echo
 read -rp "Press ENTER to continue..."
 echo
