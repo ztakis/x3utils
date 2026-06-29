@@ -108,35 +108,6 @@ if [[ "$VALIDATE_RESULT" != "OK" ]]; then
     exit 1
 fi
 
-# # Ensure dump exists
-# if [[ ! -f "$raw_dump" ]]; then
-#     echo
-#     echo -e "[${CL_R}FAIL${CL_NC}] Raw dump file was not created."
-#     exit 1
-# fi
-
-# # Verify raw dump size
-# dump_size=$(stat -c%s "$raw_dump")
-
-# if [[ "$dump_size" != "$EXPECTED_SIZE" ]]; then
-#     echo
-#     echo -e "[${CL_R}FAIL${CL_NC}] Raw dump integrity verification failed."
-#     echo "       Expected: $EXPECTED_SIZE bytes"
-#     echo "       Actual:   $dump_size bytes"
-#     exit 1
-# fi
-
-# # Ensure dump file is not all the same byte value
-# unique_bytes=$(od -An -tx1 "$raw_dump" | tr -s ' \n' '\n' | grep -E '^[0-9a-f]{2}$' | sort -u | wc -l)
-
-# if [ "$unique_bytes" -eq 1 ]; then
-#     echo
-#     echo -e "[${CL_R}FAIL${CL_NC}] Dump file contains only a single repeated byte value."
-#     echo "       nRST was not released correctly during step 2."
-#     echo "       Please try again."
-#     exit 1
-# fi
-
 echo -e "[ ${CL_G}OK${CL_NC} ] Raw dump verified successfully."
 echo
 
