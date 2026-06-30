@@ -54,9 +54,9 @@ goto :end
 
 :: External call to dump.bat
 echo.
-echo ============================================================
-echo          Step 1: Invoking External Backup Script...
-echo ============================================================
+echo %D%
+echo           Step 1: Invoking External Backup Script...
+echo %D%
 echo.
 
 if exist "%~dp0..\dump.bat" (
@@ -74,9 +74,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo ============================================================
-echo        Step 2: Starting flash process via OpenOCD...
-echo ============================================================
+echo %D%
+echo         Step 2: Starting flash process via OpenOCD...
+echo %D%
 
 :: Run OpenOCD flash using relative configuration mappings
 :: Still no unlock operation.

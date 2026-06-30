@@ -22,6 +22,7 @@ set "CL_G=%ESC%[1;32m"
 set "CL_Y=%ESC%[1;33m"
 set "CL_M=%ESC%[1;35m"
 set "CL_C=%ESC%[1;36m"
+set "D=^============================================================"
 
 :: --- OPENOCD CONFIGURATION ---
 set "OPENOCD_BIN=%~dp0oocd\bin\openocd.exe"

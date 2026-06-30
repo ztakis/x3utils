@@ -24,9 +24,20 @@ call :detect_radio
 
 :menu_loop
 cls
-echo  ============================================================
-echo           ST-LINK UTILITIES FOR X3 scooters - %VERSION%
-echo  ============================================================
+@REM echo  %D%
+@REM echo           ST-LINK UTILITIES FOR X3 scooters - %VERSION%
+@REM echo  %D%
+@REM echo.
+echo.
+echo        ******************************************
+echo        *        __                              *
+echo        *         /                              *
+echo        *       D/         ST-LINK utilities     *
+echo        *       /           for X3 scooters      *
+echo        *      /                 %VERSION%          *
+echo        *     /\____________                     *
+echo        *   ^(o^)           ^(o^)                    *
+echo        ******************************************
 echo.
 
 :: Show dragged file if present
@@ -213,10 +224,10 @@ goto :menu_loop
 :: Load bin file by drag n drop or cancel
 :opt_load
 echo.
-echo =======================================================
-echo  Please Drag and Drop your .bin file directly here 
-echo  and press ENTER.
-echo =======================================================
+echo %D%
+echo   Please Drag and Drop your .bin file directly here
+echo   and press ENTER.
+echo %D%
 echo.
 
 set /p "dragged_file=Drop file here (or type 'back'): "

@@ -11,10 +11,10 @@ call "%~dp0config.cmd"
 if errorlevel 1 goto :fail_exit
 
 echo.
-echo ============================================================
+echo %D%
 echo            Press ENTER to dump current chip data
 echo                   to your backup folder.
-echo ============================================================
+echo %D%
 echo.
 pause
 
@@ -28,7 +28,6 @@ if not exist "%backup_dir%" (
         goto :fail_exit
     )
 )
-
 echo.
 
 :: Cross-regional timestamp generation
@@ -52,9 +51,9 @@ echo Output File:
 echo        "%dump_file%"
 echo.
 
-echo ============================================================
+echo %D%
 echo             Executing Full 128 KB Memory Dump...
-echo ============================================================
+echo %D%
 echo.
 
 :: IMPORTANT:
