@@ -1,0 +1,14 @@
+
+=====================================
+  Experimental - for advanced users
+=====================================
+
+You need to use the launcher to choose a connection option,
+otherwise the scripts in this directory will use the last one chosen.
+
+flash_only.bat is exactly the same as flash.bat minus the forced backup.
+
+flash_slot0.bat is for flashing decrypted repo files (experimental)
+
+flash_gt3_compat.bat is for making gt3 SHU compatible (experimental)
+
