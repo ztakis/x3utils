@@ -7,7 +7,7 @@ export CL_G="\033[1;32m"
 export CL_Y="\033[1;33m"
 export CL_M="\033[1;35m"
 export CL_C="\033[1;36m"
-
+export D="============================================================"
 
 # --- OPENOCD CONFIGURATION ---
 
@@ -35,7 +35,7 @@ OPENOCD_BIN="$OPENOCD_ROOT/bin/openocd"
 SCRIPTS_DIR="$OPENOCD_ROOT/openocd/scripts"
 
 INTERFACE="interface/stlink.cfg"
-TARGET="target/artery/at32f4x_c45.cfg"
+TARGET="target/artery/at32f4x.cfg"
 
 CONNECT_TIMEOUT=3
 

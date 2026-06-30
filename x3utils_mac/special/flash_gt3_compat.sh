@@ -47,9 +47,9 @@ while true; do
 done
 
 echo
-echo "======================================================="
-echo "      Step 1: Invoking External Backup Script..."
-echo "======================================================="
+echo "$D"
+echo "          Step 1: Invoking External Backup Script..."
+echo "$D"
 echo
 
 if [[ ! -f "$SCRIPT_DIR/../dump.sh" ]]; then
@@ -63,9 +63,9 @@ if ! bash "$SCRIPT_DIR/../dump.sh"; then
 fi
 
 echo
-echo "======================================================="
-echo "     Step 2: Starting flash process via OpenOCD..."
-echo "======================================================="
+echo "$D"
+echo "        Step 2: Starting flash process via OpenOCD..."
+echo "$D"
 echo
 
 # Run OpenOCD flash using relative configuration mappings
