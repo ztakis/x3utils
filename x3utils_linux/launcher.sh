@@ -99,9 +99,21 @@ timeout_val="$CONNECT_TIMEOUT"
 while true; do
     clear
 
-    echo " ==============================================================="
-    echo "           ST-LINK UTILITIES FOR X3 scooters - $VERSION"
-    echo " ==============================================================="
+    # echo "$D"
+    # echo "           ST-LINK UTILITIES FOR X3 scooters - $VERSION"
+    # echo "$D"
+    # echo
+
+    echo
+    echo "       ****************************************** "
+    echo "       *        __                              * "
+    echo "       *         /                              * "
+    echo "       *       D/         ST-LINK utilities     * "
+    echo "       *       /           for X3 scooters      * "
+    echo "       *      /                 $VERSION          * "
+    echo "       *     /\____________                     * "
+    echo "       *   (o)           (o)                    * "
+    echo "       ****************************************** "
     echo
 
     if [[ -n "$dragged_file" ]]; then
@@ -143,8 +155,8 @@ while true; do
         echo
     fi
 
-    echo " ==============================================================="
-    echo
+    # echo "$D"
+    # echo
 
     read -rp "> Enter option: " choice
 
@@ -232,9 +244,9 @@ while true; do
 
         4)
             echo
-            echo "======================================================"
-            echo "       Please enter the path to your .bin file"
-            echo "======================================================"
+            echo "$D"
+            echo "          Please enter the path to your .bin file"
+            echo "$D"
             echo
 
             read -rp "File path (or type 'back'): " input_file

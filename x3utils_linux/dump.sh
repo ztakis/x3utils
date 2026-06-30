@@ -13,10 +13,10 @@ fi
 source "$CONFIG_FILE"
 
 echo
-echo "======================================================="
-echo "        Press ENTER to dump current chip data"
-echo "              to your backup folder."
-echo "======================================================="
+echo "$D"
+echo "           Press ENTER to dump current chip data"
+echo "                  to your backup folder."
+echo "$D"
 echo
 
 read -rp ""
@@ -50,9 +50,9 @@ echo "Output File:"
 echo "       \"$dump_file\""
 echo
 
-echo "======================================================="
-echo "        Executing Full 128 KB Memory Dump..."
-echo "======================================================="
+echo "$D"
+echo "             Executing Full 128 KB Memory Dump..."
+echo "$D"
 echo
 
 # IMPORTANT:

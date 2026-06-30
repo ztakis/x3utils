@@ -16,9 +16,9 @@ bin_file_path="$1"
 
 # Detect direct execution without argument
 if [[ -z "$bin_file_path" ]]; then
-    echo "======================================================="
-    echo "  No file detected. Please enter your .bin file path"
-    echo "======================================================="
+    echo "$D"
+    echo "     No file detected. Please enter your .bin file path"
+    echo "$D"
     echo
 
     read -rp "File path: " bin_file_path
@@ -61,9 +61,9 @@ while true; do
 done
 
 echo
-echo "======================================================="
-echo "      Step 1: Invoking External Backup Script..."
-echo "======================================================="
+echo "$D"
+echo "          Step 1: Invoking External Backup Script..."
+echo "$D"
 echo
 
 if [[ -f "$SCRIPT_DIR/../dump.sh" ]]; then
@@ -82,9 +82,9 @@ if [[ $? -ne 0 ]]; then
 fi
 
 echo
-echo "======================================================="
-echo "     Step 2: Starting flash process via OpenOCD..."
-echo "======================================================="
+echo "$D"
+echo "        Step 2: Starting flash process via OpenOCD..."
+echo "$D"
 echo
 
 # Run OpenOCD flash using relative configuration mappings

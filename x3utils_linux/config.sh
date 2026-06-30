@@ -7,7 +7,7 @@ export CL_G="\033[1;32m"
 export CL_Y="\033[1;33m"
 export CL_M="\033[1;35m"
 export CL_C="\033[1;36m"
-
+export D="============================================================"
 
 # --- OPENOCD CONFIGURATION ---
 CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
