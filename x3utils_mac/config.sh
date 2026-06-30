@@ -11,7 +11,7 @@ export CL_C="\033[1;36m"
 
 # --- OPENOCD CONFIGURATION ---
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- ARCHITECTURE DETECTION ---
 # Picks the correct bundled xpack-openocd build for this Mac.
@@ -20,10 +20,10 @@ ARCH="$(uname -m)"
 
 case "$ARCH" in
     arm64)
-        OPENOCD_ROOT="$SCRIPT_DIR/xpack-openocd-0.12.0-7-darwin-arm64"
+        OPENOCD_ROOT="$CONFIG_DIR/xpack-openocd-0.12.0-7-darwin-arm64"
         ;;
     x86_64)
-        OPENOCD_ROOT="$SCRIPT_DIR/xpack-openocd-0.12.0-7-darwin-x64"
+        OPENOCD_ROOT="$CONFIG_DIR/xpack-openocd-0.12.0-7-darwin-x64"
         ;;
     *)
         echo -e "[${CL_R}FAIL${CL_NC}] Unsupported architecture: $ARCH"
