@@ -1,6 +1,8 @@
 #!/bin/bash
-# validate_bin.sh — Shared .bin file validation
-# Usage: source validate_bin.sh "$file_path"
+# Usage:
+#   source validate_bin.sh "$file_path" [nosize]
+# Optional:
+#   nosize    Skip the expected file size (131072-byte) validation.
 # Output variables:
 #   VALIDATE_RESULT  = OK | FAIL
 #   VALIDATE_MSG     = Error description (if FAIL)
@@ -13,6 +15,7 @@ BIN_FILE_NAME=""
 BIN_FILE_PATH=""
 
 _vbin_path="$1"
+_vbin_option="$2"
 
 # 1. Check if path is empty
 if [[ -z "$_vbin_path" ]]; then
@@ -43,10 +46,12 @@ if [[ "$(echo "$_vbin_ext" | tr '[:upper:]' '[:lower:]')" != "bin" ]]; then
 fi
 
 # 6. Validate exact size (128 KB = 131072 bytes)
-_vbin_size=$(stat -f%z "$_vbin_path")
-if [[ "$_vbin_size" != "131072" ]]; then
-    VALIDATE_MSG="Invalid file size. Expected: 131072 bytes, Got: $_vbin_size bytes."
-    return 1 2>/dev/null || exit 1
+if [[ "$_vbin_option" != "nosize" ]]; then
+    _vbin_size=$(stat -f%z "$_vbin_path")
+    if [[ "$_vbin_size" != "131072" ]]; then
+        VALIDATE_MSG="Invalid file size. Expected: 131072 bytes, Got: $_vbin_size bytes."
+        return 1 2>/dev/null || exit 1
+    fi
 fi
 
 # 7. Reject all-zero (single unique byte) content
