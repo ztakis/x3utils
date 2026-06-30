@@ -27,18 +27,31 @@ cls
 @REM echo  %D%
 @REM echo           ST-LINK UTILITIES FOR X3 scooters - %VERSION%
 @REM echo  %D%
-@REM echo.
+
 echo.
-echo        ******************************************
-echo        *        __                              *
-echo        *         /                              *
-echo        *       D/         ST-LINK utilities     *
-echo        *       /           for X3 scooters      *
-echo        *      /                 %VERSION%          *
-echo        *     /\____________                     *
-echo        *   ^(o^)           ^(o^)                    *
-echo        ******************************************
+
+@REM echo        * * * * * * * * * * * * * * * * * * * * *
+@REM echo        *         __                            *
+@REM echo        *          /                            *
+@REM echo        *        D/       ST-LINK utilities     *
+@REM echo        *        /         for X3 scooters      *
+@REM echo        *       /               %VERSION%          *
+@REM echo        *      /\__________                     *
+@REM echo        *    ^(o^)         ^(o^)                    *
+@REM echo        * * * * * * * * * * * * * * * * * * * * *
+
+echo       * * * * * * * * * * * * * * * * * * * * * * * *
+echo       *         __                                  *
+echo       *          /                                  *
+echo       *        D/              ST-LINK utilities    *
+echo       *        /                for X3 scooters     *
+echo       *       /                      %VERSION%         *
+echo       *      /\________/""                          *
+echo       *    ^(o^)         ^(o^)                          *
+echo       * * * * * * * * * * * * * * * * * * * * * * * *
+
 echo.
+
 
 :: Show dragged file if present
 if not "%dragged_file%"=="" (
