@@ -13,6 +13,7 @@ BIN_FILE_NAME=""
 BIN_FILE_PATH=""
 
 _vbin_path="$1"
+_vbin_option="$2"
 
 # 1. Check if path is empty
 if [[ -z "$_vbin_path" ]]; then
@@ -43,10 +44,12 @@ if [[ "${_vbin_ext,,}" != "bin" ]]; then
 fi
 
 # 6. Validate exact size (128 KB = 131072 bytes)
-_vbin_size=$(stat -c%s "$_vbin_path")
-if [[ "$_vbin_size" != "131072" ]]; then
-    VALIDATE_MSG="Invalid file size. Expected: 131072 bytes, Got: $_vbin_size bytes."
-    return 1 2>/dev/null || exit 1
+if [[ "$_vbin_option" != "nosize" ]]; then
+    _vbin_size=$(stat -c%s "$_vbin_path")
+    if [[ "$_vbin_size" != "131072" ]]; then
+        VALIDATE_MSG="Invalid file size. Expected: 131072 bytes, Got: $_vbin_size bytes."
+        return 1 2>/dev/null || exit 1
+    fi
 fi
 
 # 7. Reject all-zero (single unique byte) content
