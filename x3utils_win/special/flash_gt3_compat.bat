@@ -2,15 +2,15 @@
 setlocal
 
 :: Load configuration settings
-if not exist "%~dp0config.cmd" (
+if not exist "%~dp0..\config.cmd" (
     echo [%CL_R%FAIL%CL_NC%] Missing config.cmd
     goto :fail_exit
 )
 
-call "%~dp0config.cmd"
+call "%~dp0..\config.cmd"
 if errorlevel 1 goto :fail_exit
 
-set "bin_file_path=%~dp0special\gt3_vcu_v1.7.0.bin"
+set "bin_file_path=%~dp0gt3_vcu_v1.7.0.bin"
 
 if not exist "%bin_file_path%" (
     echo [%CL_R%FAIL%CL_NC%] Binary file not found:
@@ -59,8 +59,8 @@ echo          Step 1: Invoking External Backup Script...
 echo ============================================================
 echo.
 
-if exist "%~dp0dump.bat" (
-    call "%~dp0dump.bat"
+if exist "%~dp0..\dump.bat" (
+    call "%~dp0..\dump.bat"
 ) else (
     echo [%CL_R%FAIL%CL_NC%] External component dump.bat was not found.
     goto :fail_exit

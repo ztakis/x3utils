@@ -1,6 +1,9 @@
 @echo off
 :: validate_bin.cmd — Shared .bin file validation
-:: Usage: call validate_bin.cmd "full_path_to_file"
+:: Usage:
+::   call validate_bin.cmd "full_path_to_file" [nosize]
+:: Optional:
+::   nosize    Skip the expected file size (131072-byte) validation.
 :: Output variables:
 ::   VALIDATE_RESULT  = OK | FAIL
 ::   VALIDATE_MSG     = Error description (if FAIL)
@@ -13,6 +16,7 @@ set "BIN_FILE_NAME="
 set "BIN_NORMALIZED_PATH="
 
 set "_vbin_path=%~1"
+set "_vbin_option=%~2"
 
 :: 1. Check if path is empty
 if "%_vbin_path%"=="" (
@@ -54,11 +58,13 @@ if /i not "%_vbin_ext%"==".bin" (
 )
 
 :: 6. Validate exact size (128 KB = 131072 bytes)
-set "_vbin_size="
-for %%i in ("%_vbin_path%") do set "_vbin_size=%%~zi"
-if not "%_vbin_size%"=="131072" (
-    set "VALIDATE_MSG=Invalid file size. Expected: 131072 bytes, Got: %_vbin_size% bytes."
-    exit /b 1
+if /i not "%_vbin_option%"=="nosize" (
+    for %%i in ("%_vbin_path%") do (
+        if not "%%~zi"=="131072" (
+            set "VALIDATE_MSG=Invalid file size. Expected: 131072 bytes, Got: %%~zi bytes."
+            exit /b 1
+        )
+    )
 )
 
 :: 7. Reject all-zero (or single unique byte) content
