@@ -60,9 +60,9 @@ raw_dump="$compat_dir/dump_${timestamp}.bin"
 patched_dump="$compat_dir/dump_${timestamp}_patched.bin"
 
 echo
-echo "======================================================="
-echo "           Step 1: Dumping Current Memory"
-echo "======================================================="
+echo "$D"
+echo "              Step 1: Dumping Current Memory"
+echo "$D"
 echo
 echo "Output File:"
 echo "       \"$raw_dump\""
@@ -108,8 +108,8 @@ if [[ "$VALIDATE_RESULT" != "OK" ]]; then
     exit 1
 fi
 
-echo -e "[ ${CL_G}OK${CL_NC} ] Raw dump verified successfully."
 echo
+echo -e "[ ${CL_G}OK${CL_NC} ] Raw dump verified successfully."
 
 mkdir -p "$HOME/.x3utils_backup"
 cp "$raw_dump" "$HOME/.x3utils_backup/dump_${timestamp}.bin"
@@ -120,9 +120,9 @@ echo
 read -rp "Press ENTER to continue..."
 
 echo
-echo "======================================================="
-echo "         Step 2: Injecting Patch Sequence"
-echo "======================================================="
+echo "$D"
+echo "              Step 2: Injecting Patch Sequence"
+echo "$D"
 echo
 
 python3 <<EOF
@@ -182,9 +182,9 @@ echo
 read -rp "Press ENTER to continue..."
 
 echo
-echo "======================================================="
-echo "         Step 3: Flashing Modified Firmware"
-echo "======================================================="
+echo "$D"
+echo "             Step 3: Flashing Modified Firmware"
+echo "$D"
 echo
 
 # Run OpenOCD flash using relative configuration mappings
