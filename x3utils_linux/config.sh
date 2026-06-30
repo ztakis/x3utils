@@ -10,9 +10,9 @@ export CL_C="\033[1;36m"
 
 
 # --- OPENOCD CONFIGURATION ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OPENOCD_BIN="$SCRIPT_DIR/oocd/bin/openocd"
-SCRIPTS_DIR="$SCRIPT_DIR/oocd/scripts"
+CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OPENOCD_BIN="$CONFIG_DIR/oocd/bin/openocd"
+SCRIPTS_DIR="$CONFIG_DIR/oocd/scripts"
 INTERFACE="interface/stlink.cfg"
 TARGET="target/at32f415xx_c45.cfg"
 
