@@ -3,7 +3,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load configuration settings
-CONFIG_FILE="$SCRIPT_DIR/config.sh"
+CONFIG_FILE="$SCRIPT_DIR/../config.sh"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "[${CL_R}FAIL${CL_NC}] Missing config.sh"
@@ -12,7 +12,7 @@ fi
 
 source "$CONFIG_FILE"
 
-bin_file_path="$SCRIPT_DIR/special/gt3_vcu_v1.7.0.bin"
+bin_file_path="$SCRIPT_DIR/gt3_vcu_v1.7.0.bin"
 
 # Check file existence
 if [[ ! -f "$bin_file_path" ]]; then
@@ -52,12 +52,12 @@ echo "      Step 1: Invoking External Backup Script..."
 echo "======================================================="
 echo
 
-if [[ ! -f "$SCRIPT_DIR/dump.sh" ]]; then
+if [[ ! -f "$SCRIPT_DIR/../dump.sh" ]]; then
     echo -e "[${CL_R}FAIL${CL_NC}] External component dump.sh was not found."
     exit 1
 fi
 
-if ! bash "$SCRIPT_DIR/dump.sh"; then
+if ! bash "$SCRIPT_DIR/../dump.sh"; then
     echo -e "[${CL_R}FAIL${CL_NC}] Backup script reported an error!"
     exit 1
 fi
