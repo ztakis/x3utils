@@ -3,7 +3,7 @@
 **[Check the wiki (in progress too)](https://github.com/ztakis/x3utils/wiki)** 
 <br /><br />
 
-<img width="548" height="618" alt="image" src="https://github.com/user-attachments/assets/8591d3d7-94fd-4b0c-8fde-7cd89d794193" />
+<img width="491" height="621" alt="image" src="https://github.com/user-attachments/assets/cbb49c01-9a93-4f5c-94b2-e2136b90c820" />
 
 # Main Menu
 
