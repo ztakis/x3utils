@@ -40,15 +40,15 @@ echo.
 @REM echo        *    ^(o^)         ^(o^)                    *
 @REM echo        * * * * * * * * * * * * * * * * * * * * *
 
-echo       * * * * * * * * * * * * * * * * * * * * * * * *
-echo       *         __                                  *
-echo       *          /                                  *
-echo       *        D/              ST-LINK utilities    *
-echo       *        /                for X3 scooters     *
-echo       *       /                      %VERSION%         *
-echo       *      /\________/""                          *
-echo       *    ^(o^)         ^(o^)                          *
-echo       * * * * * * * * * * * * * * * * * * * * * * * *
+echo   * * * * * * * * * * * * * * * * * * * * * * * * *
+echo   *         __                                    *
+echo   *          /                                    *
+echo   *        D/              ST-LINK utilities      *
+echo   *        /                for X3 scooters       *
+echo   *       /                      %VERSION%           *
+echo   *      /\________/""                            *
+echo   *    ^(o^)         ^(o^)                            *
+echo   * * * * * * * * * * * * * * * * * * * * * * * * *
 
 echo.
 
