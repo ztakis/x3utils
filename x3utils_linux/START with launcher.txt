@@ -1,4 +1,4 @@
-START by double clicking launcher.bat
+START by executing ./launcher.sh
 
 It is reccomended to run Full Memory Dump first (Action: 2)
 and save a copy somewhere safe.
