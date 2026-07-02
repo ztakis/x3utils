@@ -97,35 +97,18 @@ current_radio=$(detect_radio)
 timeout_val="$CONNECT_TIMEOUT"
 
 while true; do
+
     clear
-
-    # echo "$D"
-    # echo "           ST-LINK UTILITIES FOR X3 scooters - $VERSION"
-    # echo "$D"
-    # echo
-
-    # echo
-    # echo "       ****************************************** "
-    # echo "       *        __                              * "
-    # echo "       *         /                              * "
-    # echo "       *       D/         ST-LINK utilities     * "
-    # echo "       *       /           for X3 scooters      * "
-    # echo "       *      /                 $VERSION          * "
-    # echo "       *     /\____________                     * "
-    # echo "       *   (o)           (o)                    * "
-    # echo "       ****************************************** "
-    # echo
-
     echo
-    echo "      * * * * * * * * * * * * * * * * * * * * * * * * "
-    echo "      *         __                                  * "
-    echo "      *          /                                  * "
-    echo "      *        D/              ST-LINK utilities    * "
-    echo "      *        /                for X3 scooters     * "
-    echo "      *       /                      $VERSION         * "
-    echo "      *      /\________/\"\"                          * "
-    echo "      *    (o)         (o)                          * "
-    echo "      * * * * * * * * * * * * * * * * * * * * * * * * "
+    echo "  * * * * * * * * * * * * * * * * * * * * * * * * * "
+    echo "  *         __                                    * "
+    echo "  *          /                                    * "
+    echo "  *        D/               ST-LINK utilities     * "
+    echo "  *        /                 for X3 scooters      * "
+    echo "  *       /                       $VERSION          * "
+    echo "  *      /\________/\"\"                            * "
+    echo "  *    (o)         (o)                            * "
+    echo "  * * * * * * * * * * * * * * * * * * * * * * * * * "
     echo
 
     if [[ -n "$dragged_file" ]]; then
@@ -167,9 +150,6 @@ while true; do
         echo
     fi
 
-    # echo "$D"
-    # echo
-
     read -rp "> Enter option: " choice
 
     case "$choice" in
@@ -203,7 +183,6 @@ while true; do
             if [[ -f "$SCRIPT_DIR/flash_compat.sh" ]]; then
                 bash "$SCRIPT_DIR/flash_compat.sh"
                 if [[ $? -ne 0 ]]; then
-                    # echo -e "[${CL_R}FAIL${CL_NC}] Failed to launch Flash SHU compatible (ZT3/G3/F3/F3Pro)."
                     echo -e "[${CL_R}FAIL${CL_NC}] Flash script reported an error!"
                     read -rp "Press ENTER to continue..."
                 fi
@@ -220,7 +199,6 @@ while true; do
             if [[ -f "$SCRIPT_DIR/dump.sh" ]]; then
                 bash "$SCRIPT_DIR/dump.sh"
                 if [[ $? -ne 0 ]]; then
-                    # echo -e "[${CL_R}FAIL${CL_NC}] Failed to launch Full Memory Dump Utility."
                     echo -e "[${CL_R}FAIL${CL_NC}] Backup script reported an error!"
                     read -rp "Press ENTER to continue..."
                 fi
