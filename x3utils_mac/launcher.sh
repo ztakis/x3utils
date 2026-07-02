@@ -97,40 +97,19 @@ current_radio=$(detect_radio)
 timeout_val="$CONNECT_TIMEOUT"
 
 while true; do
+
     clear
-
-    # echo " ==============================================================="
-    # echo "           ST-LINK UTILITIES FOR X3 scooters - $VERSION"
-    # echo " ==============================================================="
-    # echo
-
-    # echo
-    # echo "       ****************************************** "
-    # echo "       *        __                              * "
-    # echo "       *         /                              * "
-    # echo "       *       D/         ST-LINK utilities     * "
-    # echo "       *       /           for X3 scooters      * "
-    # echo "       *      /                 $VERSION          * "
-    # echo "       *     /\____________                     * "
-    # echo "       *   (o)           (o)                    * "
-    # echo "       ****************************************** "
-    # echo
-
-
     echo
-    echo "      * * * * * * * * * * * * * * * * * * * * * * * * "
-    echo "      *         __                                  * "
-    echo "      *          /                                  * "
-    echo "      *        D/              ST-LINK utilities    * "
-    echo "      *        /                for X3 scooters     * "
-    echo "      *       /                      $VERSION         * "
-    echo "      *      /\________/\"\"                          * "
-    echo "      *    (o)         (o)                          * "
-    echo "      * * * * * * * * * * * * * * * * * * * * * * * * "
+    echo "  * * * * * * * * * * * * * * * * * * * * * * * * * "
+    echo "  *         __                                    * "
+    echo "  *          /                                    * "
+    echo "  *        D/               ST-LINK utilities     * "
+    echo "  *        /                 for X3 scooters      * "
+    echo "  *       /                       $VERSION          * "
+    echo "  *      /\________/\"\"                            * "
+    echo "  *    (o)         (o)                            * "
+    echo "  * * * * * * * * * * * * * * * * * * * * * * * * * "
     echo
-
-
-
 
     if [[ -n "$dragged_file" ]]; then
         echo " [LOADED] Target File:"
@@ -170,9 +149,6 @@ while true; do
         echo "  [T] Set countdown timer (Current: ${timeout_val}s)"
         echo
     fi
-
-    # echo " ==============================================================="
-    # echo
 
     read -rp "> Enter option: " choice
 
