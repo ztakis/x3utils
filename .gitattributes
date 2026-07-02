@@ -5,3 +5,5 @@
 x3utils_linux/oocd/** linguist-vendored
 x3utils_mac/xpack-openocd-*/** linguist-vendored
 x3utils_win/oocd/** linguist-vendored
+
+*.md text eol=lf
