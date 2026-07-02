@@ -24,22 +24,6 @@ call :detect_radio
 
 :menu_loop
 cls
-@REM echo  %D%
-@REM echo           ST-LINK UTILITIES FOR X3 scooters - %VERSION%
-@REM echo  %D%
-
-echo.
-
-@REM echo        * * * * * * * * * * * * * * * * * * * * *
-@REM echo        *         __                            *
-@REM echo        *          /                            *
-@REM echo        *        D/       ST-LINK utilities     *
-@REM echo        *        /         for X3 scooters      *
-@REM echo        *       /               %VERSION%          *
-@REM echo        *      /\__________                     *
-@REM echo        *    ^(o^)         ^(o^)                    *
-@REM echo        * * * * * * * * * * * * * * * * * * * * *
-
 echo   * * * * * * * * * * * * * * * * * * * * * * * * *
 echo   *         __                                    *
 echo   *          /                                    *
@@ -49,7 +33,6 @@ echo   *       /                      %VERSION%           *
 echo   *      /\________/""                            *
 echo   *    ^(o^)         ^(o^)                            *
 echo   * * * * * * * * * * * * * * * * * * * * * * * * *
-
 echo.
 
 
