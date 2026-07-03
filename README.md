@@ -2,7 +2,7 @@
 
 # x3utils
 
-### ST-LINK utilities for X3 / 3rd-generation scooter VCUs.
+### ST-LINK utilities for X3 / 3rd-generation scooters.
 
 ![Launcher menu](docs/media/launcher-menu.png)
 
