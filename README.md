@@ -43,22 +43,22 @@ If option `2` works, your ST-LINK connection is probably good enough for the nex
 `[1] Flash SHU compatible`
 
 Dumps your current VCU firmware, patches it, and flashes it back for SHU-compatible workflows such as flashing from repo or changing serial. Use at your own risk.
-[More info >](docs/wiki/Home.md)
+[More info >](https://github.com/ztakis/x3utils/wiki)
 
 `[2] Run Full Memory Dump (128 KB)`
 
 Makes a full backup. Run this first.
-[More info >](docs/wiki/Home.md)
+[More info >](https://github.com/ztakis/x3utils/wiki)
 
 `[3] Flash Loaded File to Chip`
 
 Flashes the `.bin` file selected with option `4`.
-[More info >](docs/wiki/Home.md)
+[More info >](https://github.com/ztakis/x3utils/wiki)
 
 `[4] Load / Change Target .bin File`
 
 Selects the `.bin` file to flash. Normal firmware files must be exactly 128 KB.
-[More info >](docs/wiki/Home.md)
+[More info >](https://github.com/ztakis/x3utils/wiki)
 
 `[5] Exit`
 
@@ -69,17 +69,17 @@ Closes the utility.
 `A - Default / Blinker buttons`
 
 Use this when SWD is available, either normally or by holding the turn indicator buttons during power-up.
-[More info >](docs/wiki/Home.md)
+[More info >](https://github.com/ztakis/x3utils/wiki)
 
 `B - C45 / Clone ST-Link`
 
 Most common mode. Use this with clone ST-LINK adapters. The launcher tells you when to touch C45 to `GND`.
-[More info >](docs/wiki/Home.md)
+[More info >](https://github.com/ztakis/x3utils/wiki)
 
 `C - C45 / Genuine ST-Link`
 
 Use this with a genuine ST-LINK adapter and its reset pin connected to the MCU reset line at C45.
-[More info >](docs/wiki/Home.md)
+[More info >](https://github.com/ztakis/x3utils/wiki)
 
 ## More Documentation
 
