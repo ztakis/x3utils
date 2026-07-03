@@ -1,1 +1,224 @@
-TBD
+# x3utils Windows Guide
+
+This page is only for Windows-specific usage: how to start the scripts, how to check that Windows sees the ST-LINK, and how to use the `.bat` files directly.
+
+For wiring, connection modes, C45, backups, and flashing safety, use the main README and wiki.
+
+## Start From Explorer
+
+1. Download and unzip x3utils.
+2. Open the `x3utils_win` folder.
+3. Double-click `launcher.bat`.
+
+`START with Launcher.txt` is only a reminder. The real launcher is:
+
+```text
+launcher.bat
+```
+
+If Windows asks whether you trust the file, choose to run it only if you downloaded x3utils from the expected GitHub repository.
+
+## Start From Terminal
+
+You can also run the launcher from Command Prompt, PowerShell, or Windows Terminal.
+
+Open a terminal in the `x3utils_win` folder and run:
+
+```powershell
+.\launcher.bat
+```
+
+If you are not already in the folder:
+
+```powershell
+cd C:\path\to\x3utils_win
+.\launcher.bat
+```
+
+Running from a terminal is useful because you can copy error text more easily.
+
+## ST-LINK In Device Manager
+
+Before blaming the scripts, check whether Windows can see the adapter.
+
+1. Plug in the ST-LINK.
+2. Right-click Start.
+3. Open `Device Manager`.
+4. Look for the ST-LINK under USB devices, Universal Serial Bus devices, or connected debug/programmer devices.
+
+What you want:
+
+- the adapter appears when plugged in;
+- it disappears when unplugged;
+- it does not have a yellow warning icon.
+
+If it does not appear:
+
+- try another USB cable;
+- try another USB port;
+- avoid charge-only USB cables;
+- check whether the adapter needs an ST-LINK driver;
+- reconnect the adapter after installing a driver.
+
+If it appears with a warning icon:
+
+- unplug and reconnect it;
+- try reinstalling the ST-LINK driver;
+- try another USB port;
+- reboot Windows if the driver was just installed.
+
+## Driver Notes
+
+Clone ST-LINK adapters vary. Some work immediately, some need a driver, and some are just poor quality.
+
+The launcher cannot fix a driver problem. If OpenOCD cannot see the adapter at all, solve the Windows/USB driver issue first.
+
+Useful signs that the driver side is probably okay:
+
+- Device Manager reacts when the ST-LINK is plugged in;
+- OpenOCD starts instead of immediately failing to find an adapter;
+- option `2` gets as far as trying to connect to the target.
+
+## Folder And Path Tips
+
+Keep the folder path simple.
+
+Good:
+
+```text
+C:\x3utils\x3utils_win
+C:\Users\YourName\Downloads\x3utils\x3utils_win
+```
+
+Avoid:
+
+```text
+C:\very long path\with {braces}\firmware.bin
+C:\Users\Name With Non-English Characters\Desktop\firmware.bin
+```
+
+The Windows validator rejects some paths because OpenOCD command quoting is sensitive. If a file path fails validation, move the `.bin` file to a simple folder and try again.
+
+## Direct Script Usage
+
+Most users should use `launcher.bat`, but the lower-level scripts can be run directly.
+
+### Dump Directly
+
+From `x3utils_win`:
+
+```powershell
+.\dump.bat
+```
+
+This uses the connection mode currently saved in `config.cmd`.
+
+### Flash A File Directly
+
+You can drag and drop a `.bin` file onto:
+
+```text
+flash.bat
+```
+
+or run it from terminal:
+
+```powershell
+.\flash.bat C:\path\to\firmware.bin
+```
+
+`flash.bat` validates the file, asks for confirmation, runs a backup first, then flashes and verifies.
+
+### SHU Compatible Directly
+
+From `x3utils_win`:
+
+```powershell
+.\flash_compat.bat
+```
+
+This uses the connection mode currently saved in `config.cmd`.
+
+## Important Detail For Direct Scripts
+
+The launcher saves the selected connection mode by editing:
+
+```text
+config.cmd
+```
+
+If you run `dump.bat`, `flash.bat`, or `flash_compat.bat` directly, they use the last connection mode selected in the launcher.
+
+So if you are not sure:
+
+1. run `launcher.bat`;
+2. select `A`, `B`, or `C`;
+3. exit or continue from the launcher;
+4. then run the direct script.
+
+## Files In This Folder
+
+`launcher.bat`
+
+Main menu. Recommended for most users.
+
+`dump.bat`
+
+Runs a full 128 KB dump using the saved connection mode.
+
+`flash.bat`
+
+Flashes a selected `.bin` file after validating it and forcing a backup first.
+
+`flash_compat.bat`
+
+Dumps, patches, and flashes back for SHU-compatible workflows.
+
+`validate_bin.cmd`
+
+Shared Windows `.bin` validator used by flashing scripts.
+
+`config.cmd`
+
+Stores OpenOCD paths, selected target configuration, colors, and mode timeout.
+
+`oocd\`
+
+Bundled OpenOCD for Windows.
+
+`special\`
+
+Experimental / advanced scripts. Read `special\notes.txt` before using anything there.
+
+## Common Windows Problems
+
+`OpenOCD binary not found`
+
+The folder is incomplete. Re-download or re-extract x3utils and make sure this file exists:
+
+```text
+x3utils_win\oocd\bin\openocd.exe
+```
+
+`config.cmd did not update correctly`
+
+The folder may not be writable. Move x3utils somewhere normal, such as Downloads or `C:\x3utils`, and try again.
+
+`Path contains non-ASCII characters`
+
+Move the `.bin` file to a simple path using English letters and numbers.
+
+`Path contains unsupported character`
+
+Rename the file or folder. Avoid `{` and `}` in paths.
+
+Terminal closes too fast
+
+Run the script from PowerShell or Windows Terminal instead of double-clicking it. That lets you read and copy the error.
+
+## More Help
+
+- [Main README](../README.md)
+- [Wiki home](https://github.com/ztakis/x3utils/wiki)
+- [Windows quick start wiki page](https://github.com/ztakis/x3utils/wiki/02.-Windows-quick-start)
+- [Troubleshooting](https://github.com/ztakis/x3utils/wiki/10.-Troubleshooting)
