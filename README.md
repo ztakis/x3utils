@@ -13,7 +13,7 @@
 
 **Watch the quick video first.**
 
-[![Quick video guide](docs/media/video_thumbnail.JPG)](docs/media/G3-162_compressed.mp4)
+[![Quick video guide](docs/media/video_thumbnail.JPG)](https://youtu.be/kAfJ35vDyJ8)
 
 This short video shows the normal Windows + clone ST-LINK flow: launcher on one side, test board and C45 timing on the other.
 
