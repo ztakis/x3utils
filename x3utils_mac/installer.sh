@@ -11,6 +11,65 @@ echo
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+setup_brew_path() {
+    local brew_bin="$1"
+    local profile="$HOME/.zprofile"
+    local shellenv_line="eval \"\$($brew_bin shellenv)\""
+    local answer
+
+    echo "[WARN] Homebrew was found, but the 'brew' command is not active in this Terminal."
+    echo "       Found: $brew_bin"
+    echo
+    echo "Note: the command is 'brew', not 'homebrew'."
+    echo
+    if ! read -rp "Add Homebrew to ~/.zprofile and continue? [Y/N]: " answer; then
+        answer=""
+        echo
+    fi
+
+    case "$answer" in
+        y|Y|yes|YES|Yes)
+            touch "$profile"
+
+            if ! grep -Fq "$shellenv_line" "$profile"; then
+                {
+                    echo
+                    echo "$shellenv_line"
+                } >> "$profile"
+            fi
+
+            eval "$("$brew_bin" shellenv)"
+
+            if command -v brew >/dev/null 2>&1; then
+                echo
+                echo "[ OK ] Homebrew PATH configured for this Terminal."
+                echo "       It will also be available in new Terminal windows."
+                echo
+            else
+                echo
+                echo "[FAIL] Tried to configure Homebrew PATH, but 'brew' is still unavailable."
+                echo "       Close Terminal, reopen it, and run ./installer.sh again."
+                exit 1
+            fi
+            ;;
+        *)
+            echo
+            echo "[FAIL] Homebrew is installed but not active in this Terminal."
+            echo
+            echo "Run these commands manually, then rerun ./installer.sh:"
+            echo
+            echo "    echo '$shellenv_line' >> ~/.zprofile"
+            echo "    $shellenv_line"
+            echo
+            echo "Then check:"
+            echo
+            echo "    brew --version"
+            echo
+            exit 1
+            ;;
+    esac
+}
+
 # Detect architecture
 ARCH="$(uname -m)"
 
@@ -42,13 +101,25 @@ fi
 echo "[ OK ] Bundled OpenOCD located."
 echo
 
-# Check Homebrew
+# Check Homebrew, including the common case where it is installed but not in PATH.
 if ! command -v brew >/dev/null 2>&1; then
-    echo "[FAIL] Homebrew is not installed."
-    echo
-    echo "Install Homebrew first:"
-    echo "https://brew.sh"
-    exit 1
+    if [[ -x /opt/homebrew/bin/brew ]]; then
+        setup_brew_path "/opt/homebrew/bin/brew"
+    elif [[ -x /usr/local/bin/brew ]]; then
+        setup_brew_path "/usr/local/bin/brew"
+    else
+        echo "[FAIL] Homebrew is not installed."
+        echo
+        echo "Install Homebrew first:"
+        echo "https://brew.sh"
+        echo
+        echo "After installing, follow Homebrew's 'Next steps' commands."
+        echo "Then run:"
+        echo "    brew --version"
+        echo
+        echo "Note: the command is 'brew', not 'homebrew'."
+        exit 1
+    fi
 fi
 
 echo "[ OK ] Homebrew detected."
