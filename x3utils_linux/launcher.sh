@@ -59,6 +59,7 @@ set_radio() {
     fi
 
     mv "$tmp" "$SCRIPT_DIR/config.sh"
+    chmod +x "$SCRIPT_DIR/config.sh"
 
     # Verify the change took effect
     local check
@@ -90,6 +91,7 @@ set_timeout() {
     fi
 
     mv "$tmp" "$SCRIPT_DIR/config.sh"
+    chmod +x "$SCRIPT_DIR/config.sh"
     timeout_val="$new_val"
 }
 
