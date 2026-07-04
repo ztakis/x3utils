@@ -14,6 +14,23 @@ If you only want the shortest path, follow the beginner steps below. If you alre
 https://brew.sh
 ```
 
+At the end of the Homebrew install, read the last lines carefully. Homebrew may print one or two commands that add `brew` to your shell path.
+
+If you are not sure what that means, use the simple fix:
+
+1. close Terminal;
+2. log out of macOS;
+3. log back in;
+4. open Terminal again.
+
+Then check:
+
+```bash
+brew --version
+```
+
+If that prints a Homebrew version, continue.
+
 2. Download and unzip x3utils.
 3. Open the `x3utils_mac` folder in Finder.
 4. Right-click inside the folder and choose `New Terminal at Folder`.
@@ -81,6 +98,24 @@ If that fails, install Homebrew first:
 ```text
 https://brew.sh
 ```
+
+After installing Homebrew, close Terminal and open it again. If `brew` is still not recognized, log out of macOS and log back in.
+
+Advanced users can also add Homebrew to the current shell manually.
+
+Apple Silicon:
+
+```bash
+eval "$(/opt/homebrew/bin/brew shellenv)"
+```
+
+Intel Mac:
+
+```bash
+eval "$(/usr/local/bin/brew shellenv)"
+```
+
+If that works, follow the final PATH instructions printed by the Homebrew installer so the change is saved for future terminals.
 
 The installer runs:
 
@@ -211,6 +246,36 @@ Experimental / advanced scripts. Read `special/notes.txt` before using anything 
 `Homebrew is not installed`
 
 Install Homebrew from `https://brew.sh`, then rerun:
+
+```bash
+./installer.sh
+```
+
+`brew: command not found`
+
+Homebrew may be installed, but Terminal does not know where to find it yet.
+
+Beginner fix:
+
+1. close Terminal;
+2. log out of macOS;
+3. log back in;
+4. open Terminal;
+5. run `brew --version`.
+
+Advanced quick fix for Apple Silicon:
+
+```bash
+eval "$(/opt/homebrew/bin/brew shellenv)"
+```
+
+Advanced quick fix for Intel Mac:
+
+```bash
+eval "$(/usr/local/bin/brew shellenv)"
+```
+
+Then rerun:
 
 ```bash
 ./installer.sh
