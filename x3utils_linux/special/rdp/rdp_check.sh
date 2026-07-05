@@ -34,11 +34,19 @@ fi
 
 source "$CONFIG_FILE"
 
-# Use the plain target config (not the C45 guided one) so probing is generic.
-TEST_TARGET="target/at32f415xx.cfg"
+source "$SCRIPT_DIR/rdp_lib.sh"
+
+USE_LAUNCHER=0
+for a in "$@"; do
+    case "$a" in
+        -l|--launcher) USE_LAUNCHER=1 ;;
+    esac
+done
+resolve_connect
+
 LOG_DIR="$SCRIPT_DIR/../../backup"
 RUN_ID="$(date +"%Y-%m-%d_%H-%M-%S")"
-LOG_FILE="$LOG_DIR/rdp_check2_${RUN_ID}.log"
+LOG_FILE="$LOG_DIR/rdp_check_${RUN_ID}.log"
 
 # FAP byte value that means "access/read protection disabled" on Artery AT32.
 FAP_UNLOCKED=0xA5
@@ -48,63 +56,38 @@ mkdir -p "$LOG_DIR" || {
     exit 1
 }
 
-# ---------------------------------------------------------------------------
-# run_openocd <label> <-c cmd> [<-c cmd> ...]
-#   Runs one fresh OpenOCD session, appends everything to the log, and echoes
-#   the combined stdout+stderr so the caller can capture it into a variable.
-# ---------------------------------------------------------------------------
-run_openocd() {
-    local label="$1"; shift
-    {
-        echo
-        echo "$D"
-        echo "OpenOCD: $label"
-        echo "$D"
-    } >> "$LOG_FILE"
-
-    local out
-    out="$("$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-        -f "$INTERFACE" \
-        -f "$TEST_TARGET" \
-        "$@" \
-        -c "shutdown" 2>&1)"
-
-    printf '%s\n' "$out" >> "$LOG_FILE"
-    printf '%s\n' "$out"
-}
-
-# Returns 0 (true) if the output shows the adapter/target could not be opened
-# at the USB/SWD transport level — i.e. a hardware/wiring problem, not a
+# Returns 0 (true) if the output shows the adapter/target could not be opened,
+# or a guided connect-under-reset failed — a connection problem, not a
 # protection state.
 adapter_unreachable() {
-    grep -Eq "open failed|unable to open|no device found|Error: init mode failed|Error connecting DP|Could not initialize the debug port" <<< "$1"
+    grep -Eq "open failed|unable to open|no device found|Error: init mode failed|Error connecting DP|Could not initialize the debug port|Could not re-examine target|Adapter init failed" <<< "$1"
 }
 
-# ---------------------------------------------------------------------------
 echo
 echo "$D"
-echo "          AT32F415 read-protection (FAP) check — v2"
+echo "          AT32F415 read-protection (FAP) check"
 echo "$D"
 echo
-echo "Target config:  $TEST_TARGET"
+echo "Connect mode:   $CONN_MODE"
 echo "Log file:       $LOG_FILE"
 echo
 
-# --- Step 1: connect and read the FAP / USD option word -------------------
-echo -e "[${CL_C}....${CL_NC}] Connecting and reading FAP / USD @ 0x1FFFF800 ..."
-usd_out="$(run_openocd "read FAP/USD" \
-    -c "init" \
-    -c "reset halt" \
+# One session: connect (guided by default), then read the FAP/USD word and the
+# flash vector table. Output is tee'd to the log (NOT $()-captured) so any
+# interactive grounding prompt stays visible; the verdict is parsed from the log.
+echo -e "[${CL_C}....${CL_NC}] Connecting and reading FAP/USD @ 0x1FFFF800 and flash @ 0x08000000 ..."
+{ echo; echo "$D"; echo "RDP check session $RUN_ID"; echo "$D"; } >> "$LOG_FILE"
+"$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+    "${OOCD_PRE[@]}" \
+    "${OOCD_CONNECT[@]}" \
     -c "flash probe 0" \
-    -c "mdw 0x1FFFF800 1")"
+    -c "mdw 0x1FFFF800 1" \
+    -c "mdw 0x08000000 4" \
+    -c "shutdown" 2>&1 | tee -a "$LOG_FILE"
 
-# --- Step 2: attempt a real main-flash read (vector table) ----------------
-echo -e "[${CL_C}....${CL_NC}] Attempting main-flash read @ 0x08000000 ..."
-flash_out="$(run_openocd "read flash vectors" \
-    -c "init" \
-    -c "reset halt" \
-    -c "flash probe 0" \
-    -c "mdw 0x08000000 4")"
+scan="$(cat "$LOG_FILE")"
+usd_out="$scan"
+flash_out="$scan"
 
 # --- Analyse connectivity -------------------------------------------------
 adapter_failed=0
