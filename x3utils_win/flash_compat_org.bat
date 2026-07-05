@@ -77,7 +77,6 @@ echo.
 :: If the target is read-protected, dumping should fail
 :: safely without erasing firmware contents.
 
-:cdump_attempt
 if "%TARGET%"=="target\at32f415xx_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
         -f "%TARGET%" ^
@@ -95,21 +94,14 @@ if "%TARGET%"=="target\at32f415xx_c45.cfg" (
         -c "exit"
 )
 
-:: On success continue; on ANY failure offer a re-seat retry (read-only, always safe).
-if not errorlevel 1 goto :cdump_ok
-echo.
-echo [%CL_Y%WARN%CL_NC%] OpenOCD could not read the chip - nothing was changed.
-echo        Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat the
-echo        probe and the contact (touch the contact point, NOT on top of the cap),
-echo        keep it steady. (A read-protected chip will keep failing - then press Q.)
-echo.
-set "retry_choice="
-set /p "retry_choice=Press ENTER to retry, or type Q to quit: "
-if /i "%retry_choice%"=="q" goto :fail_exit
-echo.
-goto :cdump_attempt
-
-:cdump_ok
+if errorlevel 1 (
+    echo.
+    echo [%CL_R%FAIL%CL_NC%] OpenOCD failed during memory dump.
+    echo Check:
+    echo        Check ST-Link connection, board power,
+    echo        and read protection state.
+    goto :fail_exit
+)
 
 :: Validate bin file
 call "%~dp0validate_bin.cmd" "%raw_dump%"
@@ -190,7 +182,6 @@ echo.
 :: Still no unlock operation.
 :: We assume the target is not read-protected.
 
-:flash_attempt
 if  "%TARGET%"=="target\at32f415xx_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
         -f "%TARGET%" ^
@@ -209,23 +200,15 @@ if  "%TARGET%"=="target\at32f415xx_c45.cfg" (
         -c "exit"
 )
 
-:: On success continue; on ANY failure offer a re-seat retry (safe to repeat:
-:: guided_flash_connect halts and erase precedes write, so no half-write hazard).
-:: This retries the FLASH only - the dump/patch above are not re-run.
-if not errorlevel 1 goto :flash_ok
-echo.
-echo [%CL_Y%WARN%CL_NC%] OpenOCD failed - nothing was verified.
-echo        Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat
-echo        the probe and the contact (touch the contact point, NOT on top of the
-echo        cap), keep it steady. Erase runs before write, so a retry is safe.
-echo.
-set "retry_choice="
-set /p "retry_choice=Press ENTER to retry, or type Q to quit: "
-if /i "%retry_choice%"=="q" goto :fail_exit
-echo.
-goto :flash_attempt
+if errorlevel 1 (
+    echo.
+    echo [%CL_R%FAIL%CL_NC%] OpenOCD failed during flashing.
+    echo Check:
+    echo        Check ST-Link connection, board power,
+    echo        and flash protection state.
+    goto :fail_exit
+)
 
-:flash_ok
 echo.
 echo [ %CL_G%OK%CL_NC% ] Flashing completed successfully!
 echo.

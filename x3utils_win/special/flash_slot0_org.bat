@@ -10,24 +10,32 @@ if not exist "%~dp0..\config.cmd" (
 call "%~dp0..\config.cmd"
 if errorlevel 1 goto :fail_exit
 
-set "bin_file_path=%~dp0gt3_vcu_v1.7.0.bin"
+set "bin_file_path=%~1"
 
-if not exist "%bin_file_path%" (
-    echo [%CL_R%FAIL%CL_NC%] Binary file not found:
-    echo        %bin_file_path%
+:: Detect double-click (No file passed as an argument)
+if "%bin_file_path%"=="" (
+    echo %D%
+    echo    %CL_Y%No file detected. Please Drag and Drop your .bin file 
+    echo    directly into this window and press ENTER.%CL_NC%
+    echo %D%
+    echo.
+    set /p "bin_file_path=Drop file here: "
+)
+
+:: Strip any accidental outer quotes from the input
+for %%A in ("%bin_file_path%") do (
+    set "bin_file_path=%%~fA"
+    set "extension=%%~xA"
+)
+
+:: Validate bin file
+call "%~dp0..\validate_bin.cmd" "%bin_file_path%" nosize
+if not "%VALIDATE_RESULT%"=="OK" (
+    echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     goto :fail_exit
 )
-
-for %%i in ("%bin_file_path%") do (
-    set "bin_file=%%~nxi"
-)
-
-set "normalized_path=%bin_file_path:\=/%"
-
-echo.
-echo Binary file: %bin_file%
-echo Location: %bin_file_path%
-echo Flash address: 0x08001000
+set "bin_file=%BIN_FILE_NAME%"
+set "normalized_path=%BIN_NORMALIZED_PATH%"
 echo.
 
 :: Prompt user confirmation before flashing
@@ -77,12 +85,12 @@ echo.
 echo %D%
 echo         Step 2: Starting flash process via OpenOCD...
 echo %D%
+echo.
 
 :: Run OpenOCD flash using relative configuration mappings
 :: Still no unlock operation.
 :: We assume the target is not read-protected.
 
-:flash_attempt
 if  "%TARGET%"=="target\at32f415xx_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
         -f "%TARGET%" ^
@@ -100,23 +108,13 @@ if  "%TARGET%"=="target\at32f415xx_c45.cfg" (
         -c "exit"
 )
 
-:: On success continue; on ANY failure offer a re-seat retry (safe to repeat:
-:: guided_flash_connect halts and write_image erase re-erases, so no half-write hazard).
-:: This retries the FLASH only - the successful backup above is not re-run.
-if not errorlevel 1 goto :flash_ok
-echo.
-echo [%CL_Y%WARN%CL_NC%] OpenOCD failed - nothing was verified.
-echo        Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat
-echo        the probe and the contact (touch the contact point, NOT on top of the
-echo        cap), keep it steady. Erase runs before write, so a retry is safe.
-echo.
-set "retry_choice="
-set /p "retry_choice=Press ENTER to retry, or type Q to quit: "
-if /i "%retry_choice%"=="q" goto :fail_exit
-echo.
-goto :flash_attempt
+:: Check if OpenOCD execution was successful
+if errorlevel 1 (
+    echo.
+    echo [%CL_R%FAIL%CL_NC%] OpenOCD failed with error code %errorlevel%. Check hardware connections.
+    goto :fail_exit
+)
 
-:flash_ok
 echo.
 echo [ %CL_G%OK%CL_NC% ] Flashing completed and verified successfully!
 echo.

@@ -15,7 +15,7 @@ set "bin_file_path=%~1"
 :: Detect double-click (No file passed as an argument)
 if "%bin_file_path%"=="" (
     echo %D%
-    echo    %CL_Y%No file detected. Please Drag and Drop your .bin file
+    echo    %CL_Y%No file detected. Please Drag and Drop your .bin file 
     echo    directly into this window and press ENTER.%CL_NC%
     echo %D%
     echo.
@@ -60,14 +60,9 @@ goto :end
 :do_flash
 echo.
 
-:: Run OpenOCD flash using relative configuration mappings.
-:: Still no unlock operation. We assume the target is not read-protected.
-::
-:: Wrapped in a re-seat-and-retry loop: the #1 field failure is losing the
-:: hand-held SWD / nRST-C45 contact mid-connect, not logic. guided_flash_connect
-:: halts before flashing and do_flash_and_verify ERASES before it writes, so
-:: re-running a failed attempt is idempotent - there is no half-write hazard.
-:flash_attempt
+:: Run OpenOCD flash using relative configuration mappings
+:: Still no unlock operation.
+:: We assume the target is not read-protected.
 
 if  "%TARGET%"=="target\at32f415xx_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
@@ -87,22 +82,13 @@ if  "%TARGET%"=="target\at32f415xx_c45.cfg" (
         -c "exit"
 )
 
-:: On success continue; on ANY failure offer a re-seat retry (safe to repeat).
-if not errorlevel 1 goto :flash_ok
+:: Check if OpenOCD execution was successful
+if errorlevel 1 (
+    echo.
+    echo [%CL_R%FAIL%CL_NC%] OpenOCD failed with error code %errorlevel%. Check hardware connections.
+    goto :fail_exit
+)
 
-echo.
-echo [%CL_Y%WARN%CL_NC%] OpenOCD failed - nothing was verified.
-echo        Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat
-echo        the probe and the contact (touch the contact point, NOT on top of the
-echo        cap), keep it steady. Erase runs before write, so a retry is safe.
-echo.
-set "retry_choice="
-set /p "retry_choice=Press ENTER to retry, or type Q to quit: "
-if /i "%retry_choice%"=="q" goto :fail_exit
-echo.
-goto :flash_attempt
-
-:flash_ok
 echo.
 echo [ %CL_G%OK%CL_NC% ] Flashing completed and verified successfully!
 echo.

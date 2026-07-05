@@ -61,7 +61,6 @@ echo.
 :: If the target is read-protected, dumping should fail
 :: safely without erasing firmware contents.
 
-:dump_attempt
 if "%TARGET%"=="target\at32f415xx_c45.cfg" (
     "%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 ^
         -f "%TARGET%" ^
@@ -79,21 +78,13 @@ if "%TARGET%"=="target\at32f415xx_c45.cfg" (
         -c "exit"
 )
 
-:: On success continue; on ANY failure offer a re-seat retry (read-only, always safe).
-if not errorlevel 1 goto :dump_ok
-echo.
-echo [%CL_Y%WARN%CL_NC%] OpenOCD could not read the chip - nothing was changed.
-echo        Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat the
-echo        probe and the contact (touch the contact point, NOT on top of the cap),
-echo        keep it steady. (A read-protected chip will keep failing - then press Q.)
-echo.
-set "retry_choice="
-set /p "retry_choice=Press ENTER to retry, or type Q to quit: "
-if /i "%retry_choice%"=="q" goto :fail_exit
-echo.
-goto :dump_attempt
-
-:dump_ok
+:: Validate OpenOCD exit state
+if errorlevel 1 (
+    echo.
+    echo [%CL_R%FAIL%CL_NC%] OpenOCD encountered an error reading the chip memory.
+    echo        Check ST-Link wiring, power, and target state.
+    goto :fail_exit
+)
 
 :: Validate dumped bin file
 call "%~dp0validate_bin.cmd" "%dump_file%"
