@@ -2,7 +2,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-CONFIG_FILE="$SCRIPT_DIR/../config.sh"
+CONFIG_FILE="$SCRIPT_DIR/../../config.sh"
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "[FAIL] Missing config.sh"
     exit 1
@@ -13,7 +13,7 @@ source "$CONFIG_FILE"
 # Hardware testbed probe for AT32F415 access/read-protection behavior.
 # This deliberately uses the normal target config, not the C45 guided target.
 TEST_TARGET="target/at32f415xx.cfg"
-LOG_DIR="$SCRIPT_DIR/../backup"
+LOG_DIR="$SCRIPT_DIR/../../backup"
 RUN_ID="$(date +"%Y-%m-%d_%H-%M-%S")"
 LOG_FILE="$LOG_DIR/rdp_check_${RUN_ID}.log"
 HEAD_DUMP_FILE="$LOG_DIR/rdp_check_head_${RUN_ID}.bin"
