@@ -31,7 +31,7 @@ SKIP_CONFIRM=0
 USE_LAUNCHER=0
 for a in "$@"; do
     case "$a" in
-        --yes)         SKIP_CONFIRM=1 ;;
+        --yes|-y)      SKIP_CONFIRM=1 ;;
         -l|--launcher) USE_LAUNCHER=1 ;;
     esac
 done
@@ -76,20 +76,35 @@ fi
 
 echo
 echo -e "[${CL_C}....${CL_NC}] Connecting and programming FAP=0x00 ..."
-"$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-    "${OOCD_PRE[@]}" \
-    "${OOCD_CONNECT[@]}" \
-    "${FAP_ENABLE[@]}" \
-    -c "echo {--- FAP cell after programming (low byte should NOT be a5) ---}" \
-    -c "mdw 0x1FFFF800 1" \
-    -c "shutdown"
-rc=$?
+# On success continue; on ANY failure offer a re-seat retry. FAP_ENABLE erases the
+# USD then reprograms the FAP half-word from scratch, so re-running after a failed/
+# partial attempt is idempotent. The ENABLE-FAP confirm above is asked once and is
+# NOT repeated on retry.
+while true; do
+    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+        "${OOCD_PRE[@]}" \
+        "${OOCD_CONNECT[@]}" \
+        "${FAP_ENABLE[@]}" \
+        -c "echo {--- FAP cell after programming (low byte should NOT be a5) ---}" \
+        -c "mdw 0x1FFFF800 1" \
+        -c "shutdown"
+    [[ $? -eq 0 ]] && break
+
+    echo
+    echo -e "[${CL_Y}WARN${CL_NC}] FAP programming failed or did not complete."
+    echo "       Usually lost SWD / nRST-C45 contact mid-connect. Re-seat the probe and"
+    echo "       the contact (touch the contact point, NOT on top of the cap), keep it"
+    echo "       steady. It re-erases and reprograms, so a retry is safe."
+    echo
+    read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
+    retry_choice_lc="$(echo "$retry_choice" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$retry_choice_lc" == "q" ]]; then
+        exit 1
+    fi
+    echo
+done
 
 echo
-if [[ $rc -ne 0 ]]; then
-    echo -e "[${CL_R}FAIL${CL_NC}] Session exited with code $rc — see output above."
-    exit "$rc"
-fi
 
 echo -e "[ ${CL_G}OK${CL_NC} ] Programming sent."
 echo -e "[${CL_Y}NEXT${CL_NC}] POWER-CYCLE the board, then run ./rdp_check.sh — it should"

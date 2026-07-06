@@ -30,7 +30,7 @@ SKIP_CONFIRM=0
 USE_LAUNCHER=0
 for a in "$@"; do
     case "$a" in
-        --yes|-y)      SKIP_CONFIRM=1 ;;
+        --yes)         SKIP_CONFIRM=1 ;;
         -l|--launcher) USE_LAUNCHER=1 ;;
     esac
 done
@@ -57,35 +57,20 @@ fi
 
 echo
 echo -e "[${CL_C}....${CL_NC}] Connecting and rewriting option area (FAP=0xA5) ..."
-# On success continue; on ANY failure offer a re-seat retry. UNLOCK_REWRITE erases
-# the USD then reprograms FAP from scratch, so re-running after a failed/partial
-# attempt is idempotent (no half-write hazard). The CLEAR-FAP confirm above is asked
-# once and is NOT repeated on retry.
-while true; do
-    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-        "${OOCD_PRE[@]}" \
-        "${OOCD_CONNECT[@]}" \
-        "${UNLOCK_REWRITE[@]}" \
-        -c "echo {--- option area after rewrite (masked 0x00 until reload if still protected) ---}" \
-        -c "mdw 0x1FFFF800 8" \
-        -c "shutdown"
-    [[ $? -eq 0 ]] && break
-
-    echo
-    echo -e "[${CL_Y}WARN${CL_NC}] Option-area rewrite failed or did not complete."
-    echo "       Usually lost SWD / nRST-C45 contact mid-connect. Re-seat the probe and"
-    echo "       the contact (touch the contact point, NOT on top of the cap), keep it"
-    echo "       steady. The rewrite re-erases and reprograms, so a retry is safe."
-    echo
-    read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
-    retry_choice_lc="$(echo "$retry_choice" | tr '[:upper:]' '[:lower:]')"
-    if [[ "$retry_choice_lc" == "q" ]]; then
-        exit 1
-    fi
-    echo
-done
+"$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+    "${OOCD_PRE[@]}" \
+    "${OOCD_CONNECT[@]}" \
+    "${UNLOCK_REWRITE[@]}" \
+    -c "echo {--- option area after rewrite (masked 0x00 until reload if still protected) ---}" \
+    -c "mdw 0x1FFFF800 8" \
+    -c "shutdown"
+rc=$?
 
 echo
+if [[ $rc -ne 0 ]]; then
+    echo -e "[${CL_R}FAIL${CL_NC}] Session exited with code $rc — check the connection and retry."
+    exit "$rc"
+fi
 
 echo -e "[ ${CL_G}OK${CL_NC} ] Rewrite sent."
 echo -e "[${CL_Y}NEXT${CL_NC}] POWER-CYCLE the board, then run ./rdp_check.sh to confirm NOT PROTECTED."
