@@ -120,7 +120,7 @@ echo        the probe and the contact (touch the contact point, NOT on top of th
 echo        cap), keep it steady. Erase runs before write, so a retry is safe.
 echo.
 set "retry_choice="
-set /p "retry_choice=Press ENTER to retry, or type Q to quit: "
+set /p "retry_choice=%CL_C%Press ENTER to retry, or type Q to quit: %CL_NC%"
 if /i "%retry_choice%"=="q" goto :fail_exit
 echo.
 goto :flash_attempt
