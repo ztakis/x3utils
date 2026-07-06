@@ -389,7 +389,19 @@ function Invoke-Check {
     if ($adapterFailed) {
         Say "[${CL_Y}????${CL_NC}] INCONCLUSIVE: could not reach the chip; fix the connection and retry."
         $rc = 3
+    } elseif ($flashAccessible -and $fapRead -and -not $fapUnlocked) {
+        # Contradiction guard: the FAP byte read back non-0xA5 (looks protected) but main
+        # flash returned real data (firmware or blank 0xFF). A truly read-protected AT32F415
+        # masks the bus to 0x00 and can NEVER return readable flash, so it is the option-area
+        # read that glitched here, not the chip. Readable flash is physically decisive.
+        SayOk 'NOT PROTECTED: main flash reads back normally.'
+        Say ("       (Note: FAP byte read as 0x{0:X2}, not 0x{1:X2} - but a protected part cannot" -f $fap, $FAP_UNLOCKED)
+        Say '       return readable flash, so that was a glitched option read; re-run to confirm.)'
+        $rc = 0
     } elseif ($fapRead -and -not $fapUnlocked) {
+        # FAP byte is authoritative when flash does not contradict it: a non-0xA5 value here
+        # means protected (flash is masked/blocked or unclassifiable - NOT provably readable,
+        # or the contradiction guard above would have caught it).
         Say ("[${CL_R}PROT${CL_NC}] READ PROTECTED: FAP=0x{0:X2} (not the unlocked value 0x{1:X2})." -f $fap, $FAP_UNLOCKED)
         $rc = 2
     } elseif ($fapRead -and $fapUnlocked -and $fapCompOk) {
