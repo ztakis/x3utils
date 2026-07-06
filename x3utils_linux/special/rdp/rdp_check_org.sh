@@ -72,53 +72,20 @@ echo "Connect mode:   $CONN_MODE"
 echo "Log file:       $LOG_FILE"
 echo
 
-# Connect (guided by default), then read the FAP/USD word and the flash vector
-# table. Output is tee'd (NOT $()-captured) so the interactive grounding prompts
-# stay visible. Each attempt is captured to its OWN temp file and parsed from that
-# alone — a stale failed attempt must never pollute the verdict — while the
-# persistent log keeps the full history of every attempt.
-#
-# Connection-only retry: a lost SWD/nRST-C45 contact (adapter unreachable) offers a
-# re-seat retry. This is READ-ONLY, so retrying never changes the chip. It keys on
-# the CONNECTION signal only — a genuinely READ-PROTECTED part connects fine and
-# returns masked data, which is a valid verdict, NOT a retry condition.
-attempt=0
-scan=""
-while true; do
-    attempt=$((attempt + 1))
-    echo -e "[${CL_C}....${CL_NC}] Connecting and reading FAP/USD @ 0x1FFFF800 and flash @ 0x08000000 ..."
-    attempt_log="$(mktemp "${TMPDIR:-/tmp}/rdp_check_attempt.XXXXXX")"
-    { echo; echo "$D"; echo "RDP check session $RUN_ID (attempt $attempt)"; echo "$D"; } >> "$attempt_log"
-    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-        "${OOCD_PRE[@]}" \
-        "${OOCD_CONNECT[@]}" \
-        -c "flash probe 0" \
-        -c "mdw 0x1FFFF800 1" \
-        -c "mdw 0x08000000 4" \
-        -c "shutdown" 2>&1 | tee -a "$attempt_log"
-    cat "$attempt_log" >> "$LOG_FILE"   # fold into the persistent log (full history)
-    scan="$(cat "$attempt_log")"        # parse THIS attempt only
-    rm -f "$attempt_log"
+# One session: connect (guided by default), then read the FAP/USD word and the
+# flash vector table. Output is tee'd to the log (NOT $()-captured) so any
+# interactive grounding prompt stays visible; the verdict is parsed from the log.
+echo -e "[${CL_C}....${CL_NC}] Connecting and reading FAP/USD @ 0x1FFFF800 and flash @ 0x08000000 ..."
+{ echo; echo "$D"; echo "RDP check session $RUN_ID"; echo "$D"; } >> "$LOG_FILE"
+"$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+    "${OOCD_PRE[@]}" \
+    "${OOCD_CONNECT[@]}" \
+    -c "flash probe 0" \
+    -c "mdw 0x1FFFF800 1" \
+    -c "mdw 0x08000000 4" \
+    -c "shutdown" 2>&1 | tee -a "$LOG_FILE"
 
-    # Retry ONLY on a connection-level failure — never on a protection verdict.
-    if adapter_unreachable "$scan"; then
-        echo
-        echo -e "[${CL_Y}WARN${CL_NC}] Adapter/target could not be reached — nothing was read."
-        echo "       Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat the"
-        echo "       probe and the contact (touch the contact point, NOT on top of the cap),"
-        echo "       keep it steady. (Read-only check — retrying never changes the chip.)"
-        echo
-        read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
-        retry_choice_lc="$(echo "$retry_choice" | tr '[:upper:]' '[:lower:]')"
-        if [[ "$retry_choice_lc" == "q" ]]; then
-            break   # keep this failed scan -> verdict prints INCONCLUSIVE, exit 3
-        fi
-        echo
-        continue
-    fi
-    break
-done
-
+scan="$(cat "$LOG_FILE")"
 usd_out="$scan"
 flash_out="$scan"
 
@@ -231,19 +198,8 @@ rc=3
 if [[ $adapter_failed -eq 1 ]]; then
     echo -e "[${CL_Y}????${CL_NC}] INCONCLUSIVE: could not reach the chip; fix the connection and retry."
     rc=3
-elif [[ $flash_accessible -eq 1 && $fap_read -eq 1 && $fap_unlocked -eq 0 ]]; then
-    # Contradiction guard: the FAP byte read back non-0xA5 (looks protected) but main
-    # flash returned real data (firmware or blank 0xFF). A truly read-protected AT32F415
-    # masks the bus to 0x00 and can NEVER return readable flash, so it is the option-area
-    # read that glitched here, not the chip. Readable flash is physically decisive.
-    echo -e "[ ${CL_G}OK${CL_NC} ] NOT PROTECTED: main flash reads back normally."
-    printf "       (Note: FAP byte read as 0x%02X, not 0x%02X — but a protected part cannot\n" "$fap" "$FAP_UNLOCKED"
-    echo "       return readable flash, so that was a glitched option read; re-run to confirm.)"
-    rc=0
 elif [[ $fap_read -eq 1 && $fap_unlocked -eq 0 ]]; then
-    # FAP byte is authoritative when flash does not contradict it: a non-0xA5 value here
-    # means protected (flash is masked/blocked or unclassifiable — NOT provably readable,
-    # or the contradiction guard above would have caught it).
+    # FAP byte is authoritative: any value other than 0xA5 means protected.
     printf "[%bPROT%b] READ PROTECTED: FAP=0x%02X (not the unlocked value 0x%02X).\n" \
         "$CL_R" "$CL_NC" "$fap" "$FAP_UNLOCKED"
     rc=2
