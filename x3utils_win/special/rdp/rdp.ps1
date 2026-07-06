@@ -27,10 +27,14 @@
       The bundled OpenOCD's `at32f4xx disable_access_protection 0` reads the
       USD, overrides only FAP, and writes the rest back. On a still-protected
       part the USD reads masked to 0x00000000, so it programs WRP/SSB to 0x00
-      and leaves the part WRITE-protected (verified corruption on hardware).
-      Every unlock path here instead erases the USD and programs ONLY the FAP
-      half-word via raw flash-controller registers. NEVER call
-      disable_access_protection to recover a read-protected board.
+      and leaves the part WRITE-protected. Reproduced deterministically on
+      hardware (3/3 testbed runs, 2026-07-06): the protected part's USD reads
+      back as `ff005aa5 ff00ff00 ff00ff00 ff00ff00` -- FAP unlocked (A5/5A) but
+      SSB and WRP0..3 forced to 0x00, after which re-flashing FAILS on the
+      erase of the now write-protected sectors. Every unlock path here instead
+      erases the USD and programs ONLY the FAP half-word via raw flash-
+      controller registers. NEVER call disable_access_protection to recover a
+      read-protected board.
 
     CONTACT RETRY (design goal): the #1 real-world failure is losing hand-held
     SWD contact on the tiny nRST/C45 cap mid-connect. Every verb wraps its
