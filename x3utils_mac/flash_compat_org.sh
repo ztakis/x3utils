@@ -74,41 +74,32 @@ echo
 # If the target is read-protected, dumping should fail
 # safely without erasing firmware contents.
 
-# On success continue; on ANY failure offer a re-seat retry (read-only, always safe).
-while true; do
-    if [[ "$TARGET" == "target/artery/at32f4x_c45.cfg" ]]; then
-        "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-            -f "$TARGET" \
-            -c "guided_connect {$CONNECT_TIMEOUT}" \
-            -c "dump_image {$raw_dump} 0x08000000 0x20000" \
-            -c "exit"
-    else
-        "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-            -f "$INTERFACE" \
-            -f "$TARGET" \
-            -c "init" \
-            -c "reset halt" \
-            -c "flash probe 0" \
-            -c "dump_image {$raw_dump} 0x08000000 0x20000" \
-            -c "exit"
-    fi
+if [[ "$TARGET" == "target/artery/at32f4x_c45.cfg" ]]; then
+    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+        -f "$TARGET" \
+        -c "guided_connect {$CONNECT_TIMEOUT}" \
+        -c "dump_image {$raw_dump} 0x08000000 0x20000" \
+        -c "exit"
+else
+    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+        -f "$INTERFACE" \
+        -f "$TARGET" \
+        -c "init" \
+        -c "reset halt" \
+        -c "flash probe 0" \
+        -c "dump_image {$raw_dump} 0x08000000 0x20000" \
+        -c "exit"
+fi
 
-    # On success, continue past the retry loop
-    [[ $? -eq 0 ]] && break
-
+if [[ $? -ne 0 ]]; then
     echo
-    echo -e "[${CL_Y}WARN${CL_NC}] OpenOCD could not read the chip - nothing was changed."
-    echo "       Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat the"
-    echo "       probe and the contact (touch the contact point, NOT on top of the cap),"
-    echo "       keep it steady. (A read-protected chip will keep failing - then press Q.)"
-    echo
-    read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
-    retry_choice_lc="$(echo "$retry_choice" | tr '[:upper:]' '[:lower:]')"
-    if [[ "$retry_choice_lc" == "q" ]]; then
-        exit 1
-    fi
-    echo
-done
+    echo -e "[${CL_R}FAIL${CL_NC}] OpenOCD failed during memory dump."
+    echo "Check:"
+    echo "       ST-Link connection"
+    echo "       Board power"
+    echo "       Read protection state"
+    exit 1
+fi
 
 # Validate bin file
 source "$SCRIPT_DIR/validate_bin.sh" "$raw_dump"
@@ -201,44 +192,33 @@ echo
 # Still no unlock operation.
 # We assume the target is not read-protected.
 
-# On success continue; on ANY failure offer a re-seat retry (safe to repeat:
-# guided_flash_connect halts and erase precedes write, so no half-write hazard).
-# This retries the FLASH only - the dump/patch above are not re-run.
-while true; do
-    if [[ "$TARGET" == "target/artery/at32f4x_c45.cfg" ]]; then
-        "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-            -f "$TARGET" \
-            -c "guided_flash_connect {$CONNECT_TIMEOUT}" \
-            -c "do_flash_and_verify {$patched_dump}" \
-            -c "exit"
-    else
-        "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-            -f "$INTERFACE" \
-            -f "$TARGET" \
-            -c "init" \
-            -c "reset halt" \
-            -c "flash erase_address 0x08000000 0x20000" \
-            -c "flash write_bank 0 {$patched_dump}" \
-            -c "verify_image {$patched_dump} 0x08000000" \
-            -c "exit"
-    fi
+if [[ "$TARGET" == "target/artery/at32f4x_c45.cfg" ]]; then
+    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+        -f "$TARGET" \
+        -c "guided_flash_connect {$CONNECT_TIMEOUT}" \
+        -c "do_flash_and_verify {$patched_dump}" \
+        -c "exit"
+else
+    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+        -f "$INTERFACE" \
+        -f "$TARGET" \
+        -c "init" \
+        -c "reset halt" \
+        -c "flash erase_address 0x08000000 0x20000" \
+        -c "flash write_bank 0 {$patched_dump}" \
+        -c "verify_image {$patched_dump} 0x08000000" \
+        -c "exit"
+fi
 
-    # On success, continue past the retry loop
-    [[ $? -eq 0 ]] && break
-
+if [[ $? -ne 0 ]]; then
     echo
-    echo -e "[${CL_Y}WARN${CL_NC}] OpenOCD failed - nothing was verified."
-    echo "       Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat"
-    echo "       the probe and the contact (touch the contact point, NOT on top of the"
-    echo "       cap), keep it steady. Erase runs before write, so a retry is safe."
-    echo
-    read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
-    retry_choice_lc="$(echo "$retry_choice" | tr '[:upper:]' '[:lower:]')"
-    if [[ "$retry_choice_lc" == "q" ]]; then
-        exit 1
-    fi
-    echo
-done
+    echo -e "[${CL_R}FAIL${CL_NC}] OpenOCD failed during flashing."
+    echo "Check:"
+    echo "       ST-Link connection"
+    echo "       Board power"
+    echo "       Flash protection state"
+    exit 1
+fi
 
 echo
 echo

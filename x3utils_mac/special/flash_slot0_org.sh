@@ -3,7 +3,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load configuration settings
-CONFIG_FILE="$SCRIPT_DIR/config.sh"
+CONFIG_FILE="$SCRIPT_DIR/../config.sh"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "[${CL_R}FAIL${CL_NC}] Missing config.sh"
@@ -28,7 +28,7 @@ fi
 bin_file_path="${bin_file_path//\"/}"
 bin_file_path="${bin_file_path//\'/}"
 
-source "$SCRIPT_DIR/validate_bin.sh" "$bin_file_path"
+source "$SCRIPT_DIR/../validate_bin.sh" "$bin_file_path" nosize
 if [[ "$VALIDATE_RESULT" != "OK" ]]; then
     echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
     exit 1
@@ -67,8 +67,8 @@ echo "          Step 1: Invoking External Backup Script..."
 echo "$D"
 echo
 
-if [[ -f "$SCRIPT_DIR/dump.sh" ]]; then
-    bash "$SCRIPT_DIR/dump.sh"
+if [[ -f "$SCRIPT_DIR/../dump.sh" ]]; then
+    bash "$SCRIPT_DIR/../dump.sh"
 else
     echo -e "[${CL_R}FAIL${CL_NC}] External component dump.sh was not found."
     exit 1
@@ -99,44 +99,30 @@ echo
 # guided_flash_connect prompts on the live console (no redirect) while
 # still failing hard on a mid-write link drop or verify mismatch.
 
-# On success continue; on ANY failure offer a re-seat retry (safe to repeat:
-# guided_flash_connect halts and erase precedes write, so no half-write hazard).
-# This retries the FLASH only - the successful backup above is not re-run.
-while true; do
-    if [[ "$TARGET" == "target/artery/at32f4x_c45.cfg" ]]; then
-        "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-            -f "$TARGET" \
-            -c "guided_flash_connect {$CONNECT_TIMEOUT}" \
-            -c "do_flash_and_verify {$bin_file_path}" \
-            -c "exit"
-    else
-        "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-            -f "$INTERFACE" \
-            -f "$TARGET" \
-            -c "init" \
-            -c "reset halt" \
-            -c "flash erase_address 0x08000000 0x20000" \
-            -c "flash write_bank 0 {$bin_file_path}" \
-            -c "verify_image {$bin_file_path} 0x08000000" \
-            -c "exit"
-    fi
+if [[ "$TARGET" == "target/artery/at32f4x_c45.cfg" ]]; then
+    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+        -f "$TARGET" \
+        -c "guided_flash_connect {$CONNECT_TIMEOUT}" \
+        -c "do_flash_and_verify_slot0 {$bin_file_path}" \
+        -c "exit"
+else
+    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+        -f "$INTERFACE" \
+        -f "$TARGET" \
+        -c "init" \
+        -c "reset halt" \
+        -c "flash write_image erase {$bin_file_path} 0x08001000 bin" \
+        -c "verify_image {$bin_file_path} 0x08001000 bin" \
+        -c "exit"
+fi
 
-    # On success, continue past the retry loop
-    [[ $? -eq 0 ]] && break
-
+# Check OpenOCD result
+if [[ $? -ne 0 ]]; then
     echo
-    echo -e "[${CL_Y}WARN${CL_NC}] OpenOCD failed - nothing was verified."
-    echo "       Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat"
-    echo "       the probe and the contact (touch the contact point, NOT on top of the"
-    echo "       cap), keep it steady. Erase runs before write, so a retry is safe."
-    echo
-    read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
-    retry_choice_lc="$(echo "$retry_choice" | tr '[:upper:]' '[:lower:]')"
-    if [[ "$retry_choice_lc" == "q" ]]; then
-        exit 1
-    fi
-    echo
-done
+    echo -e "[${CL_R}FAIL${CL_NC}] OpenOCD failed during flashing."
+    echo "       Check hardware connections."
+    exit 1
+fi
 
 echo
 echo
