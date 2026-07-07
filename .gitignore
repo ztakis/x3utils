@@ -16,3 +16,11 @@ Desktop.ini
 
 # Kilo
 .kilo/
+
+# Visual Studio / .NET local output
+.vs/
+*.csproj.user
+*.pubxml.user
+x3utils_win_gui/Properties/PublishProfiles/
+x3utils_win_gui/bin/
+x3utils_win_gui/obj/
