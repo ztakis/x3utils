@@ -43,12 +43,12 @@ If option `2` works, your ST-LINK connection is probably good enough for the nex
 `[1] Flash SHU compatible`
 
 Dumps your current VCU firmware, patches it, and flashes it back for SHU-compatible workflows such as flashing from repo or changing serial. Use at your own risk.
-[More info >](https://github.com/ztakis/x3utils/wiki)
+[More info >](https://github.com/ztakis/x3utils/wiki/33.-SHU-compatible-workflow)
 
 `[2] Run Full Memory Dump (128 KB)`
 
 Makes a full backup. Run this first.
-[More info >](https://github.com/ztakis/x3utils/wiki)
+[More info >](https://github.com/ztakis/x3utils/wiki/30.-Backups-and-flashing-safely)
 
 `[3] Flash Loaded File to Chip`
 
@@ -58,7 +58,7 @@ Flashes the `.bin` file selected with option `4`.
 `[4] Load / Change Target .bin File`
 
 Selects the `.bin` file to flash. Normal firmware files must be exactly 128 KB.
-[More info >](https://github.com/ztakis/x3utils/wiki)
+<!-- [More info >](https://github.com/ztakis/x3utils/wiki) -->
 
 `[5] Exit`
 
