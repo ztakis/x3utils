@@ -19,9 +19,9 @@
 
 This short video shows the normal Windows + clone ST-LINK flow: launcher on one side, test board and C45 timing on the other.
 
-Need the full explanation? Watch the long version:
+<!-- Need the full explanation? Watch the long version: -->
 
-*Long YouTube walkthrough: coming soon.*
+<!-- *Long YouTube walkthrough: coming soon.* -->
 
 <!-- [Youtube video coming soon..](https://www.youtube.com/watch?v=VIDEO_ID) -->
 
@@ -53,7 +53,7 @@ Makes a full backup. Run this first.
 `[3] Flash Loaded File to Chip`
 
 Flashes the `.bin` file selected with option `4`.
-[More info >](https://github.com/ztakis/x3utils/wiki)
+<!-- [More info >](https://github.com/ztakis/x3utils/wiki) -->
 
 `[4] Load / Change Target .bin File`
 
