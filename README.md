@@ -87,5 +87,3 @@ Use this with a genuine ST-LINK adapter and its reset pin connected to the MCU r
 - [Linux guide](x3utils_linux/README.md)
 - [macOS guide](x3utils_mac/README.md)
 - [Wiki home](https://github.com/ztakis/x3utils/wiki)
-- [Clone ST-LINK C45 guide](https://github.com/ztakis/x3utils/wiki/07.-Clone-ST-Link-C45-guide)
-- [ST-LINK pinouts](https://github.com/ztakis/x3utils/wiki/01.-ST-LINK-pinouts)
