@@ -69,17 +69,17 @@ Closes the utility.
 `A - Default / Blinker buttons`
 
 Use this when SWD is available, either normally or by holding the turn indicator buttons during power-up.
-[More info >](https://github.com/ztakis/x3utils/wiki)
+[More info >](https://github.com/ztakis/x3utils/wiki/11.-Default-SWD-and-blinker-buttons)
 
 `B - C45 / Clone ST-Link`
 
 Most common mode. Use this with clone ST-LINK adapters. The launcher tells you when to touch C45 to `GND`.
-[More info >](https://github.com/ztakis/x3utils/wiki)
+[More info >](https://github.com/ztakis/x3utils/wiki/12.-Clone-ST-LINK-C45-mode)
 
 `C - C45 / Genuine ST-Link`
 
 Use this with a genuine ST-LINK adapter and its reset pin connected to the MCU reset line at C45.
-[More info >](https://github.com/ztakis/x3utils/wiki)
+[More info >](https://github.com/ztakis/x3utils/wiki/13.-Genuine-ST-LINK-reset-mode)
 
 ## More Documentation
 
