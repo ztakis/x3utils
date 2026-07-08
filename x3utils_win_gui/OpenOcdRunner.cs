@@ -12,14 +12,17 @@ internal sealed class OpenOcdRunner
         _paths = paths;
     }
 
-    public Task<OpenOcdResult> CheckAdapterAsync(Action<string> onOutput, CancellationToken cancellationToken)
+    public Task<OpenOcdResult> CheckAdapterAsync(
+        ConnectionMode connectionMode,
+        Action<string> onOutput,
+        CancellationToken cancellationToken)
     {
         var arguments = new[]
         {
             "-s", Quote(_paths.ScriptsDir),
             "-d0",
             "-f", "interface/stlink.cfg",
-            "-f", "target/at32f415xx.cfg",
+            "-f", GetTargetConfig(connectionMode),
             "-c", Quote("adapter speed 1000"),
             "-c", Quote("init"),
             "-c", Quote("reset halt"),
@@ -30,7 +33,11 @@ internal sealed class OpenOcdRunner
         return RunAsync(arguments, onOutput, cancellationToken);
     }
 
-    public Task<OpenOcdResult> FlashAsync(string firmwarePath, Action<string> onOutput, CancellationToken cancellationToken)
+    public Task<OpenOcdResult> FlashAsync(
+        ConnectionMode connectionMode,
+        string firmwarePath,
+        Action<string> onOutput,
+        CancellationToken cancellationToken)
     {
         var normalizedPath = FirmwareValidator.ToOpenOcdPath(firmwarePath);
         var arguments = new[]
@@ -38,7 +45,7 @@ internal sealed class OpenOcdRunner
             "-s", Quote(_paths.ScriptsDir),
             "-d0",
             "-f", "interface/stlink.cfg",
-            "-f", "target/at32f415xx.cfg",
+            "-f", GetTargetConfig(connectionMode),
             "-c", Quote("init"),
             "-c", Quote("reset halt"),
             "-c", Quote("flash erase_address 0x08000000 0x20000"),
@@ -48,6 +55,38 @@ internal sealed class OpenOcdRunner
         };
 
         return RunAsync(arguments, onOutput, cancellationToken);
+    }
+
+    public Task<OpenOcdResult> DumpAsync(
+        ConnectionMode connectionMode,
+        string dumpPath,
+        Action<string> onOutput,
+        CancellationToken cancellationToken)
+    {
+        var normalizedPath = FirmwareValidator.ToOpenOcdPath(dumpPath);
+        var arguments = new[]
+        {
+            "-s", Quote(_paths.ScriptsDir),
+            "-d0",
+            "-f", "interface/stlink.cfg",
+            "-f", GetTargetConfig(connectionMode),
+            "-c", Quote("init"),
+            "-c", Quote("reset halt"),
+            "-c", Quote("flash probe 0"),
+            "-c", Quote($"dump_image {{{normalizedPath}}} 0x08000000 0x20000"),
+            "-c", Quote("exit"),
+        };
+
+        return RunAsync(arguments, onOutput, cancellationToken);
+    }
+
+    private static string GetTargetConfig(ConnectionMode connectionMode)
+    {
+        return connectionMode switch
+        {
+            ConnectionMode.GenuineC45 => "target/at32f415xx_nrst.cfg",
+            _ => "target/at32f415xx.cfg",
+        };
     }
 
     private async Task<OpenOcdResult> RunAsync(
