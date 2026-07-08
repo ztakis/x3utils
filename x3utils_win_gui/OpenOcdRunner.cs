@@ -5,79 +5,144 @@ namespace X3Utils.WinGui;
 
 internal sealed class OpenOcdRunner
 {
+    private readonly object _processLock = new();
     private readonly OpenOcdPaths _paths;
+    private Process? _activeProcess;
 
     public OpenOcdRunner(OpenOcdPaths paths)
     {
         _paths = paths;
     }
 
+    public bool SendContinue()
+    {
+        lock (_processLock)
+        {
+            if (_activeProcess is null || _activeProcess.HasExited)
+            {
+                return false;
+            }
+
+            try
+            {
+                _activeProcess.StandardInput.WriteLine();
+                _activeProcess.StandardInput.Flush();
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+        }
+    }
+
     public Task<OpenOcdResult> CheckAdapterAsync(
         ConnectionMode connectionMode,
+        int cloneC45ConnectTimeoutSeconds,
         Action<string> onOutput,
         CancellationToken cancellationToken)
     {
-        var arguments = new[]
-        {
-            "-s", Quote(_paths.ScriptsDir),
-            "-d0",
-            "-f", "interface/stlink.cfg",
-            "-f", GetTargetConfig(connectionMode),
-            "-c", Quote("adapter speed 1000"),
-            "-c", Quote("init"),
-            "-c", Quote("reset halt"),
-            "-c", Quote("flash probe 0"),
-            "-c", Quote("exit"),
-        };
+        var commands = connectionMode == ConnectionMode.CloneC45
+            ? new[]
+            {
+                $"guided_connect {{{cloneC45ConnectTimeoutSeconds}}}",
+                "flash probe 0",
+                "exit",
+            }
+            : new[]
+            {
+                "adapter speed 1000",
+                "init",
+                "reset halt",
+                "flash probe 0",
+                "exit",
+            };
 
-        return RunAsync(arguments, onOutput, cancellationToken);
+        return RunAsync(BuildArguments(connectionMode, commands), onOutput, cancellationToken);
     }
 
     public Task<OpenOcdResult> FlashAsync(
         ConnectionMode connectionMode,
+        int cloneC45ConnectTimeoutSeconds,
         string firmwarePath,
         Action<string> onOutput,
         CancellationToken cancellationToken)
     {
         var normalizedPath = FirmwareValidator.ToOpenOcdPath(firmwarePath);
-        var arguments = new[]
-        {
-            "-s", Quote(_paths.ScriptsDir),
-            "-d0",
-            "-f", "interface/stlink.cfg",
-            "-f", GetTargetConfig(connectionMode),
-            "-c", Quote("init"),
-            "-c", Quote("reset halt"),
-            "-c", Quote("flash erase_address 0x08000000 0x20000"),
-            "-c", Quote($"flash write_bank 0 {{{normalizedPath}}}"),
-            "-c", Quote($"verify_image {{{normalizedPath}}} 0x08000000"),
-            "-c", Quote("exit"),
-        };
+        var commands = connectionMode == ConnectionMode.CloneC45
+            ? new[]
+            {
+                $"guided_flash_connect {{{cloneC45ConnectTimeoutSeconds}}}",
+                $"do_flash_and_verify {{{normalizedPath}}}",
+                "exit",
+            }
+            : new[]
+            {
+                "init",
+                "reset halt",
+                "flash erase_address 0x08000000 0x20000",
+                $"flash write_bank 0 {{{normalizedPath}}}",
+                $"verify_image {{{normalizedPath}}} 0x08000000",
+                "exit",
+            };
 
-        return RunAsync(arguments, onOutput, cancellationToken);
+        return RunAsync(BuildArguments(connectionMode, commands), onOutput, cancellationToken);
     }
 
     public Task<OpenOcdResult> DumpAsync(
         ConnectionMode connectionMode,
+        int cloneC45ConnectTimeoutSeconds,
         string dumpPath,
         Action<string> onOutput,
         CancellationToken cancellationToken)
     {
         var normalizedPath = FirmwareValidator.ToOpenOcdPath(dumpPath);
-        var arguments = new[]
+        var commands = connectionMode == ConnectionMode.CloneC45
+            ? new[]
+            {
+                $"guided_connect {{{cloneC45ConnectTimeoutSeconds}}}",
+                $"dump_image {{{normalizedPath}}} 0x08000000 0x20000",
+                "exit",
+            }
+            : new[]
+            {
+                "init",
+                "reset halt",
+                "flash probe 0",
+                $"dump_image {{{normalizedPath}}} 0x08000000 0x20000",
+                "exit",
+            };
+
+        return RunAsync(BuildArguments(connectionMode, commands), onOutput, cancellationToken);
+    }
+
+    private IReadOnlyCollection<string> BuildArguments(ConnectionMode connectionMode, IReadOnlyList<string> commands)
+    {
+        var arguments = new List<string>
         {
             "-s", Quote(_paths.ScriptsDir),
             "-d0",
-            "-f", "interface/stlink.cfg",
-            "-f", GetTargetConfig(connectionMode),
-            "-c", Quote("init"),
-            "-c", Quote("reset halt"),
-            "-c", Quote("flash probe 0"),
-            "-c", Quote($"dump_image {{{normalizedPath}}} 0x08000000 0x20000"),
-            "-c", Quote("exit"),
         };
 
-        return RunAsync(arguments, onOutput, cancellationToken);
+        if (connectionMode == ConnectionMode.CloneC45)
+        {
+            arguments.AddRange(new[] { "-f", "target/at32f415xx_c45.cfg" });
+        }
+        else
+        {
+            arguments.AddRange(new[] { "-f", "interface/stlink.cfg", "-f", GetTargetConfig(connectionMode) });
+        }
+
+        foreach (var command in commands)
+        {
+            arguments.AddRange(new[] { "-c", Quote(command) });
+        }
+
+        return arguments;
     }
 
     private static string GetTargetConfig(ConnectionMode connectionMode)
@@ -103,6 +168,7 @@ internal sealed class OpenOcdRunner
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,
             CreateNoWindow = true,
         };
 
@@ -117,11 +183,15 @@ internal sealed class OpenOcdRunner
             throw new InvalidOperationException("Could not start OpenOCD.");
         }
 
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-
         try
         {
+            lock (_processLock)
+            {
+                _activeProcess = process;
+            }
+
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
             await process.WaitForExitAsync(cancellationToken);
         }
         catch (OperationCanceledException)
@@ -132,6 +202,16 @@ internal sealed class OpenOcdRunner
             }
 
             throw;
+        }
+        finally
+        {
+            lock (_processLock)
+            {
+                if (ReferenceEquals(_activeProcess, process))
+                {
+                    _activeProcess = null;
+                }
+            }
         }
 
         return new OpenOcdResult(process.ExitCode, log.ToString());

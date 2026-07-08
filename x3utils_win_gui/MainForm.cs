@@ -4,9 +4,16 @@ namespace X3Utils.WinGui;
 
 internal sealed class MainForm : Form
 {
-    private const string AppTitle = "x3utils Windows GUI v0.2";
+    private const string AppTitle = "x3utils Windows GUI v0.3";
+    private static readonly Color WorkflowNeutralBackColor = SystemColors.Control;
+    private static readonly Color WorkflowHoldBackColor = Color.FromArgb(224, 244, 255);
+    private static readonly Color WorkflowReleaseBackColor = Color.FromArgb(255, 242, 179);
+    private static readonly Color WorkflowSuccessBackColor = Color.FromArgb(229, 246, 232);
+    private static readonly Color WorkflowFailureBackColor = Color.FromArgb(255, 232, 232);
 
     private readonly ComboBox _connectionModeComboBox = new();
+    private readonly Label _cloneC45CountdownLabel = new();
+    private readonly NumericUpDown _cloneC45CountdownNumericUpDown = new();
     private readonly ComboBox _actionComboBox = new();
     private readonly TextBox _firmwarePathTextBox = new();
     private readonly Button _browseFirmwareButton = new();
@@ -20,6 +27,8 @@ internal sealed class MainForm : Form
     private readonly ProgressBar _workflowProgressBar = new();
     private readonly Button _retryButton = new();
     private readonly Button _cancelButton = new();
+    private readonly Button _continueButton = new();
+    private readonly Button _dismissButton = new();
     private readonly Button _showConsoleButton = new();
     private readonly StatusStrip _statusStrip = new();
     private readonly ToolStripStatusLabel _stateStatusLabel = new();
@@ -39,7 +48,11 @@ internal sealed class MainForm : Form
     private string _lastLog = string.Empty;
     private string _lastConnectionStatus = "not checked";
     private string _openOcdStatus = "unknown";
+    private string? _lastOpenOcdDiagnosis;
+    private int _lastOpenOcdDiagnosisPriority;
+    private CloneC45Phase _cloneC45Phase = CloneC45Phase.None;
     private bool _isRunning;
+    private bool _hasCompletedWorkflow;
 
     public MainForm()
     {
@@ -115,7 +128,7 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Top,
             AutoSize = true,
             ColumnCount = 3,
-            RowCount = 5,
+            RowCount = 6,
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -128,6 +141,17 @@ internal sealed class MainForm : Form
         _connectionModeComboBox.Items.Add("C45 / Genuine ST-LINK");
         _connectionModeComboBox.SelectedIndex = 0;
         _connectionModeComboBox.SelectedIndexChanged += (_, _) => OnConnectionModeChanged();
+
+        _cloneC45CountdownLabel.AutoSize = true;
+        _cloneC45CountdownLabel.Anchor = AnchorStyles.Left;
+        _cloneC45CountdownLabel.Text = "Hold countdown:";
+        _cloneC45CountdownLabel.Margin = new Padding(0, 4, 8, 4);
+
+        _cloneC45CountdownNumericUpDown.Minimum = 0;
+        _cloneC45CountdownNumericUpDown.Maximum = 10;
+        _cloneC45CountdownNumericUpDown.Value = 3;
+        _cloneC45CountdownNumericUpDown.Width = 64;
+        _cloneC45CountdownNumericUpDown.Margin = new Padding(0, 4, 8, 4);
 
         _actionComboBox.Dock = DockStyle.Fill;
         _actionComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -156,10 +180,13 @@ internal sealed class MainForm : Form
         _startButton.Click += OnStartClick;
 
         AddRow(grid, 0, "Connection mode:", _connectionModeComboBox, new Label());
-        AddRow(grid, 1, "Action:", _actionComboBox, new Label());
-        AddRow(grid, 2, "Firmware .bin:", _firmwarePathTextBox, _browseFirmwareButton);
-        AddRow(grid, 3, "Dump folder:", _dumpFolderTextBox, _browseDumpFolderButton);
-        AddRow(grid, 4, string.Empty, new Label(), _startButton);
+        grid.Controls.Add(_cloneC45CountdownLabel, 0, 1);
+        grid.Controls.Add(_cloneC45CountdownNumericUpDown, 1, 1);
+        grid.Controls.Add(new Label(), 2, 1);
+        AddRow(grid, 2, "Action:", _actionComboBox, new Label());
+        AddRow(grid, 3, "Firmware .bin:", _firmwarePathTextBox, _browseFirmwareButton);
+        AddRow(grid, 4, "Dump folder:", _dumpFolderTextBox, _browseDumpFolderButton);
+        AddRow(grid, 5, string.Empty, new Label(), _startButton);
 
         settingsGroupBox.Controls.Add(grid);
         return settingsGroupBox;
@@ -184,11 +211,12 @@ internal sealed class MainForm : Form
         workflowGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         _workflowTitleLabel.AutoSize = true;
-        _workflowTitleLabel.Font = new Font(Font, FontStyle.Bold);
+        _workflowTitleLabel.Font = new Font(Font.FontFamily, 12, FontStyle.Bold);
 
         _workflowInstructionLabel.AutoSize = false;
         _workflowInstructionLabel.Dock = DockStyle.Top;
-        _workflowInstructionLabel.MinimumSize = new Size(0, 44);
+        _workflowInstructionLabel.Font = new Font(Font.FontFamily, 11, FontStyle.Regular);
+        _workflowInstructionLabel.MinimumSize = new Size(0, 62);
 
         _workflowProgressBar.Dock = DockStyle.Top;
         _workflowProgressBar.Style = ProgressBarStyle.Marquee;
@@ -198,6 +226,7 @@ internal sealed class MainForm : Form
         _workflowStagesLabel.AutoSize = false;
         _workflowStagesLabel.Dock = DockStyle.Fill;
         _workflowStagesLabel.Font = new Font(FontFamily.GenericMonospace, 9);
+        _workflowStagesLabel.Visible = false;
 
         var buttonsPanel = new FlowLayoutPanel
         {
@@ -217,12 +246,27 @@ internal sealed class MainForm : Form
         _cancelButton.Visible = false;
         _cancelButton.Click += OnCancelClick;
 
+        _continueButton.AutoSize = true;
+        _continueButton.Text = "Continue";
+        _continueButton.Font = new Font(Font.FontFamily, 11, FontStyle.Bold);
+        _continueButton.MinimumSize = new Size(120, 36);
+        _continueButton.Visible = false;
+        _continueButton.Enabled = false;
+        _continueButton.Click += OnContinueClick;
+
+        _dismissButton.AutoSize = true;
+        _dismissButton.Text = "Dismiss";
+        _dismissButton.Visible = false;
+        _dismissButton.Click += OnDismissClick;
+
         _showConsoleButton.AutoSize = true;
         _showConsoleButton.Text = "Show console";
         _showConsoleButton.Click += (_, _) => ShowConsoleWindow();
 
         buttonsPanel.Controls.Add(_retryButton);
         buttonsPanel.Controls.Add(_cancelButton);
+        buttonsPanel.Controls.Add(_continueButton);
+        buttonsPanel.Controls.Add(_dismissButton);
         buttonsPanel.Controls.Add(_showConsoleButton);
 
         workflowGrid.Controls.Add(_workflowTitleLabel, 0, 0);
@@ -291,6 +335,8 @@ internal sealed class MainForm : Form
         };
 
         UpdateStatusStrip(_isRunning ? "Running" : "Ready");
+        UpdateCloneC45CountdownVisibility();
+        DismissCompletedWorkflow();
     }
 
     private void OnActionChanged()
@@ -300,10 +346,17 @@ internal sealed class MainForm : Form
             _selectedAction = item.Action;
         }
 
+        UpdateActionControls();
+        DismissCompletedWorkflow();
+    }
+
+    private void UpdateActionControls()
+    {
         _browseFirmwareButton.Enabled = !_isRunning && _selectedAction == GuiAction.Flash;
         _browseDumpFolderButton.Enabled = !_isRunning && _selectedAction == GuiAction.Dump;
         _firmwarePathTextBox.Enabled = _selectedAction == GuiAction.Flash;
         _dumpFolderTextBox.Enabled = _selectedAction == GuiAction.Dump;
+        UpdateCloneC45CountdownVisibility();
         _startButton.Text = _selectedAction switch
         {
             GuiAction.CheckConnection => "Check connection",
@@ -327,7 +380,7 @@ internal sealed class MainForm : Form
     {
         MessageBox.Show(
             this,
-            "x3utils Windows GUI\nVersion 0.1.0\n\nExperimental prototype.\nUses bundled OpenOCD.",
+            "x3utils Windows GUI\nVersion 0.3.0\n\nExperimental prototype.\nUses bundled OpenOCD.",
             "About",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -362,7 +415,42 @@ internal sealed class MainForm : Form
 
     private void OnCancelClick(object? sender, EventArgs args)
     {
-        AddWorkflowMessage("Cancel", "Cancellation is not available after OpenOCD has started. Wait for the command to finish, then retry if needed.");
+        _workflowTitleLabel.Text = "Cancel";
+        _workflowInstructionLabel.Text = "Cancellation is not available after OpenOCD has started. Wait for the command to finish, then retry if needed.";
+
+        if (_isRunning && _selectedConnectionMode == ConnectionMode.CloneC45)
+        {
+            _continueButton.Visible = true;
+        }
+    }
+
+    private void OnDismissClick(object? sender, EventArgs args)
+    {
+        DismissCompletedWorkflow();
+    }
+
+    private void OnContinueClick(object? sender, EventArgs args)
+    {
+        if (_runner is null)
+        {
+            return;
+        }
+
+        if (_runner.SendContinue())
+        {
+            if (_selectedConnectionMode == ConnectionMode.CloneC45)
+            {
+                _cloneC45Phase = _cloneC45Phase == CloneC45Phase.WaitingForRelease
+                    ? CloneC45Phase.AfterRelease
+                    : CloneC45Phase.HoldingCountdown;
+            }
+
+            _continueButton.Enabled = false;
+            _workflowInstructionLabel.Text = "Continue sent. Keep the ST-LINK and SWD wires steady.";
+            return;
+        }
+
+        AddWorkflowMessage("Continue unavailable", "OpenOCD is not waiting for input now.");
     }
 
     private async Task RunSelectedActionAsync()
@@ -393,14 +481,14 @@ internal sealed class MainForm : Form
             GuiAction.CheckConnection,
             "Checking connection",
             GetModeInstruction("Keep the ST-LINK and SWD wires steady until the check finishes."),
-            new[] { "Connect to target", "Probe flash" },
-            runner => runner.CheckAdapterAsync(_selectedConnectionMode, AppendConsoleOutput, CancellationToken.None),
+            GetStages("Connect to target", "Probe flash"),
+            runner => runner.CheckAdapterAsync(_selectedConnectionMode, GetCloneC45CountdownSeconds(), AppendConsoleOutput, CancellationToken.None),
             result =>
             {
                 _lastConnectionStatus = result.IsSuccess ? "PASS" : "FAIL";
                 return result.IsSuccess
-                    ? "Connection check completed."
-                    : $"Connection check failed. Exit code: {result.ExitCode}. Re-seat the wires and retry.";
+                    ? WorkflowResult.Success("Connection check completed.")
+                    : WorkflowResult.Failure(GetOpenOcdFailureMessage($"Connection check failed. Exit code: {result.ExitCode}. Check the console log for details."));
             });
     }
 
@@ -420,22 +508,22 @@ internal sealed class MainForm : Form
             GuiAction.Dump,
             "Dumping firmware",
             GetModeInstruction("Keep the ST-LINK and SWD wires steady until the dump completes."),
-            new[] { "Connect to target", "Probe flash", "Read 128 KB", "Validate dump" },
-            runner => runner.DumpAsync(_selectedConnectionMode, dumpPath, AppendConsoleOutput, CancellationToken.None),
+            GetStages("Connect to target", "Probe flash", "Read 128 KB", "Validate dump"),
+            runner => runner.DumpAsync(_selectedConnectionMode, GetCloneC45CountdownSeconds(), dumpPath, AppendConsoleOutput, CancellationToken.None),
             result =>
             {
                 if (!result.IsSuccess)
                 {
-                    return $"Dump failed. Exit code: {result.ExitCode}. Re-seat the wires and retry.";
+                    return WorkflowResult.Failure(GetOpenOcdFailureMessage($"Dump failed. Exit code: {result.ExitCode}. Check the console log for details."));
                 }
 
                 var validation = FirmwareValidator.Validate(dumpPath);
                 if (!validation.IsValid)
                 {
-                    return "Dump completed, but validation failed: " + validation.Message;
+                    return WorkflowResult.Failure("Dump was saved but failed validation. Do not trust this file. Retry the dump. " + validation.Message);
                 }
 
-                return "Dump completed and verified. Saved to: " + dumpPath;
+                return WorkflowResult.Success("Dump completed and verified. Saved to: " + dumpPath);
             });
     }
 
@@ -467,11 +555,11 @@ internal sealed class MainForm : Form
             GuiAction.Flash,
             "Flashing firmware",
             GetModeInstruction("Keep the ST-LINK and SWD wires steady until verify completes."),
-            new[] { "Validate firmware", "Connect to target", "Erase flash", "Write firmware", "Verify firmware" },
-            runner => runner.FlashAsync(_selectedConnectionMode, firmwarePath, AppendConsoleOutput, CancellationToken.None),
+            GetStages("Validate firmware", "Connect to target", "Erase flash", "Write firmware", "Verify firmware"),
+            runner => runner.FlashAsync(_selectedConnectionMode, GetCloneC45CountdownSeconds(), firmwarePath, AppendConsoleOutput, CancellationToken.None),
             result => result.IsSuccess
-                ? "Flashing completed and verified successfully."
-                : $"OpenOCD failed. Nothing was verified. Exit code: {result.ExitCode}. Retry may erase/write again.");
+                ? WorkflowResult.Success("Flashing completed and verified successfully.")
+                : WorkflowResult.Failure(GetOpenOcdFailureMessage($"OpenOCD failed. Nothing was verified. Exit code: {result.ExitCode}. Check the console log for details.")));
     }
 
     private async Task RunOpenOcdAsync(
@@ -480,7 +568,7 @@ internal sealed class MainForm : Form
         string instruction,
         IReadOnlyList<string> stages,
         Func<OpenOcdRunner, Task<OpenOcdResult>> operation,
-        Func<OpenOcdResult, string> resultMessage)
+        Func<OpenOcdResult, WorkflowResult> resultMessage)
     {
         if (_runner is null)
         {
@@ -494,8 +582,9 @@ internal sealed class MainForm : Form
         {
             var result = await operation(_runner);
             _lastLog = result.Log;
-            CompleteWorkflow(title, stages, result.IsSuccess, resultMessage(result));
-            _lastFailedAction = result.IsSuccess ? null : action;
+            var workflowResult = resultMessage(result);
+            CompleteWorkflow(title, stages, workflowResult.IsSuccess, workflowResult.Message);
+            _lastFailedAction = workflowResult.IsSuccess ? null : action;
         }
         catch (Exception ex)
         {
@@ -508,7 +597,7 @@ internal sealed class MainForm : Form
         {
             _isRunning = false;
             SetSettingsEnabled(true);
-            OnActionChanged();
+            UpdateActionControls();
             UpdateStatusStrip("Ready");
         }
     }
@@ -516,17 +605,36 @@ internal sealed class MainForm : Form
     private void SetRunningState(string title, string instruction, IReadOnlyList<string> stages)
     {
         _isRunning = true;
+        _hasCompletedWorkflow = false;
+        _lastOpenOcdDiagnosis = null;
+        _lastOpenOcdDiagnosisPriority = 0;
+        _cloneC45Phase = _selectedConnectionMode == ConnectionMode.CloneC45
+            ? CloneC45Phase.WaitingForHold
+            : CloneC45Phase.None;
         _lastFailedAction = null;
         SetSettingsEnabled(false);
         UpdateStatusStrip("Running");
 
         _workflowTitleLabel.Text = title;
         _workflowInstructionLabel.Text = instruction;
+        SetWorkflowVisualState(WorkflowVisualState.Neutral);
         _workflowStagesLabel.Text = FormatStages(stages, activeIndex: 0, failed: false);
+        _workflowStagesLabel.Visible = false;
         _workflowProgressBar.Visible = true;
         _workflowProgressBar.MarqueeAnimationSpeed = 30;
         _retryButton.Visible = false;
         _cancelButton.Visible = true;
+        _dismissButton.Visible = false;
+        _continueButton.Visible = _selectedConnectionMode == ConnectionMode.CloneC45;
+        _continueButton.Enabled = _selectedConnectionMode == ConnectionMode.CloneC45;
+        if (_selectedConnectionMode == ConnectionMode.CloneC45)
+        {
+            ShowContinuePrompt(
+                "Hold C45/nRST to GND",
+                "Hold the C45/nRST contact to GND. Keep it steady, then click Continue.",
+                WorkflowVisualState.Hold);
+        }
+
         _workflowGroupBox.Focus();
     }
 
@@ -534,31 +642,58 @@ internal sealed class MainForm : Form
     {
         _workflowTitleLabel.Text = success ? title + " complete" : title + " failed";
         _workflowInstructionLabel.Text = message;
+        SetWorkflowVisualState(success ? WorkflowVisualState.Success : WorkflowVisualState.Failure);
+        _hasCompletedWorkflow = true;
         _workflowStagesLabel.Text = FormatStages(stages, activeIndex: success ? stages.Count : Math.Max(0, stages.Count - 1), failed: !success);
+        _workflowStagesLabel.Visible = false;
         _workflowProgressBar.MarqueeAnimationSpeed = 0;
         _workflowProgressBar.Visible = false;
         _retryButton.Visible = !success;
         _cancelButton.Visible = false;
+        _continueButton.Visible = false;
+        _continueButton.Enabled = false;
+        _dismissButton.Visible = true;
+
+        if (success)
+        {
+            _dismissButton.Focus();
+        }
+        else
+        {
+            _retryButton.Focus();
+        }
     }
 
     private void SetIdleWorkflow()
     {
         _workflowTitleLabel.Text = "Ready";
         _workflowInstructionLabel.Text = "Choose an action and press Start.";
+        SetWorkflowVisualState(WorkflowVisualState.Neutral);
         _workflowStagesLabel.Text = string.Empty;
+        _workflowStagesLabel.Visible = false;
         _workflowProgressBar.Visible = false;
         _retryButton.Visible = false;
         _cancelButton.Visible = false;
+        _continueButton.Visible = false;
+        _continueButton.Enabled = false;
+        _dismissButton.Visible = false;
+        _hasCompletedWorkflow = false;
     }
 
     private void AddWorkflowMessage(string title, string instruction)
     {
         _workflowTitleLabel.Text = title;
         _workflowInstructionLabel.Text = instruction;
+        SetWorkflowVisualState(WorkflowVisualState.Neutral);
         _workflowStagesLabel.Text = string.Empty;
+        _workflowStagesLabel.Visible = false;
         _workflowProgressBar.Visible = false;
         _retryButton.Visible = false;
         _cancelButton.Visible = false;
+        _continueButton.Visible = false;
+        _continueButton.Enabled = false;
+        _dismissButton.Visible = false;
+        _hasCompletedWorkflow = false;
     }
 
     private void AppendConsoleOutput(string text)
@@ -583,6 +718,9 @@ internal sealed class MainForm : Form
             _lastConnectionStatus = "FAIL";
             UpdateStatusStrip(_isRunning ? "Running" : "Ready");
         }
+
+        HandleCloneC45Prompt(text);
+        HandleOpenOcdDiagnostics(text);
     }
 
     private void ShowConsoleWindow()
@@ -663,12 +801,23 @@ internal sealed class MainForm : Form
         UpdateStatusStrip("Ready");
     }
 
+    private void DismissCompletedWorkflow()
+    {
+        if (_isRunning || !_hasCompletedWorkflow)
+        {
+            return;
+        }
+
+        SetIdleWorkflow();
+    }
+
     private void SetSettingsEnabled(bool enabled)
     {
         _actionComboBox.Enabled = enabled && _runner is not null;
         _connectionModeComboBox.Enabled = enabled && _runner is not null;
         _browseFirmwareButton.Enabled = enabled && _runner is not null && _selectedAction == GuiAction.Flash;
         _browseDumpFolderButton.Enabled = enabled && _runner is not null && _selectedAction == GuiAction.Dump;
+        _cloneC45CountdownNumericUpDown.Enabled = enabled && _runner is not null && _selectedConnectionMode == ConnectionMode.CloneC45;
         _startButton.Enabled = enabled && _runner is not null;
     }
 
@@ -688,7 +837,7 @@ internal sealed class MainForm : Form
     {
         if (_selectedConnectionMode == ConnectionMode.CloneC45)
         {
-            return baseInstruction + Environment.NewLine + "Note: guided clone C45 mode is not implemented yet; using the default SWD path for now.";
+            return baseInstruction + Environment.NewLine + "Follow the C45 hold/release prompts below.";
         }
 
         return baseInstruction;
@@ -698,10 +847,336 @@ internal sealed class MainForm : Form
     {
         return connectionMode switch
         {
-            ConnectionMode.CloneC45 => "C45 clone (default path)",
+            ConnectionMode.CloneC45 => "C45 clone",
             ConnectionMode.GenuineC45 => "C45 genuine",
             _ => "Default SWD",
         };
+    }
+
+    private IReadOnlyList<string> GetStages(params string[] regularStages)
+    {
+        if (_selectedConnectionMode != ConnectionMode.CloneC45)
+        {
+            return regularStages;
+        }
+
+        var stages = new List<string>
+        {
+            "Hold C45/nRST to GND",
+            "Connect under reset",
+            "Release C45/nRST",
+        };
+        stages.AddRange(regularStages);
+        return stages;
+    }
+
+    private void HandleCloneC45Prompt(string text)
+    {
+        if (!_isRunning || _selectedConnectionMode != ConnectionMode.CloneC45)
+        {
+            return;
+        }
+
+        var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+        foreach (var line in lines)
+        {
+            var lower = line.ToLowerInvariant();
+            if (lower.Contains("hold a wire between") || lower.Contains("keep it grounded"))
+            {
+                _cloneC45Phase = CloneC45Phase.WaitingForHold;
+                ShowContinuePrompt(
+                    "Hold C45/nRST to GND",
+                    "Hold the C45/nRST contact to GND. Keep it steady, then click Continue.",
+                    WorkflowVisualState.Hold);
+            }
+            else if (lower.Contains("remove the wire from gnd") || lower.Contains("step 2/2 - release nrst"))
+            {
+                _cloneC45Phase = CloneC45Phase.WaitingForRelease;
+                ShowContinuePrompt(
+                    "RELEASE C45/nRST NOW",
+                    "Release the C45/nRST contact now, then click Continue.",
+                    WorkflowVisualState.Release);
+            }
+            else if (lower.Contains("connected.  ready"))
+            {
+                _cloneC45Phase = CloneC45Phase.AfterRelease;
+                _continueButton.Enabled = false;
+                _workflowInstructionLabel.Text = "Connected. Keep the ST-LINK and SWD wires steady until the operation finishes.";
+            }
+            else if (lower.Contains("connecting in "))
+            {
+                _cloneC45Phase = CloneC45Phase.HoldingCountdown;
+                _continueButton.Enabled = false;
+                _workflowTitleLabel.Text = "Connecting under reset";
+                _workflowInstructionLabel.Text = "Keep holding C45/nRST to GND. Waiting " + GetCloneC45CountdownSeconds() + " seconds...";
+                SetWorkflowVisualState(WorkflowVisualState.Hold);
+            }
+            else if (TryParseC45CountdownLine(line, out var seconds))
+            {
+                _cloneC45Phase = CloneC45Phase.HoldingCountdown;
+                _continueButton.Enabled = false;
+                _workflowTitleLabel.Text = "Connecting under reset";
+                _workflowInstructionLabel.Text = seconds > 0
+                    ? "Keep holding C45/nRST to GND. Connecting in " + seconds + "..."
+                    : "Keep holding C45/nRST to GND. Connecting now...";
+                SetWorkflowVisualState(WorkflowVisualState.Hold);
+            }
+        }
+    }
+
+    private void ShowContinuePrompt(string title, string instruction, WorkflowVisualState visualState)
+    {
+        _workflowTitleLabel.Text = title;
+        _workflowInstructionLabel.Text = instruction;
+        SetWorkflowVisualState(visualState);
+        _continueButton.Visible = true;
+        _continueButton.Enabled = true;
+        _continueButton.Focus();
+    }
+
+    private void SetWorkflowVisualState(WorkflowVisualState visualState)
+    {
+        var backColor = visualState switch
+        {
+            WorkflowVisualState.Hold => WorkflowHoldBackColor,
+            WorkflowVisualState.Release => WorkflowReleaseBackColor,
+            WorkflowVisualState.Success => WorkflowSuccessBackColor,
+            WorkflowVisualState.Failure => WorkflowFailureBackColor,
+            _ => WorkflowNeutralBackColor,
+        };
+
+        _workflowGroupBox.BackColor = backColor;
+        _workflowTitleLabel.BackColor = backColor;
+        _workflowInstructionLabel.BackColor = backColor;
+        _workflowStagesLabel.BackColor = backColor;
+
+        _workflowTitleLabel.ForeColor = visualState switch
+        {
+            WorkflowVisualState.Release => Color.FromArgb(120, 70, 0),
+            WorkflowVisualState.Failure => Color.FromArgb(140, 0, 0),
+            WorkflowVisualState.Success => Color.FromArgb(0, 100, 30),
+            WorkflowVisualState.Hold => Color.FromArgb(0, 80, 120),
+            _ => SystemColors.ControlText,
+        };
+    }
+
+    private void HandleOpenOcdDiagnostics(string text)
+    {
+        if (!_isRunning)
+        {
+            return;
+        }
+
+        var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            var cleanLine = line.Trim();
+            if (cleanLine.Length == 0)
+            {
+                continue;
+            }
+
+            var diagnosis = ClassifyOpenOcdLine(cleanLine);
+            if (diagnosis is null)
+            {
+                continue;
+            }
+
+            RememberOpenOcdDiagnosis(diagnosis.Value);
+            _workflowInstructionLabel.Text = _lastOpenOcdDiagnosis ?? cleanLine;
+        }
+    }
+
+    private OpenOcdDiagnosis? ClassifyOpenOcdLine(string line)
+    {
+        var lower = line.ToLowerInvariant();
+
+        if (lower.Contains("no device found")
+            || lower.Contains("st-link not found")
+            || lower.Contains("libusb_open"))
+        {
+            return new OpenOcdDiagnosis(
+                "ST-LINK was not found. Plug in the ST-LINK USB adapter and retry.",
+                Priority: 100);
+        }
+
+        if (lower.Contains("error: open failed"))
+        {
+            if (_selectedConnectionMode == ConnectionMode.CloneC45
+                && (_cloneC45Phase == CloneC45Phase.WaitingForHold || _cloneC45Phase == CloneC45Phase.HoldingCountdown))
+            {
+                return new OpenOcdDiagnosis(
+                    "Target did not answer during manual connect. Check C45/nRST grounding, SWD wires, and target power. Keep C45/nRST grounded before pressing Retry.",
+                    Priority: 85);
+            }
+
+            if (_selectedConnectionMode == ConnectionMode.CloneC45)
+            {
+                return new OpenOcdDiagnosis(
+                    "OpenOCD could not connect. Check ST-LINK USB, C45/nRST contact, SWD wires, and target power.",
+                    Priority: 80);
+            }
+
+            return new OpenOcdDiagnosis(
+                "ST-LINK was not found. Plug in the ST-LINK USB adapter and retry.",
+                Priority: 100);
+        }
+
+        if (lower.Contains("demcr write failed"))
+        {
+            return new OpenOcdDiagnosis(
+                "C45/nRST was probably not held to GND. Hold it before pressing Retry and keep holding through the countdown.",
+                Priority: 90);
+        }
+
+        if (lower.Contains("unable to connect to the target"))
+        {
+            if (_selectedConnectionMode == ConnectionMode.CloneC45
+                && (_cloneC45Phase == CloneC45Phase.WaitingForHold || _cloneC45Phase == CloneC45Phase.HoldingCountdown))
+            {
+                return new OpenOcdDiagnosis(
+                    "Target did not answer while C45/nRST should be grounded. Check SWD wires and target power. Keep C45/nRST grounded before pressing Retry.",
+                    Priority: 85);
+            }
+
+            if (_selectedConnectionMode == ConnectionMode.CloneC45
+                && (_cloneC45Phase == CloneC45Phase.WaitingForRelease || _cloneC45Phase == CloneC45Phase.AfterRelease))
+            {
+                return new OpenOcdDiagnosis(
+                    "Target did not answer after release. Check release timing, SWD wires, and target power, then retry.",
+                    Priority: 85);
+            }
+
+            return new OpenOcdDiagnosis(
+                "ST-LINK is present, but the target did not answer. Check SWD wires and target power, then retry.",
+                Priority: 80);
+        }
+
+        if (lower.Contains("could not re-examine target"))
+        {
+            return new OpenOcdDiagnosis(
+                "C45/nRST may not have been released when prompted. Release it when prompted, then press Retry.",
+                Priority: 90);
+        }
+
+        if (lower.Contains("check nrst was released"))
+        {
+            return new OpenOcdDiagnosis(
+                "C45/nRST was probably still grounded. Release it when prompted, then press Retry.",
+                Priority: 95);
+        }
+
+        if (lower.Contains("timed out while waiting for target halted")
+            && _selectedConnectionMode == ConnectionMode.CloneC45
+            && (_cloneC45Phase == CloneC45Phase.WaitingForRelease || _cloneC45Phase == CloneC45Phase.AfterRelease))
+        {
+            return new OpenOcdDiagnosis(
+                "Target did not halt after release. Make sure C45/nRST is released when prompted and the chip is powered.",
+                Priority: 90);
+        }
+
+        if (lower.Contains("could not halt target"))
+        {
+            return new OpenOcdDiagnosis(
+                "Target connected but did not halt. Retry, and check SWD wires and target power.",
+                Priority: 75);
+        }
+
+        if (lower.Contains("verify failed"))
+        {
+            return new OpenOcdDiagnosis(
+                "Verify failed: firmware does not match after write.",
+                Priority: 90);
+        }
+
+        if (lower.Contains("write failed"))
+        {
+            return new OpenOcdDiagnosis(
+                "Write failed: target connection was lost during flashing. Check SWD wires and retry.",
+                Priority: 90);
+        }
+
+        if (lower.Contains("erase failed"))
+        {
+            return new OpenOcdDiagnosis(
+                "Erase failed: target did not accept the erase command. Check connection and retry.",
+                Priority: 90);
+        }
+
+        if (lower.Contains("target voltage") || lower.Contains("target not examined"))
+        {
+            return new OpenOcdDiagnosis(
+                "ST-LINK is present, but the target did not answer. Check SWD wires and target power, then retry.",
+                Priority: 70);
+        }
+
+        if (lower.Contains("adapter init failed") || lower.Contains("[fail]") || lower.Contains("error:"))
+        {
+            return new OpenOcdDiagnosis(
+                line,
+                Priority: 40);
+        }
+
+        return null;
+    }
+
+    private void RememberOpenOcdDiagnosis(OpenOcdDiagnosis diagnosis)
+    {
+        if (diagnosis.Priority < _lastOpenOcdDiagnosisPriority)
+        {
+            return;
+        }
+
+        _lastOpenOcdDiagnosis = diagnosis.Message;
+        _lastOpenOcdDiagnosisPriority = diagnosis.Priority;
+    }
+
+    private string GetOpenOcdFailureMessage(string fallback)
+    {
+        return string.IsNullOrWhiteSpace(_lastOpenOcdDiagnosis)
+            ? fallback
+            : _lastOpenOcdDiagnosis;
+    }
+
+    private void UpdateCloneC45CountdownVisibility()
+    {
+        var visible = _selectedConnectionMode == ConnectionMode.CloneC45;
+        _cloneC45CountdownLabel.Visible = visible;
+        _cloneC45CountdownNumericUpDown.Visible = visible;
+        _cloneC45CountdownNumericUpDown.Enabled = visible && !_isRunning && _runner is not null;
+    }
+
+    private int GetCloneC45CountdownSeconds()
+    {
+        return (int)_cloneC45CountdownNumericUpDown.Value;
+    }
+
+    private static bool TryParseC45CountdownLine(string line, out int seconds)
+    {
+        seconds = 0;
+        var trimmed = line.Trim();
+        if (trimmed.Length < 1)
+        {
+            return false;
+        }
+
+        var numberLength = 0;
+        while (numberLength < trimmed.Length && char.IsDigit(trimmed[numberLength]))
+        {
+            numberLength++;
+        }
+
+        if (numberLength == 0)
+        {
+            return false;
+        }
+
+        if (numberLength < trimmed.Length && trimmed[numberLength] != ' ' && trimmed[numberLength] != '.')
+        {
+            return false;
+        }
+
+        return int.TryParse(trimmed[..numberLength], out seconds);
     }
 
     private static string GetDefaultDumpFolder()
@@ -784,6 +1259,39 @@ internal enum ConnectionMode
     DefaultSwd,
     CloneC45,
     GenuineC45,
+}
+
+internal enum WorkflowVisualState
+{
+    Neutral,
+    Hold,
+    Release,
+    Success,
+    Failure,
+}
+
+internal enum CloneC45Phase
+{
+    None,
+    WaitingForHold,
+    HoldingCountdown,
+    WaitingForRelease,
+    AfterRelease,
+}
+
+internal readonly record struct OpenOcdDiagnosis(string Message, int Priority);
+
+internal readonly record struct WorkflowResult(bool IsSuccess, string Message)
+{
+    public static WorkflowResult Success(string message)
+    {
+        return new WorkflowResult(true, message);
+    }
+
+    public static WorkflowResult Failure(string message)
+    {
+        return new WorkflowResult(false, message);
+    }
 }
 
 internal sealed record ActionItem(GuiAction Action, string Text)
