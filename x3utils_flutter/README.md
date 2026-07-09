@@ -1,6 +1,6 @@
-# flash_studio
+# x3utils_flutter
 
-Flash Studio - x3utils scooter flashing app
+x3utils cross-platform Flutter GUI
 
 ## Getting Started
 
