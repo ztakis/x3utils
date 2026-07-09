@@ -1,0 +1,201 @@
+import 'package:flutter/material.dart';
+import 'theme.dart';
+
+enum ConnectionMode { defaultSwd, cloneC45, genuineC45 }
+
+extension ConnectionModeX on ConnectionMode {
+  String get tag => switch (this) {
+        ConnectionMode.defaultSwd => 'A',
+        ConnectionMode.cloneC45 => 'B',
+        ConnectionMode.genuineC45 => 'C',
+      };
+  String get title => switch (this) {
+        ConnectionMode.defaultSwd => 'Default SWD',
+        ConnectionMode.cloneC45 => 'C45 · Clone',
+        ConnectionMode.genuineC45 => 'C45 · Genuine',
+      };
+  String get sub => switch (this) {
+        ConnectionMode.defaultSwd => 'Blinker buttons',
+        ConnectionMode.cloneC45 => 'Guided hold / release',
+        ConnectionMode.genuineC45 => 'Hardware nRST',
+      };
+  bool get guided => this == ConnectionMode.cloneC45;
+}
+
+/// Visual state of the central hero stage.
+enum StageState { idle, hold, count, release, connect, run, ok, warn, fail }
+
+extension StageStateX on StageState {
+  Color get accent => switch (this) {
+        StageState.hold || StageState.count || StageState.warn => AppColors.hold,
+        StageState.release => AppColors.release,
+        StageState.connect || StageState.run => AppColors.brand,
+        StageState.ok => AppColors.ok,
+        StageState.fail => AppColors.danger,
+        StageState.idle => AppColors.brand,
+      };
+}
+
+/// Rail grouping: everyday tasks vs power-user tools (Advanced is collapsible).
+enum Section { standard, advanced }
+
+extension SectionX on Section {
+  String get label => this == Section.standard ? 'Actions' : 'Advanced';
+}
+
+enum DangerLevel { none, soft, hard }
+
+extension DangerLevelX on DangerLevel {
+  /// The tile dot encodes risk at a glance: safe / write / destructive.
+  Color get dot => switch (this) {
+        DangerLevel.none => AppColors.ok,
+        DangerLevel.soft => AppColors.brand,
+        DangerLevel.hard => AppColors.danger,
+      };
+}
+
+enum ChipKind { ok, brand, warn, danger }
+
+extension ChipKindX on ChipKind {
+  Color get color => switch (this) {
+        ChipKind.ok => AppColors.ok,
+        ChipKind.brand => AppColors.brand,
+        ChipKind.warn => AppColors.hold,
+        ChipKind.danger => AppColors.danger,
+      };
+}
+
+class InfoChipData {
+  final String label;
+  final ChipKind kind;
+  const InfoChipData(this.label, this.kind);
+}
+
+class FlashAction {
+  final String id;
+  final Section section;
+  final String name; // friendly name
+  final String script; // underlying script / command, shown smaller
+  final String sub;
+  final List<InfoChipData> chips;
+  final List<String> stages;
+  final String cta;
+  final DangerLevel danger;
+  final String okMsg;
+  final bool needsFirmware; // gates the .bin picker
+  const FlashAction({
+    required this.id,
+    required this.section,
+    required this.name,
+    required this.script,
+    required this.sub,
+    required this.chips,
+    required this.stages,
+    required this.cta,
+    required this.okMsg,
+    this.danger = DangerLevel.none,
+    this.needsFirmware = false,
+  });
+}
+
+/// Actions mirror design/flash-studio.html; wired to the frozen oocd later.
+const kActions = <FlashAction>[
+  // ── Standard ──────────────────────────────────────────────
+  FlashAction(
+    id: 'check',
+    section: Section.standard,
+    name: 'Check connection',
+    script: 'connect · probe',
+    sub: 'Probe the ST-LINK and the target. Reads nothing, writes nothing.',
+    chips: [InfoChipData('read-only', ChipKind.ok)],
+    stages: ['Connect', 'Probe flash'],
+    cta: 'Check connection',
+    okMsg: 'Target answered. You’re good to go.',
+  ),
+  FlashAction(
+    id: 'dump',
+    section: Section.standard,
+    name: 'Backup',
+    script: 'dump.bat · 128 KB',
+    sub: 'Read the whole flash to a timestamped backup you can restore later.',
+    chips: [InfoChipData('read-only', ChipKind.ok)],
+    stages: ['Connect', 'Probe', 'Read 128 KB', 'Verify'],
+    cta: 'Start backup',
+    okMsg: 'Backed up & verified → backup/dump_2026-07-09.bin',
+  ),
+  FlashAction(
+    id: 'flash_compat',
+    section: Section.standard,
+    name: 'SHU compatible',
+    script: 'flash_compat.bat',
+    sub: 'Back up the chip, patch its own firmware for SHU compatibility (ZT3 / G3 / F3), and flash it back. No file needed.',
+    chips: [InfoChipData('backs up first', ChipKind.brand), InfoChipData('patches firmware', ChipKind.warn)],
+    stages: ['Read chip', 'Patch', 'Erase', 'Write', 'Verify'],
+    cta: 'Make SHU compatible',
+    danger: DangerLevel.soft,
+    okMsg: 'SHU-compatible firmware flashed & verified.',
+  ),
+  FlashAction(
+    id: 'flash_backup',
+    section: Section.standard,
+    name: 'Backup + Flash',
+    script: 'flash.bat',
+    sub: 'Back up the chip first, then write and verify your firmware. The safe default.',
+    chips: [InfoChipData('backs up first', ChipKind.brand)],
+    stages: ['Backup', 'Connect', 'Erase', 'Write', 'Verify'],
+    cta: 'Start flash',
+    danger: DangerLevel.soft,
+    okMsg: 'Flashed & verified. Backup saved first.',
+    needsFirmware: true,
+  ),
+  // ── Advanced ──────────────────────────────────────────────
+  FlashAction(
+    id: 'flash_only',
+    section: Section.advanced,
+    name: 'Flash Only',
+    script: 'flash_only',
+    sub: 'Write and verify with no backup. Only if you already have one you trust.',
+    chips: [InfoChipData('no backup', ChipKind.warn)],
+    stages: ['Connect', 'Erase', 'Write', 'Verify'],
+    cta: 'Flash without backup',
+    danger: DangerLevel.hard,
+    okMsg: 'Flashed & verified. No backup was taken.',
+    needsFirmware: true,
+  ),
+  FlashAction(
+    id: 'flash_slot0',
+    section: Section.advanced,
+    name: 'Flash slot 0',
+    script: 'flash_slot0',
+    sub: 'Backs up the chip first, then writes slot 0 only — boot, slot 1 and user-data stay untouched. Won’t clone a serial.',
+    chips: [InfoChipData('backs up first', ChipKind.brand), InfoChipData('identity-safe', ChipKind.ok)],
+    stages: ['Connect', 'Erase slot 0', 'Write slot 0', 'Verify'],
+    cta: 'Flash slot 0',
+    danger: DangerLevel.soft,
+    okMsg: 'Slot 0 flashed & verified. Identity intact.',
+    needsFirmware: true,
+  ),
+  FlashAction(
+    id: 'rdp_check',
+    section: Section.advanced,
+    name: 'Check protection',
+    script: 'rdp.ps1 -check',
+    sub: 'Read the flash-access-protection state and report a plain verdict.',
+    chips: [InfoChipData('read-only', ChipKind.ok)],
+    stages: ['Connect', 'Read FAP', 'Verdict'],
+    cta: 'Check protection',
+    okMsg: 'PROTECTED · FAP active, flash is read-locked.',
+  ),
+  FlashAction(
+    id: 'rdp_rescue',
+    section: Section.advanced,
+    name: 'Unlock / rescue',
+    script: 'rdp.ps1 -rescue',
+    sub: 'Rewrite the option bytes to clear read protection. This mass-erases the flash.',
+    chips: [InfoChipData('rewrites option bytes', ChipKind.danger), InfoChipData('erases flash', ChipKind.danger)],
+    stages: ['Connect', 'Rewrite option bytes', 'Mass erase', 'Verify unlocked'],
+    cta: 'Run rescue',
+    danger: DangerLevel.hard,
+    okMsg: 'Rewrite sent. Power-cycle the board, then run Check protection to confirm it’s unlocked.',
+  ),
+];
