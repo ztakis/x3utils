@@ -36,6 +36,11 @@ class AppController extends ChangeNotifier {
     backupFolder = _prefs!.getString('backupFolder');
     backupPrefix = _prefs!.getString('backupPrefix') ?? '';
     secondCopy = _prefs!.getBool('secondCopy') ?? true;
+    final mi = _prefs!.getInt('connMode');
+    if (mi != null && mi >= 0 && mi < ConnectionMode.values.length) {
+      mode = ConnectionMode.values[mi];
+    }
+    countdownSeconds = _prefs!.getInt('countdown') ?? countdownSeconds;
     notifyListeners();
   }
 
@@ -124,6 +129,7 @@ class AppController extends ChangeNotifier {
   void selectMode(ConnectionMode m) {
     if (running) return;
     mode = m;
+    _prefs?.setInt('connMode', m.index);
     _goIdle();
   }
 
@@ -136,6 +142,7 @@ class AppController extends ChangeNotifier {
 
   void setCountdown(int v) {
     countdownSeconds = v.clamp(0, 10);
+    _prefs?.setInt('countdown', countdownSeconds);
     notifyListeners();
   }
 
