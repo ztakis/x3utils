@@ -19,7 +19,7 @@
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/../../config.sh"
+CONFIG_FILE="$SCRIPT_DIR/config.sh"
 [[ -f "$CONFIG_FILE" ]] || { echo "[FAIL] Missing config.sh"; exit 1; }
 source "$CONFIG_FILE"
 source "$SCRIPT_DIR/rdp_lib.sh"

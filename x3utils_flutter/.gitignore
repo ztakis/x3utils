@@ -44,5 +44,7 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Runtime-written: RdpRunner writes this mode handoff before each rdp.ps1 run
+# Runtime-written: RdpRunner writes this mode handoff into the rdp folder
+# before each run (Windows config.cmd; macOS/Linux config.sh).
 /native/windows/special/rdp/config.cmd
+/native/linux/special/rdp/config.sh

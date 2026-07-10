@@ -103,11 +103,12 @@ class RdpRunner {
     );
   }
 
-  // macOS/Linux: config.sh at the OS root (the .sh read $ScriptDir/../../config.sh).
+  // macOS/Linux: config.sh beside the .sh scripts (they read $ScriptDir/config.sh),
+  // mirroring the Windows config.cmd handoff in _rdpDir.
   void _writeConfigSh(ConnectionMode mode, int timeout) {
     final oocd = paths.openOcdExe;
     final scripts = paths.scriptsDir;
-    File(p.join(_root, 'config.sh')).writeAsStringSync(
+    File(p.join(_rdpDir, 'config.sh')).writeAsStringSync(
       'export CL_NC="\\033[0m"\n'
       'export CL_R="\\033[1;31m"\n'
       'export CL_G="\\033[1;32m"\n'
