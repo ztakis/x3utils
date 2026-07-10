@@ -48,3 +48,4 @@ app.*.map.json
 # before each run (Windows config.cmd; macOS/Linux config.sh).
 /native/windows/special/rdp/config.cmd
 /native/linux/special/rdp/config.sh
+/native/macos/special/rdp/config.sh
