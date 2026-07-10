@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
@@ -44,6 +45,13 @@ class AppController extends ChangeNotifier {
     countdownSeconds = _prefs!.getInt('countdown') ?? countdownSeconds;
     final ai = _prefs!.getInt('accent') ?? 0;
     accentNotifier.value = (ai >= 0 && ai < kAccents.length) ? ai : 0;
+    logToFile = _prefs!.getBool('logToFile') ?? false;
+    notifyListeners();
+  }
+
+  void toggleLogToFile() {
+    logToFile = !logToFile;
+    _prefs?.setBool('logToFile', logToFile);
     notifyListeners();
   }
 
@@ -131,6 +139,9 @@ class AppController extends ChangeNotifier {
   bool consolePinned = false;
   double consoleHeight = 300;
   bool advancedOpen = false;
+  bool logToFile = false; // opt-in: save each run's console to a log file
+  final List<String> _runLog = <String>[];
+  bool _capturing = false;
 
   int _token = 0;
   Completer<void>? _continue;
@@ -233,8 +244,20 @@ class AppController extends ChangeNotifier {
   static final RegExp _ansi = RegExp(r'\x1B\[[0-9;]*[A-Za-z]');
 
   void _log(String s) {
-    console.add(s.replaceAll(_ansi, '')); // strip ANSI colour escapes
+    final clean = s.replaceAll(_ansi, ''); // strip ANSI colour escapes
+    console.add(clean);
+    if (_capturing) _runLog.add(clean);
     notifyListeners();
+  }
+
+  void _flushLog() {
+    if (_runLog.isEmpty) return;
+    try {
+      final path = Firmware.writeLog(actionId, _runLog.join('\n'));
+      _log('== log saved → $path ==');
+    } catch (e) {
+      _log('== could not save log: $e ==');
+    }
   }
 
   void _set(StageState s, String eb, String t, String sb,
@@ -255,7 +278,31 @@ class AppController extends ChangeNotifier {
     return _continue!.future;
   }
 
+  /// One-line self-describing header for logs + clipboard (version/OS/mode/time).
+  String contextHeader() {
+    final os = switch (Platform.operatingSystem) {
+      'windows' => 'Windows',
+      'macos' => 'macOS',
+      'linux' => 'Linux',
+      _ => Platform.operatingSystem,
+    };
+    return 'x3utils v$kAppVersion · $os · ${mode.title} · '
+        '${DateTime.now().toString().split('.').first}';
+  }
+
   Future<void> start() async {
+    _runLog.clear();
+    _capturing = true;
+    _log(contextHeader());
+    try {
+      await _dispatch();
+    } finally {
+      _capturing = false;
+      if (logToFile) _flushLog();
+    }
+  }
+
+  Future<void> _dispatch() async {
     final runner = _runner;
     if (runner == null) {
       await _simulate();

@@ -1557,7 +1557,9 @@ class _ConsolePanelState extends State<_ConsolePanel> {
   }
 
   void _copy(BuildContext context) {
-    final text = widget.c.console.join('\n');
+    final body = widget.c.console.join('\n');
+    final text =
+        body.isEmpty ? '' : '${widget.c.contextHeader()}\n\n$body';
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -1611,6 +1613,8 @@ class _ConsolePanelState extends State<_ConsolePanel> {
                 const SizedBox(width: 10),
                 const Text('stdout · stderr',
                     style: TextStyle(color: AppColors.mut, fontSize: 12)),
+                const SizedBox(width: 14),
+                _LogToggle(c: widget.c),
                 const Spacer(),
                 _PinButton(c: widget.c),
                 const SizedBox(width: 14),
@@ -1727,6 +1731,45 @@ class _FirmwareBar extends StatelessWidget {
             small: true,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LogToggle extends StatelessWidget {
+  const _LogToggle({required this.c});
+  final AppController c;
+  @override
+  Widget build(BuildContext context) {
+    final on = c.logToFile;
+    return Tooltip(
+      message: on
+          ? r'Saving each run → Documents\x3utils\logs'
+          : 'Save each run to a log file',
+      child: InkWell(
+        onTap: c.toggleLogToFile,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                on
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
+                size: 15,
+                color: on ? AppColors.brand : AppColors.mut,
+              ),
+              const SizedBox(width: 5),
+              Text('Save log',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: on ? AppColors.brand : AppColors.mut,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
       ),
     );
   }

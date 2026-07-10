@@ -101,6 +101,15 @@ class Firmware {
     }
   }
 
+  /// Write a per-run console log under `Documents/x3utils/logs/{action}/`.
+  /// Returns the path.
+  static String writeLog(String action, String content) {
+    final dir = _dir(p.join('logs', action));
+    final path = p.join(dir, '${action}_${_stamp()}.log');
+    File(path).writeAsStringSync(content);
+    return path;
+  }
+
   /// Sanitised filename prefix (safe chars only) + trailing underscore.
   static String _pre(String prefix) {
     final clean = prefix.trim().replaceAll(RegExp(r'[^A-Za-z0-9_\-]'), '');

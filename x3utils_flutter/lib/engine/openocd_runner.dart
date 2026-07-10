@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models.dart';
+import 'cfg.dart';
 import 'openocd_paths.dart';
 
 class OpenOcdResult {
@@ -69,16 +70,11 @@ class OpenOcdRunner {
 
   List<String> _base() => ['-s', paths.scriptsDir, '-d0'];
 
-  String _targetCfg(ConnectionMode mode) => switch (mode) {
-        ConnectionMode.genuineC45 => 'target/at32f415xx_nrst.cfg',
-        _ => 'target/at32f415xx.cfg',
-      };
-
   List<String> checkArgs(ConnectionMode mode, int countdown) {
     if (mode == ConnectionMode.cloneC45) {
       return [
         ..._base(),
-        '-f', 'target/at32f415xx_c45.cfg',
+        '-f', Cfg.c45,
         '-c', 'guided_connect {$countdown}',
         '-c', 'flash probe 0',
         '-c', 'exit',
@@ -86,8 +82,8 @@ class OpenOcdRunner {
     }
     return [
       ..._base(),
-      '-f', 'interface/stlink.cfg',
-      '-f', _targetCfg(mode),
+      '-f', Cfg.interface,
+      '-f', Cfg.target(mode),
       '-c', 'adapter speed 1000',
       '-c', 'init',
       '-c', 'reset halt',
@@ -101,7 +97,7 @@ class OpenOcdRunner {
     if (mode == ConnectionMode.cloneC45) {
       return [
         ..._base(),
-        '-f', 'target/at32f415xx_c45.cfg',
+        '-f', Cfg.c45,
         '-c', 'guided_connect {$countdown}',
         '-c', 'dump_image {$path} 0x08000000 0x20000',
         '-c', 'exit',
@@ -109,8 +105,8 @@ class OpenOcdRunner {
     }
     return [
       ..._base(),
-      '-f', 'interface/stlink.cfg',
-      '-f', _targetCfg(mode),
+      '-f', Cfg.interface,
+      '-f', Cfg.target(mode),
       '-c', 'init',
       '-c', 'reset halt',
       '-c', 'flash probe 0',
@@ -124,7 +120,7 @@ class OpenOcdRunner {
     if (mode == ConnectionMode.cloneC45) {
       return [
         ..._base(),
-        '-f', 'target/at32f415xx_c45.cfg',
+        '-f', Cfg.c45,
         '-c', 'guided_flash_connect {$countdown}',
         '-c', 'do_flash_and_verify {$path}',
         '-c', 'exit',
@@ -132,8 +128,8 @@ class OpenOcdRunner {
     }
     return [
       ..._base(),
-      '-f', 'interface/stlink.cfg',
-      '-f', _targetCfg(mode),
+      '-f', Cfg.interface,
+      '-f', Cfg.target(mode),
       '-c', 'init',
       '-c', 'reset halt',
       '-c', 'flash erase_address 0x08000000 0x20000',
@@ -150,7 +146,7 @@ class OpenOcdRunner {
     if (mode == ConnectionMode.cloneC45) {
       return [
         ..._base(),
-        '-f', 'target/at32f415xx_c45.cfg',
+        '-f', Cfg.c45,
         '-c', 'guided_flash_connect {$countdown}',
         '-c', 'do_flash_and_verify_slot0 {$path}',
         '-c', 'exit',
@@ -158,8 +154,8 @@ class OpenOcdRunner {
     }
     return [
       ..._base(),
-      '-f', 'interface/stlink.cfg',
-      '-f', _targetCfg(mode),
+      '-f', Cfg.interface,
+      '-f', Cfg.target(mode),
       '-c', 'init',
       '-c', 'reset halt',
       '-c', 'flash write_image erase {$path} 0x08001000 bin',
