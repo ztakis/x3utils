@@ -116,7 +116,10 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  ConnectionMode mode = ConnectionMode.defaultSwd;
+  // Default to Mode B (C45 clone, guided hold/release): the shipping audience
+  // skews clones, so it's the right out-of-box pick. Overridden by a saved
+  // pref in _loadPrefs for anyone who's chosen otherwise.
+  ConnectionMode mode = ConnectionMode.cloneC45;
   String actionId = 'check';
   int countdownSeconds = 3;
   bool running = false;
