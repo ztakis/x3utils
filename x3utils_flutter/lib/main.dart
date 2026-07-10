@@ -54,6 +54,32 @@ class _HomeScreenState extends State<HomeScreen> {
     c.start();
   }
 
+  /// CLI muscle-memory: Enter fires the primary CTA for the current stage
+  /// (Start / guided Continue / Done / Retry). Running stages ignore it, so
+  /// Enter can never cancel a flash mid-write.
+  void _onEnter() {
+    switch (c.stage) {
+      case StageState.idle:
+        if (!(c.action.needsFirmware && c.firmwarePath == null)) _onStart();
+        break;
+      case StageState.hold:
+      case StageState.release:
+        if (c.showContinue) c.continueStep();
+        break;
+      case StageState.ok:
+      case StageState.warn:
+        c.dismiss();
+        break;
+      case StageState.fail:
+        c.retry();
+        break;
+      case StageState.count:
+      case StageState.connect:
+      case StageState.run:
+        break;
+    }
+  }
+
   Future<void> _pickFirmware() async {
     const group = XTypeGroup(label: 'firmware', extensions: ['bin']);
     final file = await openFile(acceptedTypeGroups: [group]);
@@ -272,7 +298,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: ListenableBuilder(
+      // Enter fires the current stage's primary CTA (see _onEnter) so the
+      // guided C45 "Continue" answers OpenOCD's stdin like the CLI's Enter.
+      body: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter): _onEnter,
+          const SingleActivator(LogicalKeyboardKey.numpadEnter): _onEnter,
+        },
+        child: Focus(
+          autofocus: true,
+          child: ListenableBuilder(
         listenable: c,
         builder: (context, _) => Column(
           children: [
@@ -347,6 +382,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ],
+        ),
+      ),
         ),
       ),
     );
