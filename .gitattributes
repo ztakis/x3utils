@@ -7,3 +7,9 @@ x3utils_mac/xpack-openocd-*/** linguist-vendored
 x3utils_win/oocd/** linguist-vendored
 
 *.md text eol=lf
+
+# Shell scripts must stay LF — bash breaks on CRLF (mac/Linux rdp tools)
+*.sh text eol=lf
+*.cfg text eol=lf
+# Bundled native OpenOCD binaries — never touch line endings
+x3utils_flutter/native/**/oocd/bin/* binary
