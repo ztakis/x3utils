@@ -5,7 +5,7 @@
 ; Paths are relative to this .iss; build the app first: flutter build windows --release
 
 #define AppName "x3utils"
-#define AppVer "0.9.0-beta"
+#define AppVer "1.0.0"
 
 [Setup]
 AppId={{8F4B2A1E-3C7D-4E9F-A2B6-1D5C9E7F3A80}
