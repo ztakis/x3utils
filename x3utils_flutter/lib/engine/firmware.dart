@@ -84,21 +84,35 @@ class Firmware {
     );
   }
 
-  /// Redundant copy into %LOCALAPPDATA%\x3utils_backup (mirrors dump.bat).
+  /// Redundant copy into the 2nd-copy dir (mirrors dump.bat).
   /// Returns the destination path, or null on failure (best-effort).
   static String? secondCopy(String srcPath) {
     try {
-      final base = Platform.environment['LOCALAPPDATA'] ??
-          Platform.environment['HOME'];
-      if (base == null) return null;
-      final dir = Directory(p.join(base, 'x3utils_backup'))
-        ..createSync(recursive: true);
+      final dir = Directory(secondCopyDir())..createSync(recursive: true);
       final dest = p.join(dir.path, p.basename(srcPath));
       File(srcPath).copySync(dest);
       return dest;
     } catch (_) {
       return null;
     }
+  }
+
+  /// Resolved 2nd-copy dir — each OS mirrors its CLI sibling's location:
+  /// `%LOCALAPPDATA%\x3utils_backup` (Windows, dump.bat),
+  /// `~/Library/Application Support/x3utils_backup` (macOS, x3utils_mac/dump.sh),
+  /// hidden `~/.x3utils_backup` (Linux, x3utils_linux/dump.sh).
+  static String secondCopyDir() {
+    if (Platform.isWindows) {
+      final base = Platform.environment['LOCALAPPDATA'] ??
+          Platform.environment['USERPROFILE'] ??
+          Directory.current.path;
+      return p.join(base, 'x3utils_backup');
+    }
+    final home = Platform.environment['HOME'] ?? Directory.current.path;
+    if (Platform.isMacOS) {
+      return p.join(home, 'Library', 'Application Support', 'x3utils_backup');
+    }
+    return p.join(home, '.x3utils_backup');
   }
 
   /// Write a per-run console log under `Documents/x3utils/logs/{action}/`.
@@ -115,6 +129,19 @@ class Firmware {
     final clean = prefix.trim().replaceAll(RegExp(r'[^A-Za-z0-9_\-]'), '');
     return clean.isEmpty ? '' : '${clean}_';
   }
+
+  // ── UI display labels (per-OS, so the settings panel never lies) ──────────
+  // Windows keeps the bare `Documents\…` hint; unix shows a `~/`-prefixed path
+  // with native separators. Kept in sync with _dir / secondCopyDir above.
+  static String get backupDirLabel => _homeLabel(p.join('Documents', 'x3utils', 'backup'));
+  static String get logsDirLabel => _homeLabel(p.join('Documents', 'x3utils', 'logs'));
+  static String get secondCopyLabel {
+    if (Platform.isWindows) return r'%LOCALAPPDATA%\x3utils_backup';
+    if (Platform.isMacOS) return '~/Library/Application Support/x3utils_backup';
+    return r'~/.x3utils_backup';
+  }
+
+  static String _homeLabel(String sub) => Platform.isWindows ? sub : '~/$sub';
 
   static String _dir(String sub) {
     final home = Platform.environment['USERPROFILE'] ??

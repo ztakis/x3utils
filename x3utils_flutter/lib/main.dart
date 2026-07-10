@@ -1744,7 +1744,7 @@ class _LogToggle extends StatelessWidget {
     final on = c.logToFile;
     return Tooltip(
       message: on
-          ? r'Saving each run → Documents\x3utils\logs'
+          ? 'Saving each run → ${Firmware.logsDirLabel}'
           : 'Save each run to a log file',
       child: InkWell(
         onTap: c.toggleLogToFile,
@@ -1931,7 +1931,7 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
   @override
   Widget build(BuildContext context) {
     final c = widget.c;
-    final folder = c.backupFolder ?? r'Documents\x3utils\backup  (default)';
+    final folder = c.backupFolder ?? '${Firmware.backupDirLabel}  (default)';
     final pre = _clean(_prefix.text);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2044,8 +2044,8 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
             ),
           ],
         ),
-        const Text(r'%LOCALAPPDATA%\x3utils_backup',
-            style: TextStyle(
+        Text(Firmware.secondCopyLabel,
+            style: const TextStyle(
                 color: AppColors.mut, fontSize: 12, fontFamily: kMono)),
       ],
     );
