@@ -38,11 +38,18 @@ class AppController extends ChangeNotifier {
     backupFolder = _prefs!.getString('backupFolder');
     backupPrefix = _prefs!.getString('backupPrefix') ?? '';
     secondCopy = _prefs!.getBool('secondCopy') ?? true;
-    final mi = _prefs!.getInt('connMode');
-    if (mi != null && mi >= 0 && mi < ConnectionMode.values.length) {
-      mode = ConnectionMode.values[mi];
+    // Startup defaults (migrate the pre-v1.0 last-used keys as a fallback).
+    final dm = _prefs!.getInt('defaultConnMode') ?? _prefs!.getInt('connMode');
+    if (dm != null && dm >= 0 && dm < ConnectionMode.values.length) {
+      defaultMode = ConnectionMode.values[dm];
     }
-    countdownSeconds = _prefs!.getInt('countdown') ?? countdownSeconds;
+    defaultCountdown = (_prefs!.getInt('defaultCountdown') ??
+            _prefs!.getInt('countdown') ??
+            defaultCountdown)
+        .clamp(0, 10);
+    // Seed the live session from the defaults.
+    mode = defaultMode;
+    countdownSeconds = defaultCountdown;
     final ai = _prefs!.getInt('accent') ?? 0;
     accentNotifier.value = (ai >= 0 && ai < kAccents.length) ? ai : 0;
     logToFile = _prefs!.getBool('logToFile') ?? false;
@@ -116,9 +123,14 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Default to Mode B (C45 clone, guided hold/release): the shipping audience
-  // skews clones, so it's the right out-of-box pick. Overridden by a saved
-  // pref in _loadPrefs for anyone who's chosen otherwise.
+  // STARTUP DEFAULTS (persisted, set only from Settings). Default to Mode B
+  // (C45 clone) — the shipping audience skews clones. _loadPrefs seeds the live
+  // session values below from these; the rail changes the session only.
+  ConnectionMode defaultMode = ConnectionMode.cloneC45;
+  int defaultCountdown = 3;
+
+  // Live session values (seeded from the defaults on launch; the rail overrides
+  // these WITHOUT touching the persisted defaults).
   ConnectionMode mode = ConnectionMode.cloneC45;
   String actionId = 'check';
   int countdownSeconds = 3;
@@ -153,9 +165,17 @@ class AppController extends ChangeNotifier {
 
   void selectMode(ConnectionMode m) {
     if (running) return;
-    mode = m;
-    _prefs?.setInt('connMode', m.index);
+    mode = m; // session-only; does NOT change the persisted default
     _goIdle();
+  }
+
+  /// Settings: set the persisted STARTUP default mode AND apply it to the live
+  /// session so the change shows immediately.
+  void setDefaultMode(ConnectionMode m) {
+    defaultMode = m;
+    _prefs?.setInt('defaultConnMode', m.index);
+    if (!running) mode = m;
+    notifyListeners();
   }
 
   void selectAction(String id) {
@@ -166,8 +186,15 @@ class AppController extends ChangeNotifier {
   }
 
   void setCountdown(int v) {
-    countdownSeconds = v.clamp(0, 10);
-    _prefs?.setInt('countdown', countdownSeconds);
+    countdownSeconds = v.clamp(0, 10); // session-only
+    notifyListeners();
+  }
+
+  /// Settings: set the persisted STARTUP default countdown AND apply it live.
+  void setDefaultCountdown(int v) {
+    defaultCountdown = v.clamp(0, 10);
+    _prefs?.setInt('defaultCountdown', defaultCountdown);
+    countdownSeconds = defaultCountdown;
     notifyListeners();
   }
 

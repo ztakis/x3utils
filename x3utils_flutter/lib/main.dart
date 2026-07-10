@@ -236,12 +236,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       _StepBtn(
                           icon: Icons.remove,
                           onTap: () {
-                            c.setCountdown(c.countdownSeconds - 1);
+                            c.setDefaultCountdown(c.defaultCountdown - 1);
                             setLocal(() {});
                           }),
                       SizedBox(
                         width: 30,
-                        child: Text('${c.countdownSeconds}',
+                        child: Text('${c.defaultCountdown}',
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                                 fontFamily: kMono,
@@ -252,7 +252,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       _StepBtn(
                           icon: Icons.add,
                           onTap: () {
-                            c.setCountdown(c.countdownSeconds + 1);
+                            c.setDefaultCountdown(c.defaultCountdown + 1);
                             setLocal(() {});
                           }),
                     ],
@@ -266,7 +266,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Divider(color: AppColors.line, height: 28),
                 _BackupSettingsSection(c: c),
                 const Divider(color: AppColors.line, height: 28),
-                Text('x3utils  ·  v$kAppVersion · Flutter',
+                Text('x3utils  ·  v$kAppVersion',
                     style: const TextStyle(
                         color: AppColors.dim,
                         fontSize: 12,
@@ -433,7 +433,7 @@ class _TitleBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(999),
               border: Border.all(color: AppColors.brand.withValues(alpha: 0.35)),
             ),
-            child: Text('v$kAppVersion · Flutter',
+            child: Text('v$kAppVersion',
                 style: TextStyle(
                     fontFamily: kMono,
                     fontSize: 11,
@@ -505,7 +505,7 @@ class _TitleMenu extends StatelessWidget {
             showAboutDialog(
               context: context,
               applicationName: 'x3utils',
-              applicationVersion: 'v$kAppVersion · Flutter',
+              applicationVersion: 'v$kAppVersion',
               applicationLegalese:
                   'ST-LINK utilities for X3 scooters · AT32F415 · bundled OpenOCD',
             );
@@ -2103,16 +2103,17 @@ class _ModeDropdown extends StatelessWidget {
         ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<ConnectionMode>(
-            value: c.mode,
+            value: c.defaultMode,
             dropdownColor: AppColors.panel2,
             style: const TextStyle(color: AppColors.txt, fontSize: 13),
             items: [
               for (final m in ConnectionMode.values)
-                DropdownMenuItem(value: m, child: Text(m.title)),
+                DropdownMenuItem(
+                    value: m, child: Text('${m.tag} · ${m.title}')),
             ],
             onChanged: (m) {
               if (m != null) {
-                c.selectMode(m);
+                c.setDefaultMode(m);
                 onChanged();
               }
             },
