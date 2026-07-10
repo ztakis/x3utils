@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
+import 'theme.dart';
 import 'engine/openocd_paths.dart';
 import 'engine/openocd_runner.dart';
 import 'engine/rdp_runner.dart';
@@ -41,7 +42,17 @@ class AppController extends ChangeNotifier {
       mode = ConnectionMode.values[mi];
     }
     countdownSeconds = _prefs!.getInt('countdown') ?? countdownSeconds;
+    final ai = _prefs!.getInt('accent') ?? 0;
+    accentNotifier.value = (ai >= 0 && ai < kAccents.length) ? ai : 0;
     notifyListeners();
+  }
+
+  int get accentIndex => accentNotifier.value;
+
+  void setAccent(int i) {
+    final idx = (i >= 0 && i < kAccents.length) ? i : 0;
+    accentNotifier.value = idx; // drives the app-wide recolor
+    _prefs?.setInt('accent', idx);
   }
 
   void setBackupFolder(String? f) {

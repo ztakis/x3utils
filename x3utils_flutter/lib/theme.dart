@@ -14,16 +14,45 @@ class AppColors {
   static const dim = Color(0xFF96A2B6);
   static const mut = Color(0xFF5D6A7E);
 
-  static const brand = Color(0xFF16E0C4); // electric teal — the one bold accent
-  static const brand2 = Color(0xFF0FB9A6);
-  static const pop = Color(0xFFFF2E88); // rare hot-magenta pop
+  // Accent — swappable at runtime via applyAccent() (see kAccents below).
+  // NB: because these are non-const, widgets that use them can't be `const`.
+  static Color brand = kAccents[0].brand;
+  static Color brand2 = kAccents[0].brand2;
+  static Color pop = kAccents[0].pop;
 
-  // semantic (separate from accent)
+  // semantic (meaning-based — same across all accent themes)
   static const hold = Color(0xFFFFB224); // amber
   static const release = Color(0xFFFF7A2F); // orange
   static const ok = Color(0xFF38E08A); // green
   static const danger = Color(0xFFFF4D5E); // red
+
+  static void applyAccent(int index) {
+    final a = kAccents[index.clamp(0, kAccents.length - 1)];
+    brand = a.brand;
+    brand2 = a.brand2;
+    pop = a.pop;
+  }
 }
+
+/// A dark-ground accent theme (only the bold accent changes; grounds + semantic
+/// colours stay fixed).
+class AccentTheme {
+  const AccentTheme(this.name, this.brand, this.brand2, this.pop);
+  final String name;
+  final Color brand, brand2, pop;
+}
+
+const kAccents = <AccentTheme>[
+  AccentTheme('Teal',
+      Color(0xFF16E0C4), Color(0xFF0FB9A6), Color(0xFFFF2E88)),
+  AccentTheme('Silver',
+      Color(0xFFC4CDD8), Color(0xFF97A3B1), Color(0xFFE7ECF3)),
+  AccentTheme('Blue',
+      Color(0xFF3D9BFF), Color(0xFF2C7BE0), Color(0xFF26D8F0)),
+];
+
+/// Drives a MaterialApp rebuild when the accent changes (see X3UtilsApp).
+final accentNotifier = ValueNotifier<int>(0);
 
 ThemeData buildTheme() {
   final base = ThemeData.dark(useMaterial3: true);

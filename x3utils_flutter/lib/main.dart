@@ -14,11 +14,18 @@ class X3UtilsApp extends StatelessWidget {
   const X3UtilsApp({super.key});
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'x3utils',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(),
-      home: const HomeScreen(),
+    // Rebuild the whole app (theme + tree) when the accent theme changes.
+    return ValueListenableBuilder<int>(
+      valueListenable: accentNotifier,
+      builder: (context, idx, _) {
+        AppColors.applyAccent(idx);
+        return MaterialApp(
+          title: 'x3utils',
+          debugShowCheckedModeBanner: false,
+          theme: buildTheme(),
+          home: HomeScreen(), // non-const so accent changes rebuild the tree
+        );
+      },
     );
   }
 }
@@ -128,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () => Navigator.pop(ctx, true),
                     gradient: hard
                         ? const [Color(0xFFFF6472), AppColors.danger]
-                        : const [AppColors.brand, AppColors.brand2],
+                        : [AppColors.brand, AppColors.brand2],
                     fg: hard ? Colors.white : const Color(0xFF04120F),
                     small: true,
                   ),
@@ -178,8 +185,9 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  children: const [
-                    Icon(Icons.settings_rounded, color: AppColors.brand, size: 22),
+                  children: [
+                    Icon(Icons.settings_rounded,
+                        color: AppColors.brand, size: 22),
                     SizedBox(width: 10),
                     Text('Settings',
                         style: TextStyle(
@@ -225,10 +233,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const _SettingRow(
-                  label: 'Theme',
-                  child: Text('Dark (locked)',
-                      style: TextStyle(color: AppColors.mut, fontSize: 13)),
+                _SettingRow(
+                  label: 'Theme accent',
+                  child: _AccentPicker(c: c, onChanged: () => setLocal(() {})),
                 ),
                 const Divider(color: AppColors.line, height: 28),
                 _BackupSettingsSection(c: c),
@@ -247,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: _PillButton(
                     label: 'Done',
                     onTap: () => Navigator.pop(ctx),
-                    gradient: const [AppColors.brand, AppColors.brand2],
+                    gradient: [AppColors.brand, AppColors.brand2],
                     fg: const Color(0xFF04120F),
                     small: true,
                   ),
@@ -368,7 +375,7 @@ class _TitleBar extends StatelessWidget {
             height: 28,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
-              gradient: const SweepGradient(
+              gradient: SweepGradient(
                 colors: [AppColors.brand, AppColors.brand2, AppColors.pop, AppColors.brand],
               ),
               boxShadow: [
@@ -390,7 +397,7 @@ class _TitleBar extends StatelessWidget {
               border: Border.all(color: AppColors.brand.withValues(alpha: 0.35)),
             ),
             child: Text('v$kAppVersion · Flutter',
-                style: const TextStyle(
+                style: TextStyle(
                     fontFamily: kMono,
                     fontSize: 11,
                     color: AppColors.brand,
@@ -1022,7 +1029,7 @@ class _Visual extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: AppColors.line2),
           ),
-          child: const Icon(Icons.bolt, color: AppColors.brand, size: 38),
+          child: Icon(Icons.bolt, color: AppColors.brand, size: 38),
         );
       case StageState.hold:
         return _Pad(accent: accent, pulse: pulse, release: false);
@@ -1189,7 +1196,7 @@ class _Progress extends StatelessWidget {
               value: frac,
               minHeight: 8,
               backgroundColor: const Color(0x14FFFFFF),
-              valueColor: const AlwaysStoppedAnimation(AppColors.brand),
+              valueColor: AlwaysStoppedAnimation(AppColors.brand),
             ),
           ),
           const SizedBox(height: 16),
@@ -1241,7 +1248,7 @@ class _StageRow extends StatelessWidget {
             child: done
                 ? const Icon(Icons.check, size: 12, color: Color(0xFF04120F))
                 : active
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 9,
                         height: 9,
                         child: CircularProgressIndicator(
@@ -1326,7 +1333,7 @@ class _StageButtons extends StatelessWidget {
           onTap: needsFirmware ? null : onStart,
           gradient: c.action.danger == DangerLevel.hard
               ? const [Color(0xFFFF6472), AppColors.danger]
-              : const [AppColors.brand, AppColors.brand2],
+              : [AppColors.brand, AppColors.brand2],
           fg: c.action.danger == DangerLevel.hard
               ? Colors.white
               : const Color(0xFF04120F),
@@ -1355,7 +1362,7 @@ class _StageButtons extends StatelessWidget {
         children.add(_PillButton(
           label: 'Done',
           onTap: c.dismiss,
-          gradient: const [AppColors.brand, AppColors.brand2],
+          gradient: [AppColors.brand, AppColors.brand2],
           fg: const Color(0xFF04120F),
         ));
         break;
@@ -1363,7 +1370,7 @@ class _StageButtons extends StatelessWidget {
         children.add(_PillButton(
           label: 'Retry',
           onTap: () => c.retry(),
-          gradient: const [AppColors.brand, AppColors.brand2],
+          gradient: [AppColors.brand, AppColors.brand2],
           fg: const Color(0xFF04120F),
         ));
         children.add(_PillButton(
@@ -1488,7 +1495,7 @@ class _StatusBar extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               child: Text(c.consoleOpen ? '▾ Console' : '▤ Console',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 12,
                       color: AppColors.brand,
                       fontWeight: FontWeight.w600)),
@@ -1594,7 +1601,7 @@ class _ConsolePanelState extends State<_ConsolePanel> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.terminal_rounded, size: 16, color: AppColors.brand),
+                Icon(Icons.terminal_rounded, size: 16, color: AppColors.brand),
                 const SizedBox(width: 8),
                 const Text('OpenOCD console',
                     style: TextStyle(
@@ -1670,7 +1677,7 @@ class _ConsoleAction extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
           child: Text(label,
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppColors.brand,
                   fontSize: 12,
                   fontWeight: FontWeight.w600)),
@@ -1802,6 +1809,54 @@ class _SettingRow extends StatelessWidget {
       );
 }
 
+class _AccentPicker extends StatelessWidget {
+  const _AccentPicker({required this.c, required this.onChanged});
+  final AppController c;
+  final VoidCallback onChanged;
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < kAccents.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          Tooltip(
+            message: kAccents[i].name,
+            child: GestureDetector(
+              onTap: () {
+                c.setAccent(i);
+                onChanged();
+              },
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                      colors: [kAccents[i].brand, kAccents[i].pop]),
+                  border: Border.all(
+                    color: c.accentIndex == i
+                        ? AppColors.txt
+                        : Colors.transparent,
+                    width: 2,
+                  ),
+                  boxShadow: c.accentIndex == i
+                      ? [
+                          BoxShadow(
+                              color: kAccents[i].brand.withValues(alpha: 0.5),
+                              blurRadius: 8)
+                        ]
+                      : null,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _BackupSettingsSection extends StatefulWidget {
   const _BackupSettingsSection({required this.c});
   final AppController c;
@@ -1839,9 +1894,9 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          children: const [
+          children: [
             Icon(Icons.folder_copy_rounded, size: 18, color: AppColors.brand),
-            SizedBox(width: 8),
+            const SizedBox(width: 8),
             Text('Backups',
                 style: TextStyle(
                     fontSize: 14,
@@ -1917,7 +1972,7 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
                       borderSide: const BorderSide(color: AppColors.line2)),
                   focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: AppColors.brand)),
+                      borderSide: BorderSide(color: AppColors.brand)),
                 ),
               ),
             ),
