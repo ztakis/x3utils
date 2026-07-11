@@ -28,7 +28,11 @@ set "D=^============================================================"
 set "OPENOCD_BIN=%~dp0oocd\bin\openocd.exe"
 set "SCRIPTS_DIR=%~dp0oocd\scripts"
 set "INTERFACE=interface\stlink.cfg"
-set "TARGET=target\at32f415xx_c45.cfg"
+set "TARGET=target\at32f415xx.cfg"
+
+:: Connection mode D (power-race): true = Dump uses the respawn power-race connect
+:: (target\at32f415xx_race.cfg). Set by the launcher radio; A/B/C reset it false.
+set "RACE=true"
 
 set "CONNECT_TIMEOUT=3"
 

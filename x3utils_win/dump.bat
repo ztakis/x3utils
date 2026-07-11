@@ -51,6 +51,9 @@ echo Output File:
 echo        "%dump_file%"
 echo.
 
+:: Mode D: power-race respawn dump. Skips the single-connect path below.
+if /i "%RACE%"=="true" goto :race_dump
+
 echo %D%
 echo             Executing Full 128 KB Memory Dump...
 echo %D%
@@ -92,6 +95,35 @@ set /p "retry_choice=%CL_C%Press ENTER to retry, or type Q to quit: %CL_NC%"
 if /i "%retry_choice%"=="q" goto :fail_exit
 echo.
 goto :dump_attempt
+
+:: -------------------------------------------------------------------------
+:: Mode D - power-race respawn dump. openocd's init (the SWD connect) is
+:: one-shot, so this MUST respawn fresh launches, not loop in-session. The
+:: launch that lands in the post-power-on window connects, halts, and dumps;
+:: on a catch we fall through to the shared validate/backup below.
+:: -------------------------------------------------------------------------
+:race_dump
+echo %D%
+echo    %CL_M%Power-race dump (mode D) - respawn, read-only%CL_NC%
+echo %D%
+echo    Hammering connects. %CL_C%Apply POWER now%CL_NC%; if it misses, cut and
+echo    re-apply POWER (each power-ON is a fresh window). %CL_C%Ctrl+C to stop.%CL_NC%
+echo.
+set /a race_tries=0
+:race_loop
+set /a race_tries+=1
+"%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 -f "target\at32f415xx_race.cfg" ^
+    -c "race_connect" ^
+    -c "dump_image {%norm_dump_file%} 0x08000000 0x20000" ^
+    -c "exit" >nul 2>&1
+if not errorlevel 1 goto :race_caught
+<nul set /p "=."
+goto :race_loop
+:race_caught
+echo.
+echo.
+echo [ %CL_G%CAUGHT%CL_NC% ] Connected + dumped on attempt %race_tries%.
+goto :dump_ok
 
 :dump_ok
 
