@@ -60,6 +60,10 @@ goto :end
 :do_flash
 echo.
 
+:: Mode D: power-race flash-only (respawn erase+write+verify, no backup). Skips
+:: the single-connect A/B/C path below.
+if /i "%RACE%"=="true" goto :race_flash_only
+
 :: Run OpenOCD flash using relative configuration mappings.
 :: Still no unlock operation. We assume the target is not read-protected.
 ::
@@ -106,6 +110,59 @@ goto :flash_attempt
 echo.
 echo [ %CL_G%OK%CL_NC% ] Flashing completed and verified successfully!
 echo.
+goto :end
+
+:: -------------------------------------------------------------------------
+:: Mode D - power-race flash-only. Respawn fresh openocd launches until one
+:: lands in a post-power-on window, then erase+write+verify. NO backup - this
+:: is the escape-hatch flash step (take a backup with dump.bat first if you
+:: want one). Erase precedes write, so a re-caught retry is safe. Graded live
+:: symbols come from the shared race_grade.cmd (. N H x). This is the isolated
+:: flash step - hammer it alone to chase the marginal-write algorithm stall.
+:: -------------------------------------------------------------------------
+:race_flash_only
+echo.
+echo %D%
+echo    %CL_M%Power-race flash-only (mode D) - respawn erase+write+verify, no backup%CL_NC%
+echo %D%
+echo    Hammering connects. %CL_C%Apply POWER now%CL_NC%; cut and re-apply POWER on a miss.
+echo    When the symbols pause it CAUGHT and is flashing [%bin_file%] - ~5s quiet is
+echo    normal. %CL_C%Do NOT replug mid-flash%CL_NC%: a stalled write fails and retries by
+echo    itself, and erase precedes write so a retry is safe. %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier  %CL_G%H%CL_NC%=almost  %CL_R%x%CL_NC%=probe/USB gone
+echo.
+set "race_dbg_log=%TEMP%\x3utils_race_debug.log"
+set "race_last=%TEMP%\x3utils_race_last.log"
+if /i "%RACE_DEBUG%"=="true" (
+    if exist "%race_dbg_log%" del "%race_dbg_log%"
+    set "race_v=-d2"
+) else (
+    set "race_v=-d0"
+)
+set OOCD_RACE=-s "%SCRIPTS_DIR%" -f "target\at32f415xx_race.cfg" ^
+ -c "race_connect" ^
+ -c "flash erase_address 0x08000000 0x20000" ^
+ -c "flash write_bank 0 {%normalized_path%}" ^
+ -c "verify_image {%normalized_path%} 0x08000000" ^
+ -c "exit"
+set /a race_tries=0
+:rfo_loop
+set /a race_tries+=1
+"%OPENOCD_BIN%" %race_v% %OOCD_RACE% > "%race_last%" 2>&1
+if not errorlevel 1 goto :rfo_ok
+if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== flash attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
+call "%~dp0..\race_grade.cmd"
+goto :rfo_loop
+
+:rfo_ok
+echo.
+echo.
+echo [ %CL_G%CAUGHT%CL_NC% ] Flashed on attempt %race_tries% - stages:
+echo %D%
+type "%race_last%" | findstr /i "halted erased wrote verified"
+echo %D%
+echo.
+echo [ %CL_G%OK%CL_NC% ] Flashed and verified: %bin_file%
 goto :end
 
 :fail_exit

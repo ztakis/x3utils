@@ -253,19 +253,32 @@ echo    %CL_M%SHU-compat power-race (mode D) - 2 catches: dump, then flash%CL_NC
 echo %D%
 echo    You'll catch the window TWICE: once to read the current firmware, once
 echo    to flash the patched version. %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier  %CL_G%H%CL_NC%=almost  %CL_R%x%CL_NC%=probe/USB gone
 echo.
+:: Graded live symbols via the shared race_grade.cmd; RACE_DEBUG appends each
+:: attempt's verbose output to race_dbg_log. Both catches (dump + flash) capture
+:: to race_last and classify the same way. Set up once for both.
+set "race_dbg_log=%TEMP%\x3utils_race_debug.log"
+set "race_last=%TEMP%\x3utils_race_last.log"
+if /i "%RACE_DEBUG%"=="true" (
+    if exist "%race_dbg_log%" del "%race_dbg_log%"
+    set "race_v=-d2"
+) else (
+    set "race_v=-d0"
+)
 echo %D%
 echo    Stage 1/3: catch + dump current firmware. %CL_C%Apply POWER now...%CL_NC%
 echo %D%
 set /a race_tries=0
 :rc_dump_loop
 set /a race_tries+=1
-"%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 -f "target\at32f415xx_race.cfg" ^
+"%OPENOCD_BIN%" %race_v% -s "%SCRIPTS_DIR%" -f "target\at32f415xx_race.cfg" ^
     -c "race_connect" ^
     -c "dump_image {%norm_raw_dump%} 0x08000000 0x20000" ^
-    -c "exit" >nul 2>&1
+    -c "exit" > "%race_last%" 2>&1
 if not errorlevel 1 goto :rc_dumped
-<nul set /p "=."
+if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== dump attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
+call "%~dp0race_grade.cmd"
 goto :rc_dump_loop
 :rc_dumped
 echo.
@@ -316,14 +329,15 @@ echo %D%
 set /a race_tries=0
 :rc_flash_loop
 set /a race_tries+=1
-"%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 -f "target\at32f415xx_race.cfg" ^
+"%OPENOCD_BIN%" %race_v% -s "%SCRIPTS_DIR%" -f "target\at32f415xx_race.cfg" ^
     -c "race_connect" ^
     -c "flash erase_address 0x08000000 0x20000" ^
     -c "flash write_bank 0 {%norm_patched_dump%}" ^
     -c "verify_image {%norm_patched_dump%} 0x08000000" ^
-    -c "exit" >nul 2>&1
+    -c "exit" > "%race_last%" 2>&1
 if not errorlevel 1 goto :rc_flashed
-<nul set /p "=."
+if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== flash attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
+call "%~dp0race_grade.cmd"
 goto :rc_flash_loop
 :rc_flashed
 echo.

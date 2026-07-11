@@ -137,62 +137,79 @@ echo.
 goto :end
 
 :: -------------------------------------------------------------------------
-:: Mode D - power-race flash. One caught session backs up (dump) THEN flashes
-:: and verifies (no resume gap). openocd's init is one-shot, so this respawns
-:: fresh launches until one lands in the post-power-on window. Erase precedes
-:: write, so a re-caught retry is safe.
+:: Mode D - power-race flash. Two visible stages, each its own catch:
+::   Stage 1  call dump.bat  -> back up the current firmware (its own race catch)
+::   Stage 2  respawn flash   -> erase+write+verify INLINE (same op as the A/B/C
+::                              path above, but via the race respawn connect +
+::                              graded dots). Split so the operator sees per-stage
+::                              progress instead of one silent one-session flash.
+:: If the backup reads zeros (locked chip) dump.bat fails and we abort BY DESIGN;
+:: use special\flash_only.bat to force-flash a locked chip. Erase precedes write,
+:: so a re-caught retry is safe.
 :: -------------------------------------------------------------------------
 :race_flash
-set "backup_dir=%~dp0backup"
-if not exist "%backup_dir%" mkdir "%backup_dir%"
-for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do set "timestamp=%%i"
-set "predump_file=%backup_dir%\race_predump_%timestamp%.bin"
-set "norm_predump=%predump_file:\=/%"
 echo.
 echo %D%
-echo    %CL_M%Power-race flash (mode D) - respawn: backup + flash in one catch%CL_NC%
+echo    %CL_M%Power-race flash (mode D) - backup, then flash (2 catches)%CL_NC%
 echo %D%
-echo    Hammering connects. %CL_C%Apply POWER now%CL_NC%; each dot is a miss - cut and
-echo    re-apply POWER. When the %CL_C%dots pause%CL_NC% it CAUGHT: it's backing up then
-echo    flashing [%bin_file%] (~5s of quiet is normal). If it stays stuck much
-echo    longer, %CL_C%Ctrl+C%CL_NC% and re-run - erase precedes write, so a retry is safe.
-echo    Pre-flash backup: "%predump_file%"
+echo    Stage 1 backs up the current firmware; Stage 2 flashes [%bin_file%].
 echo.
-:: Each attempt logs to a file (overwritten); on the catch we replay the winning
-:: attempt's stages.
-set "race_log=%TEMP%\x3utils_race_flash.log"
+echo %D%
+echo    Stage 1/2: backup current firmware (dump.bat)
+echo %D%
+if not exist "%~dp0dump.bat" (
+    echo [%CL_R%FAIL%CL_NC%] dump.bat not found - cannot back up. Aborting.
+    goto :fail_exit
+)
+call "%~dp0dump.bat"
+if errorlevel 1 (
+    echo.
+    echo [%CL_R%FAIL%CL_NC%] Backup ^(dump.bat^) failed - aborting flash for safety.
+    echo        A locked/zero-reading chip fails here by design; to force-flash it,
+    echo        use special\flash_only.bat directly.
+    goto :fail_exit
+)
+
+echo.
+echo %D%
+echo    Stage 2/2: flash [%bin_file%] - respawn until caught, then erase+write+verify
+echo %D%
+echo    Hammering connects. %CL_C%Apply POWER now%CL_NC%; cut and re-apply POWER on a miss.
+echo    When the symbols pause it CAUGHT and is flashing (~5s quiet is normal - do
+echo    NOT replug mid-flash; erase precedes write, so a retry is safe). %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier  %CL_G%H%CL_NC%=almost  %CL_R%x%CL_NC%=probe/USB gone
+echo.
+:: Each attempt captured to race_last, graded via the shared race_grade.cmd; on
+:: catch we replay the winning stages. dump.bat (Stage 1) already cleared the debug
+:: log, so we don't clear here - it accumulates backup-then-flash attempts.
+set "race_dbg_log=%TEMP%\x3utils_race_debug.log"
+set "race_last=%TEMP%\x3utils_race_last.log"
+if /i "%RACE_DEBUG%"=="true" ( set "race_v=-d2" ) else ( set "race_v=-d0" )
+set OOCD_RACE=-s "%SCRIPTS_DIR%" -f "target\at32f415xx_race.cfg" ^
+ -c "race_connect" ^
+ -c "flash erase_address 0x08000000 0x20000" ^
+ -c "flash write_bank 0 {%normalized_path%}" ^
+ -c "verify_image {%normalized_path%} 0x08000000" ^
+ -c "exit"
 set /a race_tries=0
 :race_flash_loop
 set /a race_tries+=1
-"%OPENOCD_BIN%" -s "%SCRIPTS_DIR%" -d0 -f "target\at32f415xx_race.cfg" ^
-    -c "race_connect" ^
-    -c "dump_image {%norm_predump%} 0x08000000 0x20000" ^
-    -c "flash erase_address 0x08000000 0x20000" ^
-    -c "flash write_bank 0 {%normalized_path%}" ^
-    -c "verify_image {%normalized_path%} 0x08000000" ^
-    -c "exit" > "%race_log%" 2>&1
+"%OPENOCD_BIN%" %race_v% %OOCD_RACE% > "%race_last%" 2>&1
 if not errorlevel 1 goto :race_flash_ok
-<nul set /p "=."
+if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== flash attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
+call "%~dp0race_grade.cmd"
 goto :race_flash_loop
 
 :race_flash_ok
 echo.
 echo.
-echo [ %CL_G%CAUGHT%CL_NC% ] on attempt %race_tries% - stages:
+echo [ %CL_G%CAUGHT%CL_NC% ] Flashed on attempt %race_tries% - stages:
 echo %D%
-type "%race_log%" | findstr /i "halted dumped erased wrote verified"
+type "%race_last%" | findstr /i "halted erased wrote verified"
 echo %D%
-:: Report the pre-flash backup (all-zeros = old FW was read-protected - normal
-:: for a locked chip; the flash still succeeds).
-call "%~dp0validate_bin.cmd" "%predump_file%"
-if "%VALIDATE_RESULT%"=="OK" (
-    echo [ %CL_G%OK%CL_NC% ] Pre-flash backup: %EXPECTED_SIZE% bytes, readable
-) else (
-    echo [%CL_Y%NOTE%CL_NC%] Pre-flash backup reads blank/protected ^(old FW unreadable^) - normal for a locked chip.
-)
-echo           "%predump_file%"
 echo.
 echo [ %CL_G%OK%CL_NC% ] Flashed and verified: %bin_file%
+echo        Backup was taken by dump.bat above.
 goto :end
 
 :fail_exit
