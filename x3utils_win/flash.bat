@@ -158,8 +158,8 @@ echo    flashing [%bin_file%] (~5s of quiet is normal). If it stays stuck much
 echo    longer, %CL_C%Ctrl+C%CL_NC% and re-run - erase precedes write, so a retry is safe.
 echo    Pre-flash backup: "%predump_file%"
 echo.
-:: Log every attempt (overwrite); on the catch we replay the winning attempt's
-:: stages so it isn't one compact line.
+:: Each attempt logs to a file (overwritten); on the catch we replay the winning
+:: attempt's stages.
 set "race_log=%TEMP%\x3utils_race_flash.log"
 set /a race_tries=0
 :race_flash_loop

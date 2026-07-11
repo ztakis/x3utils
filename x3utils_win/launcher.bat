@@ -56,7 +56,7 @@ echo  [ %CL_C%Connection Options - Press A, B, C, or D to change%CL_NC% ]
 if "%current_radio%"=="A" (echo   [%CL_C%X%CL_NC%] A - Default / Blinker buttons) else (echo   [ ] A - Default / Blinker buttons)
 if "%current_radio%"=="B" (echo   [%CL_Y%X%CL_NC%] B - C45 / Clone ST-Link) else (echo   [ ] B - C45 / Clone ST-Link)
 if "%current_radio%"=="C" (echo   [%CL_M%X%CL_NC%] C - C45 / Genuine ST-Link) else (echo   [ ] C - C45 / Genuine ST-Link)
-if "%current_radio%"=="D" (echo   [%CL_G%X%CL_NC%] D - Power-race / no reset line ^(Dump/Flash^)) else (echo   [ ] D - Power-race / no reset line ^(Dump/Flash^))
+if "%current_radio%"=="D" (echo   [%CL_G%X%CL_NC%] D - Power-race / no reset line) else (echo   [ ] D - Power-race / no reset line)
 echo.
 if "%current_radio%"=="B" (
     echo  [ %CL_C%Configuration%CL_NC% ]
@@ -178,14 +178,6 @@ exit /b 0
 
 :: Call flash_compat.bat
 :opt_compat
-if "%current_radio%"=="D" (
-    echo.
-    echo [%CL_Y%WARN%CL_NC%] Power-race ^(D^) does Dump and Flash, not SHU-compat
-    echo        ^(that needs two catches^). Switch to A/B/C for SHU.
-    echo.
-    pause
-    goto :menu_loop
-)
 echo.
 echo Launching Flash SHU compatible...
 echo.
