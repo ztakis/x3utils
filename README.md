@@ -4,6 +4,9 @@
 
 ### ST-LINK utilities for X3 / 3rd-generation scooters.
 
+<img width="736" height="841" alt="gui" src="https://github.com/user-attachments/assets/16df563a-aa52-4f87-87bb-625d9666513f" />
+<br><br>
+
 ![Launcher menu](docs/media/launcher-menu.png)
 
 ### Supported models: ZT3 Pro, Max G3, F3 / F3 Pro.
