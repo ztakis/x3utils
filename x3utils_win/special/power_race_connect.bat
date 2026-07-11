@@ -6,7 +6,7 @@ setlocal enabledelayedexpansion
 ::
 :: For AT32 parts whose firmware disables SWD shortly after boot AND where nRST /
 :: C45 cannot be reached. It relaunches a fast fail-fast SWD connect over and over
-:: while you power-cycle the board's 12V. The launch that lands in the brief
+:: while you cycle the board's POWER. The launch that lands in the brief
 :: post-power-on window (before FW disables SWD) connects and HALTS the core.
 ::
 :: Why respawn: openocd's init (the DAP/SWD connect) is one-shot and needs the
@@ -18,9 +18,9 @@ setlocal enabledelayedexpansion
 :: dump/flash you chain that op into the connect (ask for the dump variant).
 ::
 :: HOW TO USE:
-::   1) Board 12V OFF. ST-Link on USB, its 3V3 to the board removed.
+::   1) Board POWER OFF. ST-Link on USB, its 3V3 to the board removed.
 ::   2) Start this script - it begins hammering (one dot per attempt).
-::   3) Apply 12V. If it misses, cut 12V and re-apply - each power-ON is a fresh
+::   3) Apply POWER. If it misses, cut POWER and re-apply - each power-ON is a fresh
 ::      window. Repeat until it prints CAUGHT.   Ctrl+C to stop.
 ::
 :: EXPERIMENTAL / bench tool. Uses special\at32f415xx_race.cfg. Not in the launcher.
@@ -40,8 +40,8 @@ echo.
 echo %D%
 echo    %CL_M%Power-race connect  (RESPAWN - connect-only, read-only)%CL_NC%
 echo %D%
-echo    Hammering fresh SWD connects. %CL_C%Apply 12V now%CL_NC%; if it misses, cut
-echo    12V and re-apply (each power-ON is a new window). %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Hammering fresh SWD connects. %CL_C%Apply POWER now%CL_NC%; if it misses, cut
+echo    POWER and re-apply (each power-ON is a new window). %CL_C%Ctrl+C to stop.%CL_NC%
 echo.
 
 set /a attempts=0

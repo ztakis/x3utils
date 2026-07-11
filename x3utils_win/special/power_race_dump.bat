@@ -9,8 +9,8 @@ setlocal enabledelayedexpansion
 :: init+halt land, the core is frozen so SWD stays up and the read finishes at
 :: leisure. READ-ONLY - no erase, write, or unlock.
 ::
-:: Setup: 12V OFF, ST-Link on USB (3V3-to-board removed). Start this, then apply
-:: 12V; if it misses, cut and re-apply 12V (each power-ON = a fresh window).
+:: Setup: POWER OFF, ST-Link on USB (3V3-to-board removed). Start this, then apply
+:: POWER; if it misses, cut and re-apply POWER (each power-ON = a fresh window).
 :: Ctrl+C to stop.
 ::
 :: EXPERIMENTAL / bench tool. Uses special\at32f415xx_race.cfg. Not in the launcher.
@@ -39,7 +39,7 @@ echo %D%
 echo    %CL_M%Power-race DUMP  (RESPAWN - read-only)%CL_NC%
 echo %D%
 echo    Hammering connects; the one that catches the window dumps 128 KB.
-echo    %CL_C%Apply 12V now%CL_NC%; if it misses, cut and re-apply. %CL_C%Ctrl+C to stop.%CL_NC%
+echo    %CL_C%Apply POWER now%CL_NC%; if it misses, cut and re-apply. %CL_C%Ctrl+C to stop.%CL_NC%
 echo    Output: "%dump_file%"
 echo.
 
