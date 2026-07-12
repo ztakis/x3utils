@@ -6,6 +6,10 @@ import '../models.dart';
 import 'cfg.dart';
 import 'openocd_paths.dart';
 
+/// Per-attempt classification of a power-race respawn miss (mirrors
+/// race_grade.cmd) — how far the attempt got, for the live "hammering" indicator.
+enum RaceTier { searching, noisy, nearCatch, adapterGone }
+
 class OpenOcdResult {
   const OpenOcdResult(this.exitCode);
   final int exitCode;
@@ -22,6 +26,7 @@ class OpenOcdRunner {
   final OpenOcdPaths paths;
 
   Process? _active;
+  bool _raceStop = false; // set by kill() to break the respawn loop
 
   /// Writes a newline to OpenOCD's stdin — the C45 guided "Continue" keystroke.
   bool sendContinue() {
@@ -36,6 +41,7 @@ class OpenOcdRunner {
   }
 
   void kill() {
+    _raceStop = true; // also breaks a runRace respawn loop
     _active?.kill();
     _active = null;
   }
@@ -66,11 +72,85 @@ class OpenOcdRunner {
     return OpenOcdResult(code);
   }
 
+  /// Power-race respawn: relaunch OpenOCD over the same [args] until one attempt
+  /// catches the post-power-on window (exit 0), then replay that winning attempt's
+  /// output to [onLine]. Every miss reports its classified [RaceTier] to
+  /// [onAttempt] so the UI can show a live "hammering" indicator. Stop with kill().
+  ///
+  /// openocd's init is one-shot, so catching a window means repeated FRESH
+  /// launches (this loop), not retrying inside one session. No inter-attempt delay
+  /// — the window is short and sampling speed is everything (proven on the CLI).
+  Future<OpenOcdResult> runRace(
+    List<String> args, {
+    required void Function(String line) onLine,
+    required void Function(int attempt, RaceTier tier) onAttempt,
+    void Function()? onCaught,
+  }) async {
+    _raceStop = false;
+    var attempt = 0;
+    while (!_raceStop) {
+      attempt++;
+      final buf = StringBuffer();
+      var caught = false;
+      // Watch each attempt LIVE: the moment 'target halted' appears, race_connect
+      // has landed — flip the UI to "caught, working" (onCaught) and stream the
+      // op's progress, so the hero doesn't freeze on the last count during the
+      // ~2-5s dump/flash. (A near-catch that halts then drops falls through to a
+      // miss below and the UI reverts to hammering.)
+      void handle(String l) {
+        buf.writeln(l);
+        if (!caught && l.contains('target halted')) {
+          caught = true;
+          onCaught?.call();
+        }
+        if (caught) onLine(l);
+      }
+      final proc = await Process.start(paths.openOcdExe, args,
+          workingDirectory: paths.binDir);
+      _active = proc;
+      final out = proc.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(handle);
+      final err = proc.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(handle);
+      final code = await proc.exitCode;
+      await out.cancel();
+      await err.cancel();
+      if (identical(_active, proc)) _active = null;
+      if (code == 0) return const OpenOcdResult(0);
+      onAttempt(attempt, _classify(buf.toString()));
+    }
+    return const OpenOcdResult(-1); // stopped by kill()
+  }
+
+  /// Classify a missed attempt by how far it got (see race_grade.cmd): "Cortex-M4
+  /// detected" is the real "reached the core" signal — it needs live SWD.
+  static RaceTier _classify(String out) {
+    if (out.contains('open failed')) return RaceTier.adapterGone;
+    if (out.contains('target halted')) return RaceTier.nearCatch;
+    if (out.contains('Cortex-M4')) return RaceTier.noisy;
+    return RaceTier.searching;
+  }
+
   // ── command builders (mirror OpenOcdRunner.cs / the .bat scripts) ──────────
 
   List<String> _base() => ['-s', paths.scriptsDir, '-d0'];
 
   List<String> checkArgs(ConnectionMode mode, int countdown) {
+    if (mode == ConnectionMode.powerRace) {
+      // Self-contained race cfg (sources the interface); race_connect = init +
+      // halt + watchdog-freeze. Run via runRace() (respawn), not run().
+      return [
+        ..._base(),
+        '-f', Cfg.race,
+        '-c', 'race_connect',
+        '-c', 'flash probe 0',
+        '-c', 'exit',
+      ];
+    }
     if (mode == ConnectionMode.cloneC45) {
       return [
         ..._base(),
@@ -94,6 +174,15 @@ class OpenOcdRunner {
 
   List<String> dumpArgs(ConnectionMode mode, int countdown, String outPath) {
     final path = outPath.replaceAll('\\', '/');
+    if (mode == ConnectionMode.powerRace) {
+      return [
+        ..._base(),
+        '-f', Cfg.race,
+        '-c', 'race_connect',
+        '-c', 'dump_image {$path} 0x08000000 0x20000',
+        '-c', 'exit',
+      ];
+    }
     if (mode == ConnectionMode.cloneC45) {
       return [
         ..._base(),
@@ -117,6 +206,17 @@ class OpenOcdRunner {
 
   List<String> flashArgs(ConnectionMode mode, int countdown, String binPath) {
     final path = binPath.replaceAll('\\', '/');
+    if (mode == ConnectionMode.powerRace) {
+      return [
+        ..._base(),
+        '-f', Cfg.race,
+        '-c', 'race_connect',
+        '-c', 'flash erase_address 0x08000000 0x20000',
+        '-c', 'flash write_bank 0 {$path}',
+        '-c', 'verify_image {$path} 0x08000000',
+        '-c', 'exit',
+      ];
+    }
     if (mode == ConnectionMode.cloneC45) {
       return [
         ..._base(),
@@ -143,6 +243,16 @@ class OpenOcdRunner {
   /// (mirrors special/flash_slot0.bat — write_image erase, guided proc variant).
   List<String> flashSlot0Args(ConnectionMode mode, int countdown, String binPath) {
     final path = binPath.replaceAll('\\', '/');
+    if (mode == ConnectionMode.powerRace) {
+      return [
+        ..._base(),
+        '-f', Cfg.race,
+        '-c', 'race_connect',
+        '-c', 'flash write_image erase {$path} 0x08001000 bin',
+        '-c', 'verify_image {$path} 0x08001000 bin',
+        '-c', 'exit',
+      ];
+    }
     if (mode == ConnectionMode.cloneC45) {
       return [
         ..._base(),
@@ -163,4 +273,5 @@ class OpenOcdRunner {
       '-c', 'exit',
     ];
   }
+
 }

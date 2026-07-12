@@ -33,11 +33,25 @@ class AppController extends ChangeNotifier {
   String backupPrefix = '';
   bool secondCopy = true; // redundant %LOCALAPPDATA%\x3utils_backup copy
 
+  // Connection modes the user moved to the Advanced rail (persisted). Empty = all
+  // in the standard "Connection" group; rendering order is always canonical.
+  final Set<ConnectionMode> _advancedModes = <ConnectionMode>{};
+
   Future<void> _loadPrefs() async {
     _prefs = await SharedPreferences.getInstance();
     backupFolder = _prefs!.getString('backupFolder');
     backupPrefix = _prefs!.getString('backupPrefix') ?? '';
     secondCopy = _prefs!.getBool('secondCopy') ?? true;
+    final adv = _prefs!.getStringList('advancedModes');
+    _advancedModes.clear();
+    if (adv == null) {
+      // Ship default: genuine C45 (D, rarely used) starts in Advanced. The user
+      // can right-click it back to Main; that choice then persists.
+      _advancedModes.add(ConnectionMode.genuineC45);
+    } else {
+      _advancedModes
+          .addAll(ConnectionMode.values.where((m) => adv.contains(m.name)));
+    }
     // Startup defaults (migrate the pre-v1.0 last-used keys as a fallback).
     final dm = _prefs!.getInt('defaultConnMode') ?? _prefs!.getInt('connMode');
     if (dm != null && dm >= 0 && dm < ConnectionMode.values.length) {
@@ -135,6 +149,8 @@ class AppController extends ChangeNotifier {
   String actionId = 'check';
   int countdownSeconds = 3;
   bool running = false;
+  int raceAttempts = 0; // power-race respawn: attempts so far (drives the indicator)
+  RaceTier raceTier = RaceTier.searching;
 
   StageState stage = StageState.idle;
   String eyebrow = 'Ready';
@@ -167,6 +183,34 @@ class AppController extends ChangeNotifier {
     if (running) return;
     mode = m; // session-only; does NOT change the persisted default
     _goIdle();
+  }
+
+  // ── Connection-mode rail sections (persisted, user-movable) ────────────────
+  Section sectionOf(ConnectionMode m) =>
+      _advancedModes.contains(m) ? Section.advanced : Section.standard;
+
+  /// Modes in a rail section, always in canonical A/B/C/D letter order (by tag,
+  /// so display order is independent of the enum order).
+  List<ConnectionMode> modesIn(Section s) =>
+      ConnectionMode.values.where((m) => sectionOf(m) == s).toList()
+        ..sort((a, b) => a.tag.compareTo(b.tag));
+
+  /// Guardrail: never let the standard group be emptied.
+  bool canMoveToAdvanced(ConnectionMode m) =>
+      modesIn(Section.standard).length > 1;
+
+  /// Move a mode between the standard and advanced rail groups (persisted).
+  void moveMode(ConnectionMode m, Section to) {
+    if (to == Section.advanced) {
+      if (!canMoveToAdvanced(m)) return; // keep at least one in standard
+      _advancedModes.add(m);
+      advancedOpen = true; // so the moved button visibly lands
+    } else {
+      _advancedModes.remove(m);
+    }
+    _prefs?.setStringList(
+        'advancedModes', _advancedModes.map((e) => e.name).toList());
+    notifyListeners();
   }
 
   /// Settings: set the persisted STARTUP default mode AND apply it to the live
@@ -430,10 +474,15 @@ class AppController extends ChangeNotifier {
     running = true;
     _realRun = true;
     lastConnect = 'connecting…';
+    final race = mode == ConnectionMode.powerRace;
     if (guided) {
       _set(StageState.hold, 'Step 1 of 3', 'Hold C45 → GND',
           'Hold the C45/nRST contact to GND and keep it steady, then hit continue.',
           continueBtn: "I'm holding — continue");
+    } else if (race) {
+      raceAttempts = 0;
+      _set(StageState.connect, 'Power-race', 'Hammering the connect…',
+          'Cut & re-apply power now — it catches the instant the window opens.');
     } else {
       _set(StageState.connect, 'Linking', title ?? '${action.name}…',
           'Talking to the target over SWD — watch the console.');
@@ -441,7 +490,24 @@ class AppController extends ChangeNotifier {
 
     OpenOcdResult result;
     try {
-      result = await runner.run(args, (line) => _onRealLine(line, guided));
+      if (race) {
+        result = await runner.runRace(args,
+            onLine: (line) => _onRealLine(line, false),
+            onCaught: () {
+          if (my != _token) return;
+          _set(StageState.connect, 'Power-race', 'Caught — working…',
+              'It landed the window — hold everything steady, do NOT replug.');
+        },
+            onAttempt: (n, tier) {
+          if (my != _token) return;
+          raceAttempts = n;
+          raceTier = tier;
+          _set(StageState.connect, 'Power-race', 'Hammering — attempt $n',
+              _raceHint(tier));
+        });
+      } else {
+        result = await runner.run(args, (line) => _onRealLine(line, guided));
+      }
     } catch (e) {
       if (my != _token) return null;
       _realRun = false;
@@ -541,6 +607,14 @@ class AppController extends ChangeNotifier {
     _set(ok ? StageState.ok : StageState.fail, ok ? 'Done' : 'Failed',
         ok ? '${action.name} complete' : '${action.name} failed', msg);
   }
+
+  /// Live operator hint for a power-race miss, keyed to how far it got.
+  String _raceHint(RaceTier tier) => switch (tier) {
+        RaceTier.searching => 'No contact yet — cut & re-apply power.',
+        RaceTier.noisy => 'On the pad but bouncing — hold it steadier.',
+        RaceTier.nearCatch => 'Almost — reached the core, keep holding.',
+        RaceTier.adapterGone => 'ST-LINK not seen — check the probe / USB.',
+      };
 
   Future<void> _runDump(OpenOcdRunner runner, bool guided) async {
     final outPath =
