@@ -492,11 +492,17 @@ class AppController extends ChangeNotifier {
     try {
       if (race) {
         result = await runner.runRace(args,
-            onLine: (line) => _onRealLine(line, false),
+            onLine: (line) {
+          _onRealLine(line, false);
+          _advanceRaceStage(line);
+        },
             onCaught: () {
           if (my != _token) return;
-          _set(StageState.connect, 'Power-race', 'Caught — working…',
-              'It landed the window — hold everything steady, do NOT replug.');
+          if (stageDone.length != action.stages.length) {
+            stageDone = List<bool>.filled(action.stages.length, false);
+          }
+          _set(StageState.run, 'Power-race', 'Caught — working…',
+              'Hold everything steady, do NOT replug.');
         },
             onAttempt: (n, tier) {
           if (my != _token) return;
@@ -517,6 +523,18 @@ class AppController extends ChangeNotifier {
       return null;
     }
     if (my != _token) return null;
+    // Final-hold: when the race just filled the last checkmark, freeze the
+    // fully-checked stage list for a readable beat before the caller flips to
+    // the 'complete' screen (chosen over per-stage dwell). Self-gated on every
+    // stage being done, so it fires only on the action's true final step — never
+    // after the backup catch in a 2-catch flow, whose list isn't full yet.
+    if (race &&
+        result.exitCode == 0 &&
+        stageDone.isNotEmpty &&
+        stageDone.every((d) => d)) {
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (my != _token) return null;
+    }
     _realRun = false;
     running = false;
     _log('== openocd exit ${result.exitCode} ==');
@@ -615,6 +633,41 @@ class AppController extends ChangeNotifier {
         RaceTier.nearCatch => 'Almost — reached the core, keep holding.',
         RaceTier.adapterGone => 'ST-LINK not seen — check the probe / USB.',
       };
+
+  /// Once the race catches, drive the stage-list checkmarks from the winning
+  /// attempt's live output — the same visual the guided A/B/C paths would show,
+  /// but fed by real OpenOCD progress markers instead of the simulate timer.
+  void _advanceRaceStage(String line) {
+    final low = line.toLowerCase();
+    if (low.contains('target halted')) {
+      _markStage('connect');
+    } else if (low.contains('dumped')) {
+      _markStage('read');
+    } else if (low.contains('erased')) {
+      _markStage('eras');
+    } else if (low.contains('wrote')) {
+      _markStage('writ');
+    } else if (low.contains('verified')) {
+      _markStage('verif');
+    }
+  }
+
+  /// Mark the stage whose label contains [part] (and every stage before it) done,
+  /// then arm the next one. Prior stages cascade, so a marker for a later step
+  /// also ticks the earlier ones we have no explicit marker for.
+  void _markStage(String part) {
+    final stages = action.stages;
+    if (stageDone.length != stages.length) {
+      stageDone = List<bool>.filled(stages.length, false);
+    }
+    final idx = stages.indexWhere((s) => s.toLowerCase().contains(part));
+    if (idx < 0) return;
+    for (var i = 0; i <= idx; i++) {
+      stageDone[i] = true;
+    }
+    activeStage = idx + 1 < stages.length ? idx + 1 : idx;
+    notifyListeners();
+  }
 
   Future<void> _runDump(OpenOcdRunner runner, bool guided) async {
     final outPath =
