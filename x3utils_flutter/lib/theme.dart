@@ -43,12 +43,14 @@ class AccentTheme {
 }
 
 const kAccents = <AccentTheme>[
-  AccentTheme('Teal',
-      Color(0xFF16E0C4), Color(0xFF0FB9A6), Color(0xFFFF2E88)),
-  AccentTheme('Silver',
-      Color(0xFFC4CDD8), Color(0xFF97A3B1), Color(0xFFE7ECF3)),
-  AccentTheme('Blue',
-      Color(0xFF3D9BFF), Color(0xFF2C7BE0), Color(0xFF26D8F0)),
+  AccentTheme('Teal', Color(0xFF16E0C4), Color(0xFF0FB9A6), Color(0xFFFF2E88)),
+  AccentTheme(
+    'Silver',
+    Color(0xFFC4CDD8),
+    Color(0xFF97A3B1),
+    Color(0xFFE7ECF3),
+  ),
+  AccentTheme('Blue', Color(0xFF3D9BFF), Color(0xFF2C7BE0), Color(0xFF26D8F0)),
 ];
 
 /// Drives a MaterialApp rebuild when the accent changes (see X3UtilsApp).
@@ -77,4 +79,4 @@ ThemeData buildTheme() {
 const kMono = 'Consolas';
 
 /// App version — single source of truth (keep pubspec.yaml `version:` in sync).
-const kAppVersion = '1.1';
+const kAppVersion = '1.1.0';

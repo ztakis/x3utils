@@ -45,9 +45,11 @@ class AppController extends ChangeNotifier {
     final adv = _prefs!.getStringList('advancedModes');
     _advancedModes.clear();
     if (adv == null) {
-      // Ship default: genuine C45 (D, rarely used) starts in Advanced. The user
-      // can right-click it back to Main; that choice then persists.
-      _advancedModes.add(ConnectionMode.genuineC45);
+      // Ship default: Power-race (C) and genuine C45 (D) start in Advanced. The
+      // user can right-click either back to Main; that choice then persists.
+      _advancedModes
+        ..add(ConnectionMode.powerRace)
+        ..add(ConnectionMode.genuineC45);
     } else {
       _advancedModes.addAll(
         ConnectionMode.values.where((m) => adv.contains(m.name)),
