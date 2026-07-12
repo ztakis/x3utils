@@ -64,7 +64,7 @@ class AppController extends ChangeNotifier {
     // Seed the live session from the defaults.
     mode = defaultMode;
     countdownSeconds = defaultCountdown;
-    final ai = _prefs!.getInt('accent') ?? 0;
+    final ai = _prefs!.getInt('accent') ?? 1; // default: Silver
     accentNotifier.value = (ai >= 0 && ai < kAccents.length) ? ai : 0;
     logToFile = _prefs!.getBool('logToFile') ?? false;
     notifyListeners();
@@ -137,15 +137,15 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // STARTUP DEFAULTS (persisted, set only from Settings). Default to Mode B
-  // (C45 clone) — the shipping audience skews clones. _loadPrefs seeds the live
-  // session values below from these; the rail changes the session only.
-  ConnectionMode defaultMode = ConnectionMode.cloneC45;
+  // STARTUP DEFAULTS (persisted, set only from Settings). Default to Mode A
+  // (plain SWD). _loadPrefs seeds the live session values below from these; the
+  // rail changes the session only.
+  ConnectionMode defaultMode = ConnectionMode.defaultSwd;
   int defaultCountdown = 3;
 
   // Live session values (seeded from the defaults on launch; the rail overrides
   // these WITHOUT touching the persisted defaults).
-  ConnectionMode mode = ConnectionMode.cloneC45;
+  ConnectionMode mode = ConnectionMode.defaultSwd;
   String actionId = 'check';
   int countdownSeconds = 3;
   bool running = false;

@@ -16,9 +16,9 @@ class AppColors {
 
   // Accent — swappable at runtime via applyAccent() (see kAccents below).
   // NB: because these are non-const, widgets that use them can't be `const`.
-  static Color brand = kAccents[0].brand;
-  static Color brand2 = kAccents[0].brand2;
-  static Color pop = kAccents[0].pop;
+  static Color brand = kAccents[1].brand;
+  static Color brand2 = kAccents[1].brand2;
+  static Color pop = kAccents[1].pop;
 
   // semantic (meaning-based — same across all accent themes)
   static const hold = Color(0xFFFFB224); // amber
@@ -52,7 +52,7 @@ const kAccents = <AccentTheme>[
 ];
 
 /// Drives a MaterialApp rebuild when the accent changes (see X3UtilsApp).
-final accentNotifier = ValueNotifier<int>(0);
+final accentNotifier = ValueNotifier<int>(1); // default: Silver
 
 ThemeData buildTheme() {
   final base = ThemeData.dark(useMaterial3: true);
