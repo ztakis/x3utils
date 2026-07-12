@@ -99,7 +99,15 @@ class OpenOcdRunner {
       // miss below and the UI reverts to hammering.)
       void handle(String l) {
         buf.writeln(l);
-        if (!caught && l.contains('target halted')) {
+        // Catch signal: 'target halted' on a running core, OR the op's own progress
+        // (dump/erase/write) when the core was ALREADY halted from a prior catch
+        // (the 2-catch backup+flash / SHU flows) so 'target halted' isn't reprinted
+        // — without this, the 2nd catch's whole output gets suppressed.
+        if (!caught &&
+            (l.contains('target halted') ||
+                l.contains('dumped ') ||
+                l.contains('erased ') ||
+                l.contains('wrote '))) {
           caught = true;
           onCaught?.call();
         }
@@ -120,7 +128,16 @@ class OpenOcdRunner {
       await out.cancel();
       await err.cancel();
       if (identical(_active, proc)) _active = null;
-      if (code == 0) return const OpenOcdResult(0);
+      if (code == 0) {
+        // Safety net: a winning attempt that never tripped a catch marker above
+        // still must show its output (never silently succeed) — replay the buffer.
+        if (!caught) {
+          for (final l in const LineSplitter().convert(buf.toString())) {
+            onLine(l);
+          }
+        }
+        return const OpenOcdResult(0);
+      }
       onAttempt(attempt, _classify(buf.toString()));
     }
     return const OpenOcdResult(-1); // stopped by kill()
