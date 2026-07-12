@@ -49,18 +49,20 @@ class AppController extends ChangeNotifier {
       // can right-click it back to Main; that choice then persists.
       _advancedModes.add(ConnectionMode.genuineC45);
     } else {
-      _advancedModes
-          .addAll(ConnectionMode.values.where((m) => adv.contains(m.name)));
+      _advancedModes.addAll(
+        ConnectionMode.values.where((m) => adv.contains(m.name)),
+      );
     }
     // Startup defaults (migrate the pre-v1.0 last-used keys as a fallback).
     final dm = _prefs!.getInt('defaultConnMode') ?? _prefs!.getInt('connMode');
     if (dm != null && dm >= 0 && dm < ConnectionMode.values.length) {
       defaultMode = ConnectionMode.values[dm];
     }
-    defaultCountdown = (_prefs!.getInt('defaultCountdown') ??
-            _prefs!.getInt('countdown') ??
-            defaultCountdown)
-        .clamp(0, 10);
+    defaultCountdown =
+        (_prefs!.getInt('defaultCountdown') ??
+                _prefs!.getInt('countdown') ??
+                defaultCountdown)
+            .clamp(0, 10);
     // Seed the live session from the defaults.
     mode = defaultMode;
     countdownSeconds = defaultCountdown;
@@ -149,7 +151,8 @@ class AppController extends ChangeNotifier {
   String actionId = 'check';
   int countdownSeconds = 3;
   bool running = false;
-  int raceAttempts = 0; // power-race respawn: attempts so far (drives the indicator)
+  int raceAttempts =
+      0; // power-race respawn: attempts so far (drives the indicator)
   RaceTier raceTier = RaceTier.searching;
 
   StageState stage = StageState.idle;
@@ -209,7 +212,9 @@ class AppController extends ChangeNotifier {
       _advancedModes.remove(m);
     }
     _prefs?.setStringList(
-        'advancedModes', _advancedModes.map((e) => e.name).toList());
+      'advancedModes',
+      _advancedModes.map((e) => e.name).toList(),
+    );
     notifyListeners();
   }
 
@@ -334,8 +339,13 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  void _set(StageState s, String eb, String t, String sb,
-      {String? continueBtn}) {
+  void _set(
+    StageState s,
+    String eb,
+    String t,
+    String sb, {
+    String? continueBtn,
+  }) {
     stage = s;
     eyebrow = eb;
     title = t;
@@ -385,11 +395,16 @@ class AppController extends ChangeNotifier {
     final g = mode.guided;
     switch (actionId) {
       case 'check':
-        final r = await _runRealCore(runner.checkArgs(mode, countdownSeconds),
-            guided: g);
+        final r = await _runRealCore(
+          runner.checkArgs(mode, countdownSeconds),
+          guided: g,
+        );
         if (r != null) {
-          _finishReal(r.ok, action.okMsg,
-              'OpenOCD exited with code ${r.exitCode}. Check the console.');
+          _finishReal(
+            r.ok,
+            action.okMsg,
+            'OpenOCD exited with code ${r.exitCode}. Check the console.',
+          );
         }
       case 'dump':
         await _runDump(runner, g);
@@ -413,8 +428,12 @@ class AppController extends ChangeNotifier {
   Future<void> _runRdp(String verb, {required bool yes}) async {
     final rdp = _rdp;
     if (rdp == null || !rdp.available) {
-      _set(StageState.fail, 'rdp unavailable', 'rdp.ps1 not found',
-          'The protection toolkit is missing from the bundle.');
+      _set(
+        StageState.fail,
+        'rdp unavailable',
+        'rdp.ps1 not found',
+        'The protection toolkit is missing from the bundle.',
+      );
       return;
     }
     final my = ++_token;
@@ -422,19 +441,32 @@ class AppController extends ChangeNotifier {
     running = true;
     _realRun = true;
     lastConnect = 'connecting…';
-    _set(StageState.connect, 'Protection', '${action.name}…',
-        'Running the protection toolkit — watch the console.');
+    _set(
+      StageState.connect,
+      'Protection',
+      '${action.name}…',
+      'Running the protection toolkit — watch the console.',
+    );
 
     int code;
     try {
-      code = await rdp.run(verb, mode, countdownSeconds,
-          yes: yes, onLine: (line) => _onRealLine(line, mode.guided));
+      code = await rdp.run(
+        verb,
+        mode,
+        countdownSeconds,
+        yes: yes,
+        onLine: (line) => _onRealLine(line, mode.guided),
+      );
     } catch (e) {
       if (my != _token) return;
       _realRun = false;
       running = false;
-      _set(StageState.fail, 'Failed', '${action.name} failed',
-          'Could not start rdp.ps1: $e');
+      _set(
+        StageState.fail,
+        'Failed',
+        '${action.name} failed',
+        'Could not start rdp.ps1: $e',
+      );
       return;
     }
     if (my != _token) return;
@@ -450,23 +482,36 @@ class AppController extends ChangeNotifier {
         case 2:
           // A locked chip is a valid verdict, not a success — amber, not green.
           lastConnect = 'PASS';
-          _set(StageState.warn, 'Verdict', 'Read-protected',
-              'The chip is locked. Unlock / rescue can clear it — but that erases the flash.');
+          _set(
+            StageState.warn,
+            'Verdict',
+            'Read-protected',
+            'The chip is locked. Unlock / rescue can clear it — but that erases the flash.',
+          );
         default:
-          _finishReal(false, '',
-              'Inconclusive — could not determine the protection state. Check the console.');
+          _finishReal(
+            false,
+            '',
+            'Inconclusive — could not determine the protection state. Check the console.',
+          );
       }
     } else {
-      _finishReal(code == 0, action.okMsg,
-          'rescue exited with code $code. Check the console for what happened.');
+      _finishReal(
+        code == 0,
+        action.okMsg,
+        'rescue exited with code $code. Check the console for what happened.',
+      );
     }
   }
 
   /// Spawn OpenOCD, stream + parse its output, return the result (null if the
   /// run was cancelled/superseded). Does NOT set the final ok/fail stage — the
   /// caller decides (dump validates the file, flash chains a backup, etc.).
-  Future<OpenOcdResult?> _runRealCore(List<String> args,
-      {required bool guided, String? title}) async {
+  Future<OpenOcdResult?> _runRealCore(
+    List<String> args, {
+    required bool guided,
+    String? title,
+  }) async {
     final runner = _runner;
     if (runner == null) return null;
     final my = ++_token;
@@ -476,41 +521,63 @@ class AppController extends ChangeNotifier {
     lastConnect = 'connecting…';
     final race = mode == ConnectionMode.powerRace;
     if (guided) {
-      _set(StageState.hold, 'Step 1 of 3', 'Hold C45 → GND',
-          'Hold the C45/nRST contact to GND and keep it steady, then hit continue.',
-          continueBtn: "I'm holding — continue");
+      _set(
+        StageState.hold,
+        'Step 1 of 3',
+        'Hold C45 → GND',
+        'Hold the C45/nRST contact to GND and keep it steady, then hit continue.',
+        continueBtn: "I'm holding — continue",
+      );
     } else if (race) {
       raceAttempts = 0;
-      _set(StageState.connect, 'Power-race', 'Hammering the connect…',
-          'Cut & re-apply power now — it catches the instant the window opens.');
+      _set(
+        StageState.connect,
+        'Power-race',
+        'Hammering the connect…',
+        'Cut & re-apply power now — it catches the instant the window opens.',
+      );
     } else {
-      _set(StageState.connect, 'Linking', title ?? '${action.name}…',
-          'Talking to the target over SWD — watch the console.');
+      _set(
+        StageState.connect,
+        'Linking',
+        title ?? '${action.name}…',
+        'Talking to the target over SWD — watch the console.',
+      );
     }
 
     OpenOcdResult result;
     try {
       if (race) {
-        result = await runner.runRace(args,
-            onLine: (line) {
-          _onRealLine(line, false);
-          _advanceRaceStage(line);
-        },
-            onCaught: () {
-          if (my != _token) return;
-          if (stageDone.length != action.stages.length) {
-            stageDone = List<bool>.filled(action.stages.length, false);
-          }
-          _set(StageState.run, 'Power-race', 'Caught — working…',
-              'Hold everything steady, do NOT replug.');
-        },
-            onAttempt: (n, tier) {
-          if (my != _token) return;
-          raceAttempts = n;
-          raceTier = tier;
-          _set(StageState.connect, 'Power-race', 'Hammering — attempt $n',
-              _raceHint(tier));
-        });
+        result = await runner.runRace(
+          args,
+          onLine: (line) {
+            _onRealLine(line, false);
+            _advanceRaceStage(line);
+          },
+          onCaught: () {
+            if (my != _token) return;
+            if (stageDone.length != action.stages.length) {
+              stageDone = List<bool>.filled(action.stages.length, false);
+            }
+            _set(
+              StageState.run,
+              'Power-race',
+              'Caught — working…',
+              'Hold everything steady, do NOT replug.',
+            );
+          },
+          onAttempt: (n, tier) {
+            if (my != _token) return;
+            raceAttempts = n;
+            raceTier = tier;
+            _set(
+              StageState.connect,
+              'Power-race',
+              'Hammering — attempt $n',
+              _raceHint(tier),
+            );
+          },
+        );
       } else {
         result = await runner.run(args, (line) => _onRealLine(line, guided));
       }
@@ -518,8 +585,12 @@ class AppController extends ChangeNotifier {
       if (my != _token) return null;
       _realRun = false;
       running = false;
-      _set(StageState.fail, 'Failed', '${action.name} failed',
-          'Could not start OpenOCD: $e');
+      _set(
+        StageState.fail,
+        'Failed',
+        '${action.name} failed',
+        'Could not start OpenOCD: $e',
+      );
       return null;
     }
     if (my != _token) return null;
@@ -554,7 +625,8 @@ class AppController extends ChangeNotifier {
   /// ClassifyOpenOcdLine.) First-set wins for the run.
   void _diagnose(String low) {
     if (_diagnosis != null) return;
-    if (low.contains('write protected') || low.contains('read out protection')) {
+    if (low.contains('write protected') ||
+        low.contains('read out protection')) {
       _diagnosis =
           'The chip is locked (read/write-protected) — nothing was written. '
           'Run Unlock / rescue to clear protection, then flash again.';
@@ -564,33 +636,54 @@ class AppController extends ChangeNotifier {
   /// Drive the C45 hold/countdown/release stages from OpenOCD's guided prompts
   /// (ported from the WinForms HandleCloneC45Prompt string matches).
   void _parseGuided(String line, String low) {
-    if (low.contains('hold a wire between') || low.contains('keep it grounded')) {
-      _set(StageState.hold, 'Step 1 of 3', 'Hold C45 → GND',
-          'Hold the C45/nRST contact to GND and keep it steady, then hit continue.',
-          continueBtn: "I'm holding — continue");
+    if (low.contains('hold a wire between') ||
+        low.contains('keep it grounded')) {
+      _set(
+        StageState.hold,
+        'Step 1 of 3',
+        'Hold C45 → GND',
+        'Hold the C45/nRST contact to GND and keep it steady, then hit continue.',
+        continueBtn: "I'm holding — continue",
+      );
     } else if (low.contains('remove the wire from gnd') ||
         low.contains('release nrst')) {
-      _set(StageState.release, 'Step 3 of 3', 'Release now',
-          'Lift the wire off the pad — right now — then hit continue.',
-          continueBtn: 'Released — continue');
+      _set(
+        StageState.release,
+        'Step 3 of 3',
+        'Release now',
+        'Lift the wire off the pad — right now — then hit continue.',
+        continueBtn: 'Released — continue',
+      );
     } else if (low.contains('connected') && low.contains('ready')) {
       showContinue = false;
-      _set(StageState.connect, 'Linking', 'Connected',
-          'Keep the ST-LINK and SWD wires steady.');
+      _set(
+        StageState.connect,
+        'Linking',
+        'Connected',
+        'Keep the ST-LINK and SWD wires steady.',
+      );
     } else if (low.contains('connecting in')) {
       final n = _trailingInt(line);
       if (n != null) countdownValue = n;
       showContinue = false;
-      _set(StageState.count, 'Under reset', 'Connecting under reset',
-          'Keep holding the wire — do not lift it yet.');
+      _set(
+        StageState.count,
+        'Under reset',
+        'Connecting under reset',
+        'Keep holding the wire — do not lift it yet.',
+      );
     } else {
       // Per-second countdown ticks: "  3 .", "  2 .", "  1 .", "  0".
       final tick = _countdownTick(line);
       if (tick != null) {
         countdownValue = tick;
         showContinue = false;
-        _set(StageState.count, 'Under reset', 'Connecting under reset',
-            'Keep holding the wire — do not lift it yet.');
+        _set(
+          StageState.count,
+          'Under reset',
+          'Connecting under reset',
+          'Keep holding the wire — do not lift it yet.',
+        );
       }
     }
   }
@@ -611,8 +704,12 @@ class AppController extends ChangeNotifier {
 
   /// [reseat] appends the contact-retry hint — only right for CONNECTION
   /// failures, not validation/patch failures (a re-seat won't fix those).
-  void _finishReal(bool ok, String okMsg, String failMsg,
-      {bool reseat = true}) {
+  void _finishReal(
+    bool ok,
+    String okMsg,
+    String failMsg, {
+    bool reseat = true,
+  }) {
     lastConnect = ok ? 'PASS' : 'FAIL';
     final String msg;
     if (ok) {
@@ -622,24 +719,30 @@ class AppController extends ChangeNotifier {
     } else {
       msg = reseat ? '$failMsg\n$_reseatHint' : failMsg;
     }
-    _set(ok ? StageState.ok : StageState.fail, ok ? 'Done' : 'Failed',
-        ok ? '${action.name} complete' : '${action.name} failed', msg);
+    _set(
+      ok ? StageState.ok : StageState.fail,
+      ok ? 'Done' : 'Failed',
+      ok ? '${action.name} complete' : '${action.name} failed',
+      msg,
+    );
   }
 
   /// Live operator hint for a power-race miss, keyed to how far it got.
   String _raceHint(RaceTier tier) => switch (tier) {
-        RaceTier.searching => 'No contact yet — cut & re-apply power.',
-        RaceTier.noisy => 'On the pad but bouncing — hold it steadier.',
-        RaceTier.nearCatch => 'Almost — reached the core, keep holding.',
-        RaceTier.adapterGone => 'ST-LINK not seen — check the probe / USB.',
-      };
+    RaceTier.searching => 'No contact yet — cut & re-apply power.',
+    RaceTier.noisy => 'On the pad but bouncing — hold it steadier.',
+    RaceTier.nearCatch => 'Almost — reached the core, keep holding.',
+    RaceTier.adapterGone => 'ST-LINK not seen — check the probe / USB.',
+    RaceTier.timedOut =>
+      'OpenOCD stalled — power-cycle and try the next catch.',
+  };
 
   /// Once the race catches, drive the stage-list checkmarks from the winning
   /// attempt's live output — the same visual the guided A/B/C paths would show,
   /// but fed by real OpenOCD progress markers instead of the simulate timer.
   void _advanceRaceStage(String line) {
     final low = line.toLowerCase();
-    if (low.contains('target halted')) {
+    if (low.contains('target halted') || low.contains('caught; hold power')) {
       _markStage('connect');
     } else if (low.contains('dumped')) {
       _markStage('read');
@@ -669,24 +772,52 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _dumpConfirmed(OpenOcdResult r) => r.ok && r.evidence.dumped;
+
+  bool _flashConfirmed(OpenOcdResult r) =>
+      r.ok && r.evidence.wrote && r.evidence.verified;
+
+  String _dumpFailMessage(OpenOcdResult r) {
+    if (r.ok && !r.evidence.dumped) {
+      return 'OpenOCD exited successfully, but a complete dump was not confirmed. Retry required.';
+    }
+    return 'Dump failed (exit ${r.exitCode}). Check the console.';
+  }
+
+  String _flashFailMessage(OpenOcdResult r) {
+    if (r.ok && r.evidence.wrote && !r.evidence.verified) {
+      return 'Flash wrote data, but verification was not confirmed. Retry required.';
+    }
+    if (r.ok && !r.evidence.wrote) {
+      return 'OpenOCD exited successfully, but no flash write was confirmed. Retry required.';
+    }
+    return 'Flash failed (exit ${r.exitCode}). Nothing verified — check the console.';
+  }
+
   Future<void> _runDump(OpenOcdRunner runner, bool guided) async {
-    final outPath =
-        Firmware.newDumpPath(folder: backupFolder, prefix: backupPrefix);
+    final outPath = Firmware.newDumpPath(
+      folder: backupFolder,
+      prefix: backupPrefix,
+    );
     final r = await _runRealCore(
-        runner.dumpArgs(mode, countdownSeconds, outPath),
-        guided: guided);
+      runner.dumpArgs(mode, countdownSeconds, outPath),
+      guided: guided,
+    );
     if (r == null) return;
-    if (!r.ok) {
-      _finishReal(false, '', 'Dump failed (exit ${r.exitCode}). Check the console.');
+    if (!_dumpConfirmed(r)) {
+      _finishReal(false, '', _dumpFailMessage(r));
       return;
     }
     final v = Firmware.validate(outPath);
     if (!v.ok) {
       _log('== validation FAILED: ${v.message} ==');
-      _finishReal(false, '',
-          'Dump saved but failed validation — do not trust it. ${v.message} '
-          '(a read-protected or blank chip reads back like this — try Check protection).',
-          reseat: false);
+      _finishReal(
+        false,
+        '',
+        'Dump saved but failed validation — do not trust it. ${v.message} '
+            '(a read-protected or blank chip reads back like this — try Check protection).',
+        reseat: false,
+      );
       return;
     }
     _log('== validated OK → $outPath ==');
@@ -694,12 +825,20 @@ class AppController extends ChangeNotifier {
     _finishReal(true, 'Backed up & verified → $outPath', '');
   }
 
-  Future<void> _runFlash(OpenOcdRunner runner, bool guided,
-      {required bool backup, required bool slot0}) async {
+  Future<void> _runFlash(
+    OpenOcdRunner runner,
+    bool guided, {
+    required bool backup,
+    required bool slot0,
+  }) async {
     final fw = firmwarePath;
     if (fw == null) {
-      _set(StageState.fail, 'No firmware', 'Choose a firmware .bin first',
-          'Pick a .bin file, then start the flash.');
+      _set(
+        StageState.fail,
+        'No firmware',
+        'Choose a firmware .bin first',
+        'Pick a .bin file, then start the flash.',
+      );
       return;
     }
     final v = slot0
@@ -712,24 +851,34 @@ class AppController extends ChangeNotifier {
 
     // Mandatory backup first (the scripts' safety floor) — abort flash if it fails.
     if (backup) {
-      final outPath =
-          Firmware.newDumpPath(folder: backupFolder, prefix: backupPrefix);
+      final outPath = Firmware.newDumpPath(
+        folder: backupFolder,
+        prefix: backupPrefix,
+      );
       final b = await _runRealCore(
-          runner.dumpArgs(mode, countdownSeconds, outPath),
-          guided: guided, title: 'Backing up first…');
+        runner.dumpArgs(mode, countdownSeconds, outPath),
+        guided: guided,
+        title: 'Backing up first…',
+      );
       if (b == null) return;
-      if (!b.ok) {
-        _finishReal(false, '',
-            'Backup failed — flash aborted for safety. Check the console.');
+      if (!_dumpConfirmed(b)) {
+        _finishReal(
+          false,
+          '',
+          'Backup did not confirm a complete dump — flash aborted for safety. ${_dumpFailMessage(b)}',
+        );
         return;
       }
       final backupCheck = Firmware.validate(outPath);
       if (!backupCheck.ok) {
         _log('== validation FAILED: ${backupCheck.message} ==');
-        _finishReal(false, '',
-            'Backup validation failed — flash aborted for safety. ${backupCheck.message} '
-            '(read-protected or blank chip? try Check protection).',
-            reseat: false);
+        _finishReal(
+          false,
+          '',
+          'Backup validation failed — flash aborted for safety. ${backupCheck.message} '
+              '(read-protected or blank chip? try Check protection).',
+          reseat: false,
+        );
         return;
       }
       _log('== backup ok → $outPath ==');
@@ -739,10 +888,13 @@ class AppController extends ChangeNotifier {
     final args = slot0
         ? runner.flashSlot0Args(mode, countdownSeconds, fw)
         : runner.flashArgs(mode, countdownSeconds, fw);
-    final r = await _runRealCore(args, guided: guided, title: '${action.name}…');
+    final r = await _runRealCore(
+      args,
+      guided: guided,
+      title: '${action.name}…',
+    );
     if (r == null) return;
-    _finishReal(r.ok, action.okMsg,
-        'Flash failed (exit ${r.exitCode}). Nothing verified — check the console.');
+    _finishReal(_flashConfirmed(r), action.okMsg, _flashFailMessage(r));
   }
 
   /// SHU-compat: dump the chip → patch its own firmware → flash it back
@@ -752,20 +904,29 @@ class AppController extends ChangeNotifier {
 
     // Step 1 — read the current firmware.
     final d = await _runRealCore(
-        runner.dumpArgs(mode, countdownSeconds, raw),
-        guided: guided, title: 'Reading current firmware…');
+      runner.dumpArgs(mode, countdownSeconds, raw),
+      guided: guided,
+      title: 'Reading current firmware…',
+    );
     if (d == null) return;
-    if (!d.ok) {
-      _finishReal(false, '', 'Could not read the chip — nothing was changed.');
+    if (!_dumpConfirmed(d)) {
+      _finishReal(
+        false,
+        '',
+        'Could not confirm a complete chip read — nothing was changed. ${_dumpFailMessage(d)}',
+      );
       return;
     }
     final rawCheck = Firmware.validate(raw);
     if (!rawCheck.ok) {
       _log('== validation FAILED: ${rawCheck.message} ==');
-      _finishReal(false, '',
-          'The chip read back as invalid — nothing was written. ${rawCheck.message} '
-          '(a read-protected or blank chip reads back like this — try Check protection).',
-          reseat: false);
+      _finishReal(
+        false,
+        '',
+        'The chip read back as invalid — nothing was written. ${rawCheck.message} '
+            '(a read-protected or blank chip reads back like this — try Check protection).',
+        reseat: false,
+      );
       return;
     }
 
@@ -776,22 +937,28 @@ class AppController extends ChangeNotifier {
     final patch = CompatPatch.apply(raw, patched);
     if (!patch.ok || !Firmware.validate(patched).ok) {
       _log('== patch FAILED: ${patch.message} ==');
-      _finishReal(false, '',
-          'Patch failed — the chip was NOT written. ${patch.message}',
-          reseat: false);
+      _finishReal(
+        false,
+        '',
+        'Patch failed — the chip was NOT written. ${patch.message}',
+        reseat: false,
+      );
       return;
     }
     _log('== patched → $patched ==');
 
     // Step 3 — flash the patched image back.
     final f = await _runRealCore(
-        runner.flashArgs(mode, countdownSeconds, patched),
-        guided: guided, title: 'Flashing SHU-compatible firmware…');
+      runner.flashArgs(mode, countdownSeconds, patched),
+      guided: guided,
+      title: 'Flashing SHU-compatible firmware…',
+    );
     if (f == null) return;
     _finishReal(
-        f.ok,
-        'SHU-compatible firmware flashed & verified. Original saved to $raw',
-        'Flash failed (exit ${f.exitCode}). Nothing verified — check the console.');
+      _flashConfirmed(f),
+      'SHU-compatible firmware flashed & verified. Original saved to $raw',
+      _flashFailMessage(f),
+    );
   }
 
   Future<void> _simulate() async {
@@ -803,15 +970,23 @@ class AppController extends ChangeNotifier {
     notifyListeners();
 
     if (mode.guided) {
-      _set(StageState.hold, 'Step 1 of 3', 'Hold C45 → GND',
-          'Touch the wire to the C45 pad and keep it steady. Then hit continue.',
-          continueBtn: 'I’m holding — continue');
+      _set(
+        StageState.hold,
+        'Step 1 of 3',
+        'Hold C45 → GND',
+        'Touch the wire to the C45 pad and keep it steady. Then hit continue.',
+        continueBtn: 'I’m holding — continue',
+      );
       _log('hold a wire between C45 and GND…');
       await _waitContinue();
       if (my != _token) return;
 
-      _set(StageState.count, 'Under reset', 'Connecting under reset',
-          'Keep holding. Do not lift the wire yet.');
+      _set(
+        StageState.count,
+        'Under reset',
+        'Connecting under reset',
+        'Keep holding. Do not lift the wire yet.',
+      );
       for (var n = countdownSeconds; n > 0; n--) {
         countdownValue = n;
         _log('connecting in $n…');
@@ -822,16 +997,24 @@ class AppController extends ChangeNotifier {
       countdownValue = 0;
       notifyListeners();
 
-      _set(StageState.release, 'Step 3 of 3', 'Release now',
-          'Lift the wire off the pad — right now.',
-          continueBtn: 'Released — continue');
+      _set(
+        StageState.release,
+        'Step 3 of 3',
+        'Release now',
+        'Lift the wire off the pad — right now.',
+        continueBtn: 'Released — continue',
+      );
       _log('>>> remove the wire from GND');
       await _waitContinue();
       if (my != _token) return;
     }
 
-    _set(StageState.connect, 'Linking', 'Connecting…',
-        'Re-examining the target over SWD.');
+    _set(
+      StageState.connect,
+      'Linking',
+      'Connecting…',
+      'Re-examining the target over SWD.',
+    );
     _log('init');
     await Future.delayed(const Duration(milliseconds: 700));
     if (my != _token) return;
@@ -841,8 +1024,12 @@ class AppController extends ChangeNotifier {
 
     stageDone = List<bool>.filled(a.stages.length, false);
     activeStage = -1;
-    _set(StageState.run, a.name, '${a.name}…',
-        'Keep the ST-LINK and SWD wires steady until it finishes.');
+    _set(
+      StageState.run,
+      a.name,
+      '${a.name}…',
+      'Keep the ST-LINK and SWD wires steady until it finishes.',
+    );
     for (var i = 0; i < a.stages.length; i++) {
       activeStage = i;
       notifyListeners();
