@@ -1,23 +1,29 @@
 import 'package:flutter/material.dart';
 import 'theme.dart';
 
-enum ConnectionMode { defaultSwd, cloneC45, genuineC45 }
+// powerRace (D) is the respawn power-race connect. Placeholder for now: it copies
+// A's plain-SWD behavior everywhere (guided=false, default cfg) until the respawn
+// engine is built; only the tile identity below is D-specific.
+enum ConnectionMode { defaultSwd, cloneC45, genuineC45, powerRace }
 
 extension ConnectionModeX on ConnectionMode {
   String get tag => switch (this) {
         ConnectionMode.defaultSwd => 'A',
         ConnectionMode.cloneC45 => 'B',
         ConnectionMode.genuineC45 => 'C',
+        ConnectionMode.powerRace => 'D',
       };
   String get title => switch (this) {
         ConnectionMode.defaultSwd => 'Default SWD',
         ConnectionMode.cloneC45 => 'C45 · Clone',
         ConnectionMode.genuineC45 => 'C45 · Genuine',
+        ConnectionMode.powerRace => 'Power-race',
       };
   String get sub => switch (this) {
         ConnectionMode.defaultSwd => 'Blinker buttons',
         ConnectionMode.cloneC45 => 'Guided hold / release',
         ConnectionMode.genuineC45 => 'Hardware nRST',
+        ConnectionMode.powerRace => 'Respawn connect',
       };
   bool get guided => this == ConnectionMode.cloneC45;
 }

@@ -553,7 +553,7 @@ class _Rail extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const _RailLabel('Connection'),
-            for (final m in ConnectionMode.values) _ModeTile(c: c, mode: m),
+            for (final m in c.modesIn(Section.standard)) _ModeTile(c: c, mode: m),
             if (c.mode.guided) ...[
               const SizedBox(height: 8),
               _CountdownStepper(c: c),
@@ -573,6 +573,8 @@ class _Rail extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const SizedBox(height: 6),
+                        for (final m in c.modesIn(Section.advanced))
+                          _ModeTile(c: c, mode: m),
                         for (final a
                             in kActions.where((a) => a.section == Section.advanced))
                           _ActionTile(c: c, action: a),
@@ -645,6 +647,26 @@ class _ModeTile extends StatelessWidget {
   final AppController c;
   final ConnectionMode mode;
 
+  Future<void> _showModeMenu(BuildContext context, Offset pos) async {
+    if (c.running) return;
+    final inAdvanced = c.sectionOf(mode) == Section.advanced;
+    // The last mode in the standard group can't be moved out -> no menu (nothing).
+    if (!inAdvanced && !c.canMoveToAdvanced(mode)) return;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final target = await showMenu<Section>(
+      context: context,
+      position: RelativeRect.fromRect(
+          pos & const Size(40, 40), Offset.zero & overlay.size),
+      items: [
+        PopupMenuItem(
+          value: inAdvanced ? Section.standard : Section.advanced,
+          child: Text(inAdvanced ? 'Move to Main' : 'Move to Advanced'),
+        ),
+      ],
+    );
+    if (target != null) c.moveMode(mode, target);
+  }
+
   @override
   Widget build(BuildContext context) {
     final selected = c.mode == mode;
@@ -656,6 +678,7 @@ class _ModeTile extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: () => c.selectMode(mode),
+          onSecondaryTapDown: (d) => _showModeMenu(context, d.globalPosition),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
