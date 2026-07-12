@@ -33,6 +33,9 @@ goto :end
 
 :do_flash
 
+:: Mode D: SHU-compat power-race - two catches (read current FW, then flash patched).
+if /i "%RACE%"=="true" goto :race_compat
+
 :: Set up 'compatible' directory for dumps
 set "compat_dir=%~dp0compat"
 if not exist "%compat_dir%" (
@@ -229,6 +232,119 @@ goto :flash_attempt
 echo.
 echo [ %CL_G%OK%CL_NC% ] Flashing completed successfully!
 echo.
+goto :end
+
+:: =========================================================================
+:: Mode D - SHU-compat power-race. Three stages, TWO catches (the patch is
+:: host-side). Stage 1 races a dump of the chip's own FW; stage 2 patches it
+:: (0x1420 signature); stage 3 races a flash of the patched image.
+:: =========================================================================
+:race_compat
+set "compat_dir=%~dp0compat"
+if not exist "%compat_dir%" mkdir "%compat_dir%"
+for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do set "timestamp=%%i"
+set "raw_dump=%compat_dir%\dump_%timestamp%.bin"
+set "patched_dump=%compat_dir%\dump_%timestamp%_patched.bin"
+set "norm_raw_dump=%raw_dump:\=/%"
+set "norm_patched_dump=%patched_dump:\=/%"
+echo.
+echo %D%
+echo    %CL_M%SHU-compat power-race (mode D) - 2 catches: dump, then flash%CL_NC%
+echo %D%
+echo    You'll catch the window TWICE: once to read the current firmware, once
+echo    to flash the patched version. %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier  %CL_G%H%CL_NC%=almost  %CL_R%x%CL_NC%=probe/USB gone
+echo.
+:: Graded live symbols via the shared race_grade.cmd; RACE_DEBUG appends each
+:: attempt's verbose output to race_dbg_log. Both catches (dump + flash) capture
+:: to race_last and classify the same way. Set up once for both.
+set "race_dbg_log=%TEMP%\x3utils_race_debug.log"
+set "race_last=%TEMP%\x3utils_race_last.log"
+if /i "%RACE_DEBUG%"=="true" (
+    if exist "%race_dbg_log%" del "%race_dbg_log%"
+    set "race_v=-d2"
+) else (
+    set "race_v=-d0"
+)
+echo %D%
+echo    Stage 1/3: catch + dump current firmware. %CL_C%Apply POWER now...%CL_NC%
+echo %D%
+set /a race_tries=0
+:rc_dump_loop
+set /a race_tries+=1
+"%OPENOCD_BIN%" %race_v% -s "%SCRIPTS_DIR%" -f "target\at32f415xx_race.cfg" ^
+    -c "race_connect" ^
+    -c "dump_image {%norm_raw_dump%} 0x08000000 0x20000" ^
+    -c "exit" > "%race_last%" 2>&1
+if not errorlevel 1 goto :rc_dumped
+if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== dump attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
+call "%~dp0race_grade.cmd"
+goto :rc_dump_loop
+:rc_dumped
+echo.
+echo.
+echo [ %CL_G%CAUGHT%CL_NC% ] Firmware dumped on attempt %race_tries%.
+call "%~dp0validate_bin.cmd" "%raw_dump%"
+if not "%VALIDATE_RESULT%"=="OK" (
+    echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
+    echo        Cannot patch what we cannot read ^(read-protected?^). Aborting.
+    goto :fail_exit
+)
+echo [ %CL_G%OK%CL_NC% ] Current firmware read + verified: "%raw_dump%"
+
+echo.
+echo %D%
+echo    Stage 2/3: injecting SHU patch (no hardware)
+echo %D%
+powershell -NoProfile -Command ^
+"$b = [System.IO.File]::ReadAllBytes($env:raw_dump); ^
+$h = 'FE801CB2D1EF41A6A41731F5A06824F0'; ^
+$hx = New-Object byte[] ($h.Length / 2); ^
+for ($i = 0; $i -lt $hx.Length; $i++) { ^
+    $hx[$i] = [Convert]::ToByte($h.Substring($i * 2, 2), 16) ^
+} ^
+[Array]::Copy($hx, 0, $b, 0x1420, $hx.Length); ^
+for ($i = 0; $i -lt $hx.Length; $i++) { ^
+    if ($b[0x1420 + $i] -ne $hx[$i]) { ^
+        exit 1 ^
+    } ^
+} ^
+[System.IO.File]::WriteAllBytes($env:patched_dump, $b); ^
+exit 0"
+if errorlevel 1 (
+    echo [%CL_R%FAIL%CL_NC%] Binary patch process failed.
+    goto :fail_exit
+)
+call "%~dp0validate_bin.cmd" "%patched_dump%"
+if not "%VALIDATE_RESULT%"=="OK" (
+    echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
+    goto :fail_exit
+)
+echo [ %CL_G%OK%CL_NC% ] Patched image ready: "%patched_dump%"
+
+echo.
+echo %D%
+echo    Stage 3/3: catch + flash patched firmware. %CL_C%Cut and re-apply POWER...%CL_NC%
+echo %D%
+set /a race_tries=0
+:rc_flash_loop
+set /a race_tries+=1
+"%OPENOCD_BIN%" %race_v% -s "%SCRIPTS_DIR%" -f "target\at32f415xx_race.cfg" ^
+    -c "race_connect" ^
+    -c "flash erase_address 0x08000000 0x20000" ^
+    -c "flash write_bank 0 {%norm_patched_dump%}" ^
+    -c "verify_image {%norm_patched_dump%} 0x08000000" ^
+    -c "exit" > "%race_last%" 2>&1
+if not errorlevel 1 goto :rc_flashed
+if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== flash attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
+call "%~dp0race_grade.cmd"
+goto :rc_flash_loop
+:rc_flashed
+echo.
+echo.
+echo [ %CL_G%CAUGHT%CL_NC% ] Patched firmware flashed + verified on attempt %race_tries%.
+echo [ %CL_G%OK%CL_NC% ] SHU-compat complete. Original firmware backed up:
+echo        "%raw_dump%"
 goto :end
 
 :fail_exit

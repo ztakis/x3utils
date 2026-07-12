@@ -51,6 +51,9 @@ echo Output File:
 echo        "%dump_file%"
 echo.
 
+:: Mode D: power-race respawn dump. Skips the single-connect path below.
+if /i "%RACE%"=="true" goto :race_dump
+
 echo %D%
 echo             Executing Full 128 KB Memory Dump...
 echo %D%
@@ -92,6 +95,51 @@ set /p "retry_choice=%CL_C%Press ENTER to retry, or type Q to quit: %CL_NC%"
 if /i "%retry_choice%"=="q" goto :fail_exit
 echo.
 goto :dump_attempt
+
+:: -------------------------------------------------------------------------
+:: Mode D - power-race respawn dump. openocd's init (the SWD connect) is
+:: one-shot, so this MUST respawn fresh launches, not loop in-session. The
+:: launch that lands in the post-power-on window connects, halts, and dumps;
+:: on a catch we fall through to the shared validate/backup below.
+:: -------------------------------------------------------------------------
+:race_dump
+echo %D%
+echo    %CL_M%Power-race dump (mode D) - respawn, read-only%CL_NC%
+echo %D%
+echo    Hammering connects. %CL_C%Apply POWER now%CL_NC%; if it misses, cut and
+echo    re-apply POWER (each power-ON is a fresh window). %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier  %CL_G%H%CL_NC%=almost  %CL_R%x%CL_NC%=probe/USB gone
+echo.
+set "race_dbg_log=%TEMP%\x3utils_race_debug.log"
+set "race_last=%TEMP%\x3utils_race_last.log"
+:: Each attempt is captured to race_last, then classified into a GRADED live
+:: symbol (see :race_grade): . searching / N noisy-contact / H near-catch /
+:: x adapter-gone (+backoff) - so the operator sees WHY it misses, not anonymous
+:: dots. RACE_DEBUG additionally appends every attempt's verbose (-d2) output to
+:: race_dbg_log with a header, for post-mortem. Op list defined ONCE (lego brick).
+if /i "%RACE_DEBUG%"=="true" (
+    if exist "%race_dbg_log%" del "%race_dbg_log%"
+    set "race_v=-d2"
+) else (
+    set "race_v=-d0"
+)
+set OOCD_RACE=-s "%SCRIPTS_DIR%" -f "target\at32f415xx_race.cfg" ^
+ -c "race_connect" ^
+ -c "dump_image {%norm_dump_file%} 0x08000000 0x20000" ^
+ -c "exit"
+set /a race_tries=0
+:race_loop
+set /a race_tries+=1
+"%OPENOCD_BIN%" %race_v% %OOCD_RACE% > "%race_last%" 2>&1
+if not errorlevel 1 goto :race_caught
+if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
+call "%~dp0race_grade.cmd"
+goto :race_loop
+:race_caught
+echo.
+echo.
+echo [ %CL_G%CAUGHT%CL_NC% ] Connected + dumped on attempt %race_tries%.
+goto :dump_ok
 
 :dump_ok
 

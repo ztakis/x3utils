@@ -52,10 +52,11 @@ echo   [3] Flash Loaded File to Chip
 echo   [4] Load / Change Target .bin File
 echo   [5] Exit
 echo.
-echo  [ %CL_C%Connection Options - Press A, B, or C to change%CL_NC% ]
+echo  [ %CL_C%Connection Options - Press A, B, C, or D to change%CL_NC% ]
 if "%current_radio%"=="A" (echo   [%CL_C%X%CL_NC%] A - Default / Blinker buttons) else (echo   [ ] A - Default / Blinker buttons)
 if "%current_radio%"=="B" (echo   [%CL_Y%X%CL_NC%] B - C45 / Clone ST-Link) else (echo   [ ] B - C45 / Clone ST-Link)
 if "%current_radio%"=="C" (echo   [%CL_M%X%CL_NC%] C - C45 / Genuine ST-Link) else (echo   [ ] C - C45 / Genuine ST-Link)
+if "%current_radio%"=="D" (echo   [%CL_G%X%CL_NC%] D - Power-race / no reset line) else (echo   [ ] D - Power-race / no reset line)
 echo.
 if "%current_radio%"=="B" (
     echo  [ %CL_C%Configuration%CL_NC% ]
@@ -63,20 +64,21 @@ if "%current_radio%"=="B" (
     echo.
 )
 if "%current_radio%"=="B" goto :menu_choice_B
-choice /c 12345ABC /n /m "> Press a key (1-5, A-C): "
+choice /c 12345ABCD /n /m "> Press a key (1-5, A-D): "
 goto :menu_choice_done
 :menu_choice_B
-choice /c 12345ABCT /n /m "> Press a key (1-5, A-C, or T): "
+choice /c 12345ABCDT /n /m "> Press a key (1-5, A-D, or T): "
 :menu_choice_done
 set "key=%errorlevel%"
 
-:: Handle A, B, C Radio Toggles (Errorlevels 6, 7, 8)
+:: Handle A, B, C, D Radio Toggles (Errorlevels 6, 7, 8, 9)
 if %key% equ 6 (call :set_radio A & goto :menu_loop)
 if %key% equ 7 (call :set_radio B & goto :menu_loop)
 if %key% equ 8 (call :set_radio C & goto :menu_loop)
+if %key% equ 9 (call :set_radio D & goto :menu_loop)
 
-:: Handle changing the Timeout variable (Errorlevel 9)
-if %key% equ 9 (
+:: Handle changing the Timeout variable (Errorlevel 10, B menu only)
+if %key% equ 10 (
     echo.
     set /p "timeout_val=Enter new countdown timer value (0-60): "
     :: Validate: must be a number between 0 and 60
@@ -119,6 +121,8 @@ for /f "tokens=*" %%L in ('findstr /i "TARGET" "%~dp0config.cmd"') do (
     echo %%L | findstr /i "at32f415xx_c45.cfg" >nul && set "current_radio=B"
     echo %%L | findstr /i "at32f415xx_nrst.cfg" >nul && set "current_radio=C"
 )
+:: RACE=true (mode D) overrides the TARGET-based detection.
+findstr /i "RACE=true" "%~dp0config.cmd" >nul && set "current_radio=D"
 exit /b 0
 
 :: Writes the chosen radio option's .cfg into config.cmd's TARGET line
@@ -129,8 +133,12 @@ if "%new_radio%"=="%current_radio%" exit /b 0
 if "%new_radio%"=="A" set "new_cfg=at32f415xx.cfg"
 if "%new_radio%"=="B" set "new_cfg=at32f415xx_c45.cfg"
 if "%new_radio%"=="C" set "new_cfg=at32f415xx_nrst.cfg"
+if "%new_radio%"=="D" set "new_cfg=at32f415xx.cfg"
 
-powershell -NoProfile -Command "(Get-Content '%~dp0config.cmd') -replace 'target\\[^\\]+\.cfg', 'target\%new_cfg%' | Set-Content '%~dp0config.tmp' -Encoding Ascii"
+:: Mode D drives Dump via the RACE flag; A/B/C clear it.
+if "%new_radio%"=="D" (set "race_val=true") else (set "race_val=false")
+
+powershell -NoProfile -Command "(Get-Content '%~dp0config.cmd') -replace 'target\\[^\\]+\.cfg', 'target\%new_cfg%' -replace 'RACE=\w+', 'RACE=%race_val%' | Set-Content '%~dp0config.tmp' -Encoding Ascii"
 
 :: Verify temp file was written before replacing
 if not exist "%~dp0config.tmp" (

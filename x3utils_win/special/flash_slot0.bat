@@ -60,6 +60,10 @@ goto :end
 
 :do_flash
 
+:: Mode D: power-race slot0 flash - backup (dump.bat) then inline race-flash of
+:: slot0. Skips the single-connect A/B/C path below.
+if /i "%RACE%"=="true" goto :race_slot0
+
 :: External call to dump.bat
 echo.
 echo %D%
@@ -129,6 +133,75 @@ goto :flash_attempt
 echo.
 echo [ %CL_G%OK%CL_NC% ] Flashing completed and verified successfully!
 echo.
+goto :end
+
+:: -------------------------------------------------------------------------
+:: Mode D - power-race slot0 flash. Two visible stages, each its own catch:
+::   Stage 1  call dump.bat  -> back up current firmware (its own race catch)
+::   Stage 2  respawn flash   -> write_image erase slot0 @0x08001000 + verify,
+::                              INLINE (same op as the A/B/C path above, via the
+::                              race respawn connect + graded dots). Identity-safe:
+::                              only slot0, never the bootloader/identity region.
+:: Aborts if the backup reads zeros (locked chip) BY DESIGN. write_image erase
+:: re-erases slot0, so a re-caught retry is safe.
+:: -------------------------------------------------------------------------
+:race_slot0
+echo.
+echo %D%
+echo    %CL_M%Power-race slot0 flash (mode D) - backup, then flash slot0 (2 catches)%CL_NC%
+echo %D%
+echo    Stage 1 backs up the current firmware; Stage 2 flashes slot0 [%bin_file%].
+echo.
+echo %D%
+echo    Stage 1/2: backup current firmware (dump.bat)
+echo %D%
+if not exist "%~dp0..\dump.bat" (
+    echo [%CL_R%FAIL%CL_NC%] dump.bat not found - cannot back up. Aborting.
+    goto :fail_exit
+)
+call "%~dp0..\dump.bat"
+if errorlevel 1 (
+    echo.
+    echo [%CL_R%FAIL%CL_NC%] Backup ^(dump.bat^) failed - aborting flash for safety.
+    goto :fail_exit
+)
+
+echo.
+echo %D%
+echo    Stage 2/2: flash slot0 [%bin_file%] - respawn until caught, then write+verify
+echo %D%
+echo    Hammering connects. %CL_C%Apply POWER now%CL_NC%; cut and re-apply POWER on a miss.
+echo    When the symbols pause it CAUGHT and is flashing (~5s quiet is normal - do
+echo    NOT replug mid-flash; write_image re-erases, so a retry is safe). %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier  %CL_G%H%CL_NC%=almost  %CL_R%x%CL_NC%=probe/USB gone
+echo.
+set "race_dbg_log=%TEMP%\x3utils_race_debug.log"
+set "race_last=%TEMP%\x3utils_race_last.log"
+if /i "%RACE_DEBUG%"=="true" ( set "race_v=-d2" ) else ( set "race_v=-d0" )
+set OOCD_RACE=-s "%SCRIPTS_DIR%" -f "target\at32f415xx_race.cfg" ^
+ -c "race_connect" ^
+ -c "flash write_image erase {%normalized_path%} 0x08001000 bin" ^
+ -c "verify_image {%normalized_path%} 0x08001000 bin" ^
+ -c "exit"
+set /a race_tries=0
+:race_slot0_loop
+set /a race_tries+=1
+"%OPENOCD_BIN%" %race_v% %OOCD_RACE% > "%race_last%" 2>&1
+if not errorlevel 1 goto :race_slot0_ok
+if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== slot0 attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
+call "%~dp0..\race_grade.cmd"
+goto :race_slot0_loop
+
+:race_slot0_ok
+echo.
+echo.
+echo [ %CL_G%CAUGHT%CL_NC% ] Slot0 flashed on attempt %race_tries% - stages:
+echo %D%
+type "%race_last%" | findstr /i "halted erase wrote verified"
+echo %D%
+echo.
+echo [ %CL_G%OK%CL_NC% ] Slot0 flashed and verified: %bin_file%
+echo        Backup was taken by dump.bat above.
 goto :end
 
 :fail_exit
