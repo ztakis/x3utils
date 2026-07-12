@@ -31,7 +31,7 @@ set "INTERFACE=interface\stlink.cfg"
 set "TARGET=target\at32f415xx_c45.cfg"
 
 :: Connection mode D (power-race): true = Dump uses the respawn power-race connect
-:: (target\at32f415xx.cfg). Set by the launcher radio; A/B/C reset it false.
+:: (target\at32f415xx_c45.cfg). Set by the launcher radio; A/B/C reset it false.
 set "RACE=false"
 
 :: Power-race DEBUG (diagnostic only). true = each catch attempt's full verbose
