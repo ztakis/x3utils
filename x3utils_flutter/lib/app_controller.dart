@@ -143,6 +143,8 @@ class AppController extends ChangeNotifier {
   String actionId = 'check';
   int countdownSeconds = 3;
   bool running = false;
+  int raceAttempts = 0; // power-race respawn: attempts so far (drives the indicator)
+  RaceTier raceTier = RaceTier.searching;
 
   StageState stage = StageState.idle;
   String eyebrow = 'Ready';
@@ -464,10 +466,15 @@ class AppController extends ChangeNotifier {
     running = true;
     _realRun = true;
     lastConnect = 'connecting…';
+    final race = mode == ConnectionMode.powerRace;
     if (guided) {
       _set(StageState.hold, 'Step 1 of 3', 'Hold C45 → GND',
           'Hold the C45/nRST contact to GND and keep it steady, then hit continue.',
           continueBtn: "I'm holding — continue");
+    } else if (race) {
+      raceAttempts = 0;
+      _set(StageState.count, 'Power-race', 'Hammering the connect…',
+          'Cut & re-apply power now — it catches the instant the window opens.');
     } else {
       _set(StageState.connect, 'Linking', title ?? '${action.name}…',
           'Talking to the target over SWD — watch the console.');
@@ -475,7 +482,19 @@ class AppController extends ChangeNotifier {
 
     OpenOcdResult result;
     try {
-      result = await runner.run(args, (line) => _onRealLine(line, guided));
+      if (race) {
+        result = await runner.runRace(args,
+            onLine: (line) => _onRealLine(line, false),
+            onAttempt: (n, tier) {
+          if (my != _token) return;
+          raceAttempts = n;
+          raceTier = tier;
+          _set(StageState.count, 'Power-race', 'Hammering — attempt $n',
+              _raceHint(tier));
+        });
+      } else {
+        result = await runner.run(args, (line) => _onRealLine(line, guided));
+      }
     } catch (e) {
       if (my != _token) return null;
       _realRun = false;
@@ -575,6 +594,14 @@ class AppController extends ChangeNotifier {
     _set(ok ? StageState.ok : StageState.fail, ok ? 'Done' : 'Failed',
         ok ? '${action.name} complete' : '${action.name} failed', msg);
   }
+
+  /// Live operator hint for a power-race miss, keyed to how far it got.
+  String _raceHint(RaceTier tier) => switch (tier) {
+        RaceTier.searching => 'No contact yet — cut & re-apply power.',
+        RaceTier.noisy => 'On the pad but bouncing — hold it steadier.',
+        RaceTier.nearCatch => 'Almost — reached the core, keep holding.',
+        RaceTier.adapterGone => 'ST-LINK not seen — check the probe / USB.',
+      };
 
   Future<void> _runDump(OpenOcdRunner runner, bool guided) async {
     final outPath =

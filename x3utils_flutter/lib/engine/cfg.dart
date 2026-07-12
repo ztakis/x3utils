@@ -22,4 +22,8 @@ class Cfg {
 
   /// The guided C45 cfg (always the _c45 variant).
   static String get c45 => '${_base()}_c45.cfg';
+
+  /// The power-race respawn cfg (holds the race_connect proc). Windows + Linux
+  /// only for now; the macOS artery variant isn't bundled yet.
+  static String get race => '${_base()}_race.cfg';
 }
