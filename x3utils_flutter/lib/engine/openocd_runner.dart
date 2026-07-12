@@ -84,33 +84,43 @@ class OpenOcdRunner {
     List<String> args, {
     required void Function(String line) onLine,
     required void Function(int attempt, RaceTier tier) onAttempt,
+    void Function()? onCaught,
   }) async {
     _raceStop = false;
     var attempt = 0;
     while (!_raceStop) {
       attempt++;
       final buf = StringBuffer();
+      var caught = false;
+      // Watch each attempt LIVE: the moment 'target halted' appears, race_connect
+      // has landed — flip the UI to "caught, working" (onCaught) and stream the
+      // op's progress, so the hero doesn't freeze on the last count during the
+      // ~2-5s dump/flash. (A near-catch that halts then drops falls through to a
+      // miss below and the UI reverts to hammering.)
+      void handle(String l) {
+        buf.writeln(l);
+        if (!caught && l.contains('target halted')) {
+          caught = true;
+          onCaught?.call();
+        }
+        if (caught) onLine(l);
+      }
       final proc = await Process.start(paths.openOcdExe, args,
           workingDirectory: paths.binDir);
       _active = proc;
       final out = proc.stdout
           .transform(utf8.decoder)
           .transform(const LineSplitter())
-          .listen(buf.writeln);
+          .listen(handle);
       final err = proc.stderr
           .transform(utf8.decoder)
           .transform(const LineSplitter())
-          .listen(buf.writeln);
+          .listen(handle);
       final code = await proc.exitCode;
       await out.cancel();
       await err.cancel();
       if (identical(_active, proc)) _active = null;
-      if (code == 0) {
-        for (final l in const LineSplitter().convert(buf.toString())) {
-          onLine(l);
-        }
-        return const OpenOcdResult(0);
-      }
+      if (code == 0) return const OpenOcdResult(0);
       onAttempt(attempt, _classify(buf.toString()));
     }
     return const OpenOcdResult(-1); // stopped by kill()
@@ -263,4 +273,5 @@ class OpenOcdRunner {
       '-c', 'exit',
     ];
   }
+
 }

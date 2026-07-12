@@ -10,8 +10,8 @@ extension ConnectionModeX on ConnectionMode {
   String get tag => switch (this) {
         ConnectionMode.defaultSwd => 'A',
         ConnectionMode.cloneC45 => 'B',
-        ConnectionMode.genuineC45 => 'C',
-        ConnectionMode.powerRace => 'D',
+        ConnectionMode.genuineC45 => 'D',
+        ConnectionMode.powerRace => 'C',
       };
   String get title => switch (this) {
         ConnectionMode.defaultSwd => 'Default SWD',

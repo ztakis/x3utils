@@ -2130,7 +2130,8 @@ class _ModeDropdown extends StatelessWidget {
             dropdownColor: AppColors.panel2,
             style: const TextStyle(color: AppColors.txt, fontSize: 13),
             items: [
-              for (final m in ConnectionMode.values)
+              for (final m in [...ConnectionMode.values]
+                ..sort((a, b) => a.tag.compareTo(b.tag)))
                 DropdownMenuItem(
                     value: m, child: Text('${m.tag} · ${m.title}')),
             ],

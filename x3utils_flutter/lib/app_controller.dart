@@ -42,10 +42,16 @@ class AppController extends ChangeNotifier {
     backupFolder = _prefs!.getString('backupFolder');
     backupPrefix = _prefs!.getString('backupPrefix') ?? '';
     secondCopy = _prefs!.getBool('secondCopy') ?? true;
-    final adv = _prefs!.getStringList('advancedModes') ?? const [];
-    _advancedModes
-      ..clear()
-      ..addAll(ConnectionMode.values.where((m) => adv.contains(m.name)));
+    final adv = _prefs!.getStringList('advancedModes');
+    _advancedModes.clear();
+    if (adv == null) {
+      // Ship default: genuine C45 (D, rarely used) starts in Advanced. The user
+      // can right-click it back to Main; that choice then persists.
+      _advancedModes.add(ConnectionMode.genuineC45);
+    } else {
+      _advancedModes
+          .addAll(ConnectionMode.values.where((m) => adv.contains(m.name)));
+    }
     // Startup defaults (migrate the pre-v1.0 last-used keys as a fallback).
     final dm = _prefs!.getInt('defaultConnMode') ?? _prefs!.getInt('connMode');
     if (dm != null && dm >= 0 && dm < ConnectionMode.values.length) {
@@ -183,9 +189,11 @@ class AppController extends ChangeNotifier {
   Section sectionOf(ConnectionMode m) =>
       _advancedModes.contains(m) ? Section.advanced : Section.standard;
 
-  /// Modes in a rail section, always in canonical A/B/C/D order.
+  /// Modes in a rail section, always in canonical A/B/C/D letter order (by tag,
+  /// so display order is independent of the enum order).
   List<ConnectionMode> modesIn(Section s) =>
-      ConnectionMode.values.where((m) => sectionOf(m) == s).toList();
+      ConnectionMode.values.where((m) => sectionOf(m) == s).toList()
+        ..sort((a, b) => a.tag.compareTo(b.tag));
 
   /// Guardrail: never let the standard group be emptied.
   bool canMoveToAdvanced(ConnectionMode m) =>
@@ -473,7 +481,7 @@ class AppController extends ChangeNotifier {
           continueBtn: "I'm holding — continue");
     } else if (race) {
       raceAttempts = 0;
-      _set(StageState.count, 'Power-race', 'Hammering the connect…',
+      _set(StageState.connect, 'Power-race', 'Hammering the connect…',
           'Cut & re-apply power now — it catches the instant the window opens.');
     } else {
       _set(StageState.connect, 'Linking', title ?? '${action.name}…',
@@ -485,11 +493,16 @@ class AppController extends ChangeNotifier {
       if (race) {
         result = await runner.runRace(args,
             onLine: (line) => _onRealLine(line, false),
+            onCaught: () {
+          if (my != _token) return;
+          _set(StageState.connect, 'Power-race', 'Caught — working…',
+              'It landed the window — hold everything steady, do NOT replug.');
+        },
             onAttempt: (n, tier) {
           if (my != _token) return;
           raceAttempts = n;
           raceTier = tier;
-          _set(StageState.count, 'Power-race', 'Hammering — attempt $n',
+          _set(StageState.connect, 'Power-race', 'Hammering — attempt $n',
               _raceHint(tier));
         });
       } else {
