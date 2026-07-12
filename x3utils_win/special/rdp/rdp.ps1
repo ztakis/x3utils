@@ -123,12 +123,14 @@ function Get-RdpConfig {
     $scripts = Join-Path $WinRoot 'oocd\scripts'
     $target  = 'target\at32f415xx_c45.cfg'
     $timeout = 3
+    $race    = $false
 
     $cfgCmd = Join-Path $WinRoot 'config.cmd'
     if (Test-Path $cfgCmd) {
         foreach ($line in Get-Content $cfgCmd) {
             if ($line -match '^\s*set\s+"TARGET=([^"]+)"')          { $target  = $Matches[1].Trim() }
             elseif ($line -match '^\s*set\s+"CONNECT_TIMEOUT=([^"]+)"') { $timeout = $Matches[1].Trim() }
+            elseif ($line -match '^\s*set\s+"RACE=([^"]+)"')        { $race = ($Matches[1].Trim() -ieq 'true') }
         }
     }
 
@@ -141,6 +143,7 @@ function Get-RdpConfig {
         Interface = 'interface\stlink.cfg'
         Target    = $target
         Timeout   = $timeout
+        Race      = $race
     }
 }
 
@@ -150,6 +153,18 @@ function Resolve-Connect {
     param($cfg, [switch]$UseLauncher)
 
     if ($UseLauncher) {
+        if ($cfg.Race) {
+            # Mode D: power-race. Self-contained race cfg (bundles the interface);
+            # race_connect = init + halt + watchdog-freeze. Runs via Invoke-WithRace
+            # (respawn), which catches on 'target halted', not on exit 0.
+            return @{
+                Pre     = @('-f', 'target/at32f415xx_race.cfg')
+                Connect = @('-c', 'race_connect')
+                Mode    = 'launcher D - power-race respawn'
+                Plain   = $false
+                Race    = $true
+            }
+        }
         switch -Wildcard ($cfg.Target) {
             '*_c45.cfg' {
                 return @{
@@ -225,7 +240,7 @@ function Test-ConnectFailed {
 # (so the guided connect prompts stay live; stdin is not redirected so the
 # proc's `gets stdin` still reads the keyboard). Returns @{ Code; Text }.
 function Invoke-OpenOcd {
-    param($cfg, [string[]]$OocdArgs, [string]$LogFile)
+    param($cfg, [string[]]$OocdArgs, [string]$LogFile, [switch]$Quiet)
 
     $full = @('-s', $cfg.Scripts, '-d0') + $OocdArgs
     # OpenOCD writes ALL logging (banner + mdw results) to stderr. Merge it with
@@ -243,7 +258,7 @@ function Invoke-OpenOcd {
                 if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { '' }
             } else { "$_" }
         } | Tee-Object -FilePath $LogFile -Append | ForEach-Object {
-            Write-Host $_
+            if (-not $Quiet) { Write-Host $_ }   # race loop stays quiet; log still gets it
             $_
         }
         $code = $LASTEXITCODE
@@ -270,6 +285,30 @@ function Invoke-WithRetry {
         $ans = Read-Host "       ${CL_C}Press ENTER to retry, or type Q to quit${CL_NC}"
         if ($ans -match '^(q|quit)$') { return $result }
         Write-Host ''
+    }
+}
+
+# Power-race respawn: relaunch OpenOCD until an attempt catches the post-power-on
+# window (its output shows 'target halted'), then return that attempt for parsing.
+# Catch on 'target halted', NOT exit 0 - a read-protected chip's mdw reads may
+# fail (non-zero exit), but that IS the verdict we want to report, so we must not
+# respawn past it. No re-seat prompt: the operator power-cycles while it hammers.
+function Invoke-WithRace {
+    param($cfg, [string[]]$OocdArgs, [string]$LogFile)
+
+    Write-Host ''
+    Say "[${CL_C}race${CL_NC}] Power-race: hammering the connect - cut & re-apply power. Ctrl+C to stop."
+    $n = 0
+    while ($true) {
+        $n++
+        $result = Invoke-OpenOcd -cfg $cfg -OocdArgs $OocdArgs -LogFile $LogFile -Quiet
+        if ($result.Text -match 'target halted') {
+            Write-Host ''
+            SayOk "Caught the window on attempt $n."
+            Write-Host $result.Text          # show ONLY the winning attempt
+            return $result
+        }
+        Write-Host -NoNewline '.'
     }
 }
 
@@ -304,8 +343,12 @@ function Invoke-Check {
     $ops = @('-c', 'flash probe 0', '-c', 'mdw 0x1FFFF800 1', '-c', 'mdw 0x08000000 4', '-c', 'shutdown')
     $oocdArgs = $conn.Pre + $conn.Connect + $ops
 
-    $result = Invoke-WithRetry -cfg $cfg -OocdArgs $oocdArgs -LogFile $log -ShouldRetry {
-        param($r) Test-ConnectFailed $r.Text
+    if ($conn.ContainsKey('Race') -and $conn.Race) {
+        $result = Invoke-WithRace -cfg $cfg -OocdArgs $oocdArgs -LogFile $log
+    } else {
+        $result = Invoke-WithRetry -cfg $cfg -OocdArgs $oocdArgs -LogFile $log -ShouldRetry {
+            param($r) Test-ConnectFailed $r.Text
+        }
     }
     $scan = $result.Text
     $adapterFailed = Test-ConnectFailed $scan
