@@ -97,9 +97,12 @@ class RdpRunner {
   // Windows: config.cmd beside rdp.ps1 (our rdp.ps1 reads from its ScriptDir).
   void _writeConfigCmd(ConnectionMode mode, int timeout) {
     final target = Cfg.target(mode).replaceAll('/', '\\');
+    // Mode D: the ported rdp.ps1 honors RACE=true (power-race respawn connect).
+    final race = mode == ConnectionMode.powerRace ? 'set "RACE=true"\r\n' : '';
     File(p.join(_rdpDir, 'config.cmd')).writeAsStringSync(
       'set "TARGET=$target"\r\n'
-      'set "CONNECT_TIMEOUT=$timeout"\r\n',
+      'set "CONNECT_TIMEOUT=$timeout"\r\n'
+      '$race',
     );
   }
 
