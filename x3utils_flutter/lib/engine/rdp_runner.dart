@@ -74,10 +74,12 @@ class RdpRunner {
       ];
       onLine('> powershell rdp.ps1 -$verb -Launcher${yes ? ' -Yes' : ''}');
     } else {
-      _writeConfigSh(mode, timeout);
+      final runRoot = _prepareUnixRunRoot();
+      final runRdpDir = p.join(runRoot, 'special', 'rdp');
+      _writeConfigSh(mode, timeout, runRdpDir);
       final script = _scriptFor(verb);
       exe = 'bash';
-      args = [p.join(_rdpDir, script), '--launcher', if (yes) '--yes'];
+      args = [p.join(runRdpDir, script), '--launcher', if (yes) '--yes'];
       onLine('> bash $script --launcher${yes ? ' --yes' : ''}');
     }
 
@@ -138,11 +140,32 @@ class RdpRunner {
 
   // macOS/Linux: config.sh beside the .sh scripts (they read $ScriptDir/config.sh),
   // mirroring the Windows config.cmd handoff in _rdpDir.
-  void _writeConfigSh(ConnectionMode mode, int timeout) {
+  String _prepareUnixRunRoot() {
+    final runRoot = Directory.systemTemp.createTempSync('x3utils_rdp_').path;
+    final runRdpDir = p.join(runRoot, 'special', 'rdp');
+    Directory(runRdpDir).createSync(recursive: true);
+    Directory(p.join(runRoot, 'backup')).createSync(recursive: true);
+    _copyDirectory(Directory(_rdpDir), Directory(runRdpDir));
+    return runRoot;
+  }
+
+  void _copyDirectory(Directory source, Directory target) {
+    target.createSync(recursive: true);
+    for (final entity in source.listSync(followLinks: false)) {
+      final targetPath = p.join(target.path, p.basename(entity.path));
+      if (entity is Directory) {
+        _copyDirectory(entity, Directory(targetPath));
+      } else if (entity is File) {
+        entity.copySync(targetPath);
+      }
+    }
+  }
+
+  void _writeConfigSh(ConnectionMode mode, int timeout, String configDir) {
     final oocd = paths.openOcdExe;
     final scripts = paths.scriptsDir;
     final race = mode == ConnectionMode.powerRace ? 'RACE=true\n' : '';
-    File(p.join(_rdpDir, 'config.sh')).writeAsStringSync(
+    File(p.join(configDir, 'config.sh')).writeAsStringSync(
       'export CL_NC="\\033[0m"\n'
       'export CL_R="\\033[1;31m"\n'
       'export CL_G="\\033[1;32m"\n'
@@ -155,6 +178,7 @@ class RdpRunner {
       'INTERFACE="${Cfg.interface}"\n'
       'TARGET="${Cfg.target(mode)}"\n'
       'CONNECT_TIMEOUT=$timeout\n'
+      'X3UTILS_RDP_LOG_DIR="${p.join(p.dirname(p.dirname(configDir)), 'backup')}"\n'
       '$race'
       'EXPECTED_SIZE=131072\n',
     );

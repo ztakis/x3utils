@@ -49,3 +49,6 @@ app.*.map.json
 /native/windows/special/rdp/config.cmd
 /native/linux/special/rdp/config.sh
 /native/macos/special/rdp/config.sh
+
+# Local release artifacts
+/dist/

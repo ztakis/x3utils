@@ -44,7 +44,7 @@ for a in "$@"; do
 done
 resolve_connect
 
-LOG_DIR="$SCRIPT_DIR/../../backup"
+LOG_DIR="${X3UTILS_RDP_LOG_DIR:-$SCRIPT_DIR/../../backup}"
 RUN_ID="$(date +"%Y-%m-%d_%H-%M-%S")"
 LOG_FILE="$LOG_DIR/rdp_check_${RUN_ID}.log"
 
