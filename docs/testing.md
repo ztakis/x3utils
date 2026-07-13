@@ -30,6 +30,10 @@ Record one row per meaningful test run.
 | Date | OS | Board | ST-LINK | Mode | Action | Result | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TBD | TBD | TBD | TBD | TBD | dump / flash / compat / slot0 / rdp | pass / fail |  |
+| 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | A | full flash with backup | pass | Baseline using `zt3_vcu_rescue.bin`; dump, erase, write, verify all completed. |
+| 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | D | dump / full flash / SHU compat | pass | Power-race caught and verified dump, forced-backup flash, and SHU compat patch+flash. |
+| 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | D | special flash-only / slot0 | pass | `flash_only.sh` recovered from adapter-missing `x` symbols; `flash_slot0.sh` wrote slot0 and verified successfully. OpenOCD reported 61440 written vs 60868 verified for the slot image, matching cross-platform behavior. |
+| 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | D | RDP check / FAP enable / FAP clear / rescue unlock | pass | `rdp_check.sh -l` detected unlocked, protected, and unlocked-again states. FAP writers/rescue may miss the first race and then succeed on manual retry. |
 
 ## Dump Test
 
@@ -86,3 +90,25 @@ Use this section for failures that should be remembered.
 - Board:
 - Reproduction:
 - Fix or workaround:
+
+### 2026-07-13
+
+- Issue: `rescue_unlock.sh -l` printed the launcher-A plain-mode warning while
+  actually using launcher-D power-race.
+- Platform: Linux Mint home primary.
+- Board: AT32F415 testbed with clone ST-LINK.
+- Reproduction: Set launcher to D, run `special/rdp/rescue_unlock.sh -l -y`.
+- Fix or workaround: `rdp_lib.sh` now excludes `RACE=true` from
+  `launcher_mode_is_plain`.
+
+### 2026-07-13
+
+- Issue: `rdp_check.sh -l` can sometimes report option-byte state with only
+  SWDIO/SWCLK/GND connected and no explicit 3V3 jumper.
+- Platform: Linux Mint home primary.
+- Board: AT32F415 testbed with clone ST-LINK.
+- Reproduction: Run mode-D RDP check while target power is not intentionally
+  connected.
+- Fix or workaround: Treat as a testbed observation only, likely residual or
+  SWD-provided power. Do not document as supported wiring; write/flash/rescue
+  flows still require clean target power.

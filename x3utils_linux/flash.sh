@@ -60,6 +60,75 @@ while true; do
     esac
 done
 
+if [[ "${RACE:-false}" == "true" ]]; then
+    echo
+    echo "$D"
+    echo -e "   ${CL_M}Power-race flash (mode D) - backup, then flash (2 catches)${CL_NC}"
+    echo "$D"
+    echo "   Stage 1 backs up the current firmware; Stage 2 flashes [$bin_file]."
+    echo
+    echo "$D"
+    echo "   Stage 1/2: backup current firmware (dump.sh)"
+    echo "$D"
+    if [[ ! -f "$SCRIPT_DIR/dump.sh" ]]; then
+        echo -e "[${CL_R}FAIL${CL_NC}] dump.sh not found - cannot back up. Aborting."
+        exit 1
+    fi
+    bash "$SCRIPT_DIR/dump.sh"
+    if [[ $? -ne 0 ]]; then
+        echo
+        echo -e "[${CL_R}FAIL${CL_NC}] Backup (dump.sh) failed - aborting flash for safety."
+        echo "       A locked/zero-reading chip fails here by design; to force-flash it,"
+        echo "       use special/flash_only.sh directly."
+        exit 1
+    fi
+
+    echo
+    echo "$D"
+    echo "   Stage 2/2: flash [$bin_file] - respawn until caught, then erase+write+verify"
+    echo "$D"
+    echo -e "   Hammering connects. ${CL_C}Apply POWER now${CL_NC}; cut and re-apply POWER on a miss."
+    echo -e "   When the symbols pause it CAUGHT and is flashing (~5s quiet is normal - do"
+    echo -e "   NOT replug mid-flash; erase precedes write, so a retry is safe). ${CL_C}Ctrl+C to stop.${CL_NC}"
+    echo -e "   Live: .=searching  ${CL_Y}N${CL_NC}=noisy, hold steadier  ${CL_G}H${CL_NC}=almost  ${CL_R}x${CL_NC}=probe/USB gone"
+    echo
+    race_dbg_log="${TMPDIR:-/tmp}/x3utils_race_debug.log"
+    race_last="${TMPDIR:-/tmp}/x3utils_race_last.log"
+    if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
+        race_v="-d2"
+    else
+        race_v="-d0"
+    fi
+    race_tries=0
+    while true; do
+        race_tries=$((race_tries + 1))
+        "$OPENOCD_BIN" $race_v -s "$SCRIPTS_DIR" -f "target/at32f415xx_race.cfg" \
+            -c "race_connect" \
+            -c "flash erase_address 0x08000000 0x20000" \
+            -c "flash write_bank 0 {$bin_file_path}" \
+            -c "verify_image {$bin_file_path} 0x08000000" \
+            -c "exit" > "$race_last" 2>&1
+        [[ $? -eq 0 ]] && break
+        if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
+            { echo "=== flash attempt $race_tries ==="; cat "$race_last"; } >> "$race_dbg_log"
+        fi
+        bash "$SCRIPT_DIR/race_grade.sh" "$race_last"
+    done
+    echo
+    echo
+    echo -e "[ ${CL_G}CAUGHT${CL_NC} ] Flashed on attempt $race_tries - stages:"
+    echo "$D"
+    grep -Ei "halted|erased|wrote|verified" "$race_last" || true
+    echo "$D"
+    echo
+    echo -e "[ ${CL_G}OK${CL_NC} ] Flashed and verified: $bin_file"
+    echo "       Backup was taken by dump.sh above."
+    echo
+    read -rp "Press ENTER to continue..."
+    echo
+    exit 0
+fi
+
 echo
 echo "$D"
 echo "          Step 1: Invoking External Backup Script..."

@@ -50,6 +50,54 @@ survive machine switches and chat history loss.
   - Flutter GUI is allowed to diverge from CLI labels/order; it may abandon
     ABCD labels in favor of human connection-mode names. Do not force the GUI
     back to CLI taxonomy merely for parity.
+- Linux CLI v1.7.0 first-draft port started from Windows CLI v1.7.0:
+  - Added launcher/config mode D (`RACE=true`) Power-race plumbing.
+  - Added Linux `at32f415xx_race.cfg` and `race_grade.sh`.
+  - Ported mode D race branches for dump, flash, SHU compat, flash-only, slot0,
+    and read-only RDP Check.
+  - Dry checks passed: `bash -n x3utils_linux/*.sh`,
+    `bash -n x3utils_linux/special/*.sh`,
+    `bash -n x3utils_linux/special/rdp/*.sh`, and `git diff --check`.
+  - Hardware validation on home primary Linux Mint:
+    - Mode A full flash with forced backup passed using `zt3_vcu_rescue.bin`.
+    - Mode D dump passed; caught on attempt 175 and validated 131072 bytes.
+    - Mode D SHU-compatible flow passed; dump caught on attempt 154, host patch
+      validated, flash caught on attempt 1 and verified.
+    - Mode D normal flash passed; backup caught on attempt 110, flash caught on
+      attempt 1 and verified.
+    - Mode D `special/rdp/rdp_check.sh -l` passed; caught on attempt 115 and
+      reported NOT PROTECTED with FAP=0xA5 / FAP_COMP=0x5A.
+    - Mode D `special/flash_only.sh` passed with `zt3_vcu_rescue.bin`; one run
+      also confirmed adapter-missing recovery by printing `x` symbols until the
+      ST-LINK was available, then erased/wrote/verified successfully.
+    - Mode D `special/flash_slot0.sh` passed with `gt3_vcu_v1.7.0.bin`; backup
+      caught on attempt 124, slot0 flash caught on attempt 1, wrote 61440 bytes
+      and verified 60868 bytes. This wrote/verified byte-count difference is
+      also seen cross-platform and is treated as acceptable when OpenOCD exits
+      successfully with `verified`.
+  - Firmware-slot context: these controllers keep firmware in slot0/slot1; OTA
+    writes slot1 then promotes/copies to slot0. `flash_slot0` writes only the
+    slot0 firmware area at 0x08001000 and intentionally preserves user/identity
+    data after slot1.
+  - GUI lesson from CLI race testing: after a race catch, erase/write/verify can
+    happen quickly and quietly. The CLI is correct but stressful; the Flutter GUI
+    should show a clear post-catch state such as "CAUGHT - hold power", then live
+    Erasing/Writing/Verifying progress with a "do not disconnect" cue.
+  - Destructive RDP testbed validation then passed in launcher mode D:
+    - `special/rdp/fap_enable.sh -l -y` programmed FAP=0x00 after one missed
+      race attempt and one manual retry.
+    - `special/rdp/rdp_check.sh -l` then reported READ PROTECTED.
+    - `special/rdp/fap_clear.sh -l -y` restored FAP=0xA5 after a retry; after
+      power-cycle, `rdp_check.sh -l` reported NOT PROTECTED with blank flash.
+    - `special/rdp/rescue_unlock.sh -l -y` also restored FAP=0xA5 after one
+      missed race attempt and one retry; after power-cycle, `rdp_check.sh -l`
+      reported NOT PROTECTED with blank flash.
+  - Fixed the `rescue_unlock.sh -l` plain-mode warning guard so launcher mode D
+    no longer prints the misleading "Launcher mode is A (plain)" warning.
+  - Hardware observation: `rdp_check.sh -l` may sometimes read option-byte state
+    with only SWDIO/SWCLK/GND connected, likely due to residual or SWD-provided
+    power. Treat this as an observed testbed quirk, not supported wiring; dump,
+    flash, FAP writes, and rescue still require clean target power.
 - Power-race result handling was improved before this handoff:
   - OpenOCD output evidence is collected in `openocd_runner.dart`.
   - Flash success requires `wrote` plus `verified`.

@@ -26,7 +26,9 @@ source "$SCRIPT_DIR/config.sh"
 
 # --- RADIO GROUP: detect current TARGET from config.sh ---
 detect_radio() {
-    if grep -q 'at32f415xx_c45\.cfg' "$SCRIPT_DIR/config.sh"; then
+    if grep -q 'RACE=true' "$SCRIPT_DIR/config.sh"; then
+        echo "D"
+    elif grep -q 'at32f415xx_c45\.cfg' "$SCRIPT_DIR/config.sh"; then
         echo "B"
     elif grep -q 'at32f415xx_nrst\.cfg' "$SCRIPT_DIR/config.sh"; then
         echo "C"
@@ -38,7 +40,7 @@ detect_radio() {
 # --- RADIO GROUP: write new TARGET to config.sh ---
 set_radio() {
     local new_radio="$1"
-    local new_cfg tmp
+    local new_cfg race_val tmp
 
     [[ "$new_radio" == "$current_radio" ]] && return 0
 
@@ -46,10 +48,19 @@ set_radio() {
         A) new_cfg="at32f415xx.cfg" ;;
         B) new_cfg="at32f415xx_c45.cfg" ;;
         C) new_cfg="at32f415xx_nrst.cfg" ;;
+        D) new_cfg="at32f415xx.cfg" ;;
     esac
+    if [[ "$new_radio" == "D" ]]; then
+        race_val="true"
+    else
+        race_val="false"
+    fi
 
     tmp="$SCRIPT_DIR/config.tmp"
-    sed "s|target/[^\"]*\.cfg|target/$new_cfg|" "$SCRIPT_DIR/config.sh" > "$tmp"
+    sed \
+        -e "s|target/[^\"]*\.cfg|target/$new_cfg|" \
+        -e "s|^RACE=.*|RACE=$race_val|" \
+        "$SCRIPT_DIR/config.sh" > "$tmp"
 
     if [[ ! -f "$tmp" ]]; then
         echo
@@ -74,6 +85,7 @@ set_radio() {
     current_radio="$new_radio"
     # Keep in-memory TARGET in sync
     TARGET="target/$new_cfg"
+    RACE="$race_val"
 }
 
 # --- TIMEOUT: write new CONNECT_TIMEOUT to config.sh ---
@@ -128,7 +140,7 @@ while true; do
     echo "  [4] Load / Change Target .bin File"
     echo "  [5] Exit"
     echo
-    echo -e " [ ${CL_C}Connection Options - Enter A, B, or C to change${CL_NC} ]"
+    echo -e " [ ${CL_C}Connection Options - Enter A, B, C, or D to change${CL_NC} ]"
     if [[ "$current_radio" == "A" ]]; then
         echo -e "  [${CL_C}X${CL_NC}] A - Default / Blinker buttons"
     else
@@ -143,6 +155,11 @@ while true; do
         echo -e "  [${CL_M}X${CL_NC}] C - C45 / Genuine ST-Link"
     else
         echo "  [ ] C - C45 / Genuine ST-Link"
+    fi
+    if [[ "$current_radio" == "D" ]]; then
+        echo -e "  [${CL_G}X${CL_NC}] D - Power-race / no reset line"
+    else
+        echo "  [ ] D - Power-race / no reset line"
     fi
     echo
 
@@ -159,6 +176,7 @@ while true; do
         a|A) set_radio A ;;
         b|B) set_radio B ;;
         c|C) set_radio C ;;
+        d|D) set_radio D ;;
 
         t|T)
             if [[ "$current_radio" != "B" ]]; then

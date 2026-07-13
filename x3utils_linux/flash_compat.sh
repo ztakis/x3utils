@@ -35,6 +35,136 @@ while true; do
     esac
 done
 
+if [[ "${RACE:-false}" == "true" ]]; then
+    compat_dir="$SCRIPT_DIR/compat"
+    mkdir -p "$compat_dir" || {
+        echo
+        echo -e "[${CL_R}FAIL${CL_NC}] Failed to create compat directory."
+        exit 1
+    }
+
+    timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
+    if [[ -z "$timestamp" ]]; then
+        echo
+        echo -e "[${CL_R}FAIL${CL_NC}] Failed to generate timestamp."
+        exit 1
+    fi
+
+    raw_dump="$compat_dir/dump_${timestamp}.bin"
+    patched_dump="$compat_dir/dump_${timestamp}_patched.bin"
+
+    echo
+    echo "$D"
+    echo -e "   ${CL_M}SHU-compat power-race (mode D) - 2 catches: dump, then flash${CL_NC}"
+    echo "$D"
+    echo -e "   You'll catch the window TWICE: once to read the current firmware, once"
+    echo -e "   to flash the patched version. ${CL_C}Ctrl+C to stop.${CL_NC}"
+    echo -e "   Live: .=searching  ${CL_Y}N${CL_NC}=noisy, hold steadier  ${CL_G}H${CL_NC}=almost  ${CL_R}x${CL_NC}=probe/USB gone"
+    echo
+
+    race_dbg_log="${TMPDIR:-/tmp}/x3utils_race_debug.log"
+    race_last="${TMPDIR:-/tmp}/x3utils_race_last.log"
+    if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
+        rm -f "$race_dbg_log"
+        race_v="-d2"
+    else
+        race_v="-d0"
+    fi
+
+    echo "$D"
+    echo -e "   Stage 1/3: catch + dump current firmware. ${CL_C}Apply POWER now...${CL_NC}"
+    echo "$D"
+    race_tries=0
+    while true; do
+        race_tries=$((race_tries + 1))
+        "$OPENOCD_BIN" $race_v -s "$SCRIPTS_DIR" -f "target/at32f415xx_race.cfg" \
+            -c "race_connect" \
+            -c "dump_image {$raw_dump} 0x08000000 0x20000" \
+            -c "exit" > "$race_last" 2>&1
+        [[ $? -eq 0 ]] && break
+        if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
+            { echo "=== dump attempt $race_tries ==="; cat "$race_last"; } >> "$race_dbg_log"
+        fi
+        bash "$SCRIPT_DIR/race_grade.sh" "$race_last"
+    done
+    echo
+    echo
+    echo -e "[ ${CL_G}CAUGHT${CL_NC} ] Firmware dumped on attempt $race_tries."
+
+    source "$SCRIPT_DIR/validate_bin.sh" "$raw_dump"
+    if [[ "$VALIDATE_RESULT" != "OK" ]]; then
+        echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
+        echo "       Cannot patch what we cannot read (read-protected?). Aborting."
+        exit 1
+    fi
+    echo -e "[ ${CL_G}OK${CL_NC} ] Current firmware read + verified: \"$raw_dump\""
+
+    echo
+    echo "$D"
+    echo "   Stage 2/3: injecting SHU patch (no hardware)"
+    echo "$D"
+
+    python3 <<EOF
+from pathlib import Path
+import sys
+
+raw_path = Path(r"$raw_dump")
+patched_path = Path(r"$patched_dump")
+
+try:
+    data = bytearray(raw_path.read_bytes())
+    patch = bytes.fromhex("FE801CB2D1EF41A6A41731F5A06824F0")
+    offset = 0x1420
+    data[offset:offset + len(patch)] = patch
+    if data[offset:offset + len(patch)] != patch:
+        sys.exit(1)
+    patched_path.write_bytes(data)
+except Exception:
+    sys.exit(1)
+EOF
+
+    if [[ $? -ne 0 ]]; then
+        echo -e "[${CL_R}FAIL${CL_NC}] Binary patch process failed."
+        exit 1
+    fi
+
+    source "$SCRIPT_DIR/validate_bin.sh" "$patched_dump"
+    if [[ "$VALIDATE_RESULT" != "OK" ]]; then
+        echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
+        exit 1
+    fi
+    echo -e "[ ${CL_G}OK${CL_NC} ] Patched image ready: \"$patched_dump\""
+
+    echo
+    echo "$D"
+    echo -e "   Stage 3/3: catch + flash patched firmware. ${CL_C}Cut and re-apply POWER...${CL_NC}"
+    echo "$D"
+    race_tries=0
+    while true; do
+        race_tries=$((race_tries + 1))
+        "$OPENOCD_BIN" $race_v -s "$SCRIPTS_DIR" -f "target/at32f415xx_race.cfg" \
+            -c "race_connect" \
+            -c "flash erase_address 0x08000000 0x20000" \
+            -c "flash write_bank 0 {$patched_dump}" \
+            -c "verify_image {$patched_dump} 0x08000000" \
+            -c "exit" > "$race_last" 2>&1
+        [[ $? -eq 0 ]] && break
+        if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
+            { echo "=== flash attempt $race_tries ==="; cat "$race_last"; } >> "$race_dbg_log"
+        fi
+        bash "$SCRIPT_DIR/race_grade.sh" "$race_last"
+    done
+    echo
+    echo
+    echo -e "[ ${CL_G}CAUGHT${CL_NC} ] Patched firmware flashed + verified on attempt $race_tries."
+    echo -e "[ ${CL_G}OK${CL_NC} ] SHU-compat complete. Original firmware backed up:"
+    echo "       \"$raw_dump\""
+    echo
+    read -rp "Press ENTER to continue..."
+    echo
+    exit 0
+fi
+
 # Set up compat directory
 compat_dir="$SCRIPT_DIR/compat"
 
