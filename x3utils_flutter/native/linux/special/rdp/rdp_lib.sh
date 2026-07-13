@@ -10,8 +10,9 @@
 #                         halts the core before firmware runs.
 #   -l / --launcher    -> honor the launcher-selected mode in config.sh
 #                         ($TARGET): A plain init, B guided_connect (c45),
-#                         C nrst. Faster on a cooperative board (esp. Mode C
-#                         auto-reset), but Mode A can't reach a locked board.
+#                         C nrst, D power-race when RACE=true. Faster on a
+#                         cooperative board (esp. Mode C auto-reset), but Mode A
+#                         can't reach a locked board.
 #
 # resolve_connect sets, for the caller to expand into its OpenOCD call:
 #   OOCD_PRE[]      the -f arguments
@@ -40,24 +41,26 @@ UNLOCK_REWRITE=(
 )
 
 resolve_connect() {
+    CONN_RACE=0
     if [[ "${USE_LAUNCHER:-0}" -eq 1 ]]; then
-        case "$TARGET" in
-            *_c45.cfg)
-                OOCD_PRE=(-f "$TARGET")                                  # c45 bundles the interface
-                OOCD_CONNECT=(-c "guided_connect {$CONNECT_TIMEOUT}")
-                CONN_MODE="launcher B — guided connect-under-reset (c45)"
-                ;;
-            *_nrst.cfg)
-                OOCD_PRE=(-f "$INTERFACE" -f "$TARGET")
-                OOCD_CONNECT=(-c "init" -c "reset halt")
-                CONN_MODE="launcher C — ST-Link reset (connect-under-reset)"
-                ;;
-            *)
-                OOCD_PRE=(-f "$INTERFACE" -f "$TARGET")
-                OOCD_CONNECT=(-c "init" -c "reset halt")
-                CONN_MODE="launcher A — plain (SWD already available)"
-                ;;
-        esac
+        if [[ "${RACE:-false}" == "true" ]]; then
+            OOCD_PRE=(-f "target/at32f415xx_race.cfg")
+            OOCD_CONNECT=(-c "race_connect")
+            CONN_MODE="Power-race — respawn"
+            CONN_RACE=1
+        elif [[ "$TARGET" == *_c45.cfg ]]; then
+            OOCD_PRE=(-f "$TARGET")                                  # c45 bundles the interface
+            OOCD_CONNECT=(-c "guided_connect {$CONNECT_TIMEOUT}")
+            CONN_MODE="C45 clone — guided connect-under-reset"
+        elif [[ "$TARGET" == *_nrst.cfg ]]; then
+            OOCD_PRE=(-f "$INTERFACE" -f "$TARGET")
+            OOCD_CONNECT=(-c "init" -c "reset halt")
+            CONN_MODE="C45 genuine — ST-Link reset"
+        else
+            OOCD_PRE=(-f "$INTERFACE" -f "$TARGET")
+            OOCD_CONNECT=(-c "init" -c "reset halt")
+            CONN_MODE="Default SWD — plain"
+        fi
     else
         [[ -f "$RESCUE_CFG" ]] || { echo -e "[${CL_R}FAIL${CL_NC}] Missing rescue.cfg beside the rdp tools"; exit 1; }
         OOCD_PRE=(-f "$RESCUE_CFG")
@@ -69,5 +72,5 @@ resolve_connect() {
 # True when -l is active AND the launcher mode is A (plain) — a foot-gun for
 # rescue, since plain connect can't reach the locked board you're rescuing.
 launcher_mode_is_plain() {
-    [[ "${USE_LAUNCHER:-0}" -eq 1 && "$TARGET" != *_c45.cfg && "$TARGET" != *_nrst.cfg ]]
+    [[ "${USE_LAUNCHER:-0}" -eq 1 && "${RACE:-false}" != "true" && "$TARGET" != *_c45.cfg && "$TARGET" != *_nrst.cfg ]]
 }

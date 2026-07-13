@@ -64,6 +64,8 @@ class _HomeScreenState extends State<HomeScreen> {
         break;
       case StageState.hold:
       case StageState.release:
+      case StageState.connect:
+      case StageState.run:
         if (c.showContinue) c.continueStep();
         break;
       case StageState.ok:
@@ -74,8 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
         c.retry();
         break;
       case StageState.count:
-      case StageState.connect:
-      case StageState.run:
         break;
     }
   }
@@ -1415,6 +1415,14 @@ class _StageButtons extends StatelessWidget {
       case StageState.count:
       case StageState.connect:
       case StageState.run:
+        if (c.showContinue) {
+          children.add(_PillButton(
+            label: c.continueLabel,
+            onTap: c.continueStep,
+            gradient: [AppColors.brand, AppColors.brand2],
+            fg: const Color(0xFF04120F),
+          ));
+        }
         children.add(_cancel(c));
         break;
       case StageState.ok:

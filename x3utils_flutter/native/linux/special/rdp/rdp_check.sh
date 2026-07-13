@@ -84,39 +84,67 @@ echo
 # returns masked data, which is a valid verdict, NOT a retry condition.
 attempt=0
 scan=""
-while true; do
-    attempt=$((attempt + 1))
-    echo -e "[${CL_C}....${CL_NC}] Connecting and reading FAP/USD @ 0x1FFFF800 and flash @ 0x08000000 ..."
-    attempt_log="$(mktemp "${TMPDIR:-/tmp}/rdp_check_attempt.XXXXXX")"
-    { echo; echo "$D"; echo "RDP check session $RUN_ID (attempt $attempt)"; echo "$D"; } >> "$attempt_log"
-    "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
-        "${OOCD_PRE[@]}" \
-        "${OOCD_CONNECT[@]}" \
-        -c "flash probe 0" \
-        -c "mdw 0x1FFFF800 1" \
-        -c "mdw 0x08000000 4" \
-        -c "shutdown" 2>&1 | tee -a "$attempt_log"
-    cat "$attempt_log" >> "$LOG_FILE"   # fold into the persistent log (full history)
-    scan="$(cat "$attempt_log")"        # parse THIS attempt only
-    rm -f "$attempt_log"
+if [[ "${CONN_RACE:-0}" -eq 1 ]]; then
+    echo -e "[${CL_C}race${CL_NC}] Power-race: hammering the connect - cut & re-apply power. Ctrl+C to stop."
+    while true; do
+        attempt=$((attempt + 1))
+        attempt_log="$(mktemp "${TMPDIR:-/tmp}/rdp_check_attempt.XXXXXX")"
+        { echo; echo "$D"; echo "RDP check session $RUN_ID (race attempt $attempt)"; echo "$D"; } >> "$attempt_log"
+        "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+            "${OOCD_PRE[@]}" \
+            "${OOCD_CONNECT[@]}" \
+            -c "flash probe 0" \
+            -c "mdw 0x1FFFF800 1" \
+            -c "mdw 0x08000000 4" \
+            -c "shutdown" >> "$attempt_log" 2>&1
+        cat "$attempt_log" >> "$LOG_FILE"
+        scan="$(cat "$attempt_log")"
 
-    # Retry ONLY on a connection-level failure — never on a protection verdict.
-    if adapter_unreachable "$scan"; then
-        echo
-        echo -e "[${CL_Y}WARN${CL_NC}] Adapter/target could not be reached — nothing was read."
-        echo "       Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat the"
-        echo "       probe and the contact (touch the contact point, NOT on top of the cap),"
-        echo "       keep it steady. (Read-only check — retrying never changes the chip.)"
-        echo
-        read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
-        if [[ "${retry_choice,,}" == "q" ]]; then
-            break   # keep this failed scan -> verdict prints INCONCLUSIVE, exit 3
+        if grep -q "target halted" "$attempt_log"; then
+            echo
+            echo -e "[ ${CL_G}OK${CL_NC} ] Caught the window on attempt $attempt."
+            cat "$attempt_log"
+            rm -f "$attempt_log"
+            break
         fi
-        echo
-        continue
-    fi
-    break
-done
+        rm -f "$attempt_log"
+        printf "."
+    done
+else
+    while true; do
+        attempt=$((attempt + 1))
+        echo -e "[${CL_C}....${CL_NC}] Connecting and reading FAP/USD @ 0x1FFFF800 and flash @ 0x08000000 ..."
+        attempt_log="$(mktemp "${TMPDIR:-/tmp}/rdp_check_attempt.XXXXXX")"
+        { echo; echo "$D"; echo "RDP check session $RUN_ID (attempt $attempt)"; echo "$D"; } >> "$attempt_log"
+        "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
+            "${OOCD_PRE[@]}" \
+            "${OOCD_CONNECT[@]}" \
+            -c "flash probe 0" \
+            -c "mdw 0x1FFFF800 1" \
+            -c "mdw 0x08000000 4" \
+            -c "shutdown" 2>&1 | tee -a "$attempt_log"
+        cat "$attempt_log" >> "$LOG_FILE"   # fold into the persistent log (full history)
+        scan="$(cat "$attempt_log")"        # parse THIS attempt only
+        rm -f "$attempt_log"
+
+        # Retry ONLY on a connection-level failure — never on a protection verdict.
+        if adapter_unreachable "$scan"; then
+            echo
+            echo -e "[${CL_Y}WARN${CL_NC}] Adapter/target could not be reached — nothing was read."
+            echo "       Most often this is lost SWD / nRST-C45 contact mid-connect. Re-seat the"
+            echo "       probe and the contact (touch the contact point, NOT on top of the cap),"
+            echo "       keep it steady. (Read-only check — retrying never changes the chip.)"
+            echo
+            read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
+            if [[ "${retry_choice,,}" == "q" ]]; then
+                break   # keep this failed scan -> verdict prints INCONCLUSIVE, exit 3
+            fi
+            echo
+            continue
+        fi
+        break
+    done
+fi
 
 usd_out="$scan"
 flash_out="$scan"

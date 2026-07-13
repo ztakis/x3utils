@@ -443,12 +443,24 @@ class AppController extends ChangeNotifier {
     running = true;
     _realRun = true;
     lastConnect = 'connecting…';
-    _set(
-      StageState.connect,
-      'Protection',
-      '${action.name}…',
-      'Running the protection toolkit — watch the console.',
-    );
+    final raceCheck = verb == 'Check' && mode == ConnectionMode.powerRace;
+    if (raceCheck) {
+      raceAttempts = 0;
+      raceTier = RaceTier.searching;
+      _set(
+        StageState.connect,
+        'Power-race',
+        'Hammering the check…',
+        'Cut & re-apply power now — the check starts when the window opens.',
+      );
+    } else {
+      _set(
+        StageState.connect,
+        'Protection',
+        '${action.name}…',
+        'Running the protection toolkit — watch the console.',
+      );
+    }
 
     int code;
     try {
@@ -457,7 +469,14 @@ class AppController extends ChangeNotifier {
         mode,
         countdownSeconds,
         yes: yes,
-        onLine: (line) => _onRealLine(line, mode.guided),
+        onLine: (line) {
+          _onRealLine(line, mode.guided);
+          if (raceCheck) _advanceRdpRaceLine(line);
+        },
+        onChunk: (chunk) {
+          if (my != _token) return;
+          _handleRdpChunk(chunk, raceCheck: raceCheck);
+        },
       );
     } catch (e) {
       if (my != _token) return;
@@ -503,6 +522,58 @@ class AppController extends ChangeNotifier {
         action.okMsg,
         'rescue exited with code $code. Check the console for what happened.',
       );
+    }
+  }
+
+  void _handleRdpChunk(String chunk, {required bool raceCheck}) {
+    final low = chunk.toLowerCase();
+    if (low.contains('press enter to retry')) {
+      _set(
+        StageState.connect,
+        mode == ConnectionMode.powerRace ? 'Power-race' : 'Protection',
+        'Retry connection?',
+        mode == ConnectionMode.powerRace
+            ? 'The rescue attempt missed the window. Cut & re-apply power, then retry.'
+            : 'The connect attempt missed. Re-seat the probe, then retry.',
+        continueBtn: 'Retry connect',
+      );
+      return;
+    }
+
+    if (!raceCheck) return;
+    final progress = chunk.replaceAll('\r', '').replaceAll('\n', '');
+    if (!RegExp(r'^\.+$').hasMatch(progress)) return;
+    final dots = progress.length;
+    if (dots == 0) return;
+    raceAttempts += dots;
+    raceTier = RaceTier.searching;
+    _set(
+      StageState.connect,
+      'Power-race',
+      'Hammering — attempt $raceAttempts',
+      _raceHint(raceTier),
+    );
+  }
+
+  void _advanceRdpRaceLine(String line) {
+    final low = line.toLowerCase();
+    final caught = RegExp(
+      r'caught the window on attempt\s+(\d+)',
+    ).firstMatch(low);
+    if (caught != null) {
+      final n = int.tryParse(caught.group(1)!);
+      if (n != null) raceAttempts = n;
+      _set(
+        StageState.run,
+        'Power-race',
+        'Caught — checking…',
+        'Hold everything steady until the verdict is printed.',
+      );
+      _markStage('connect');
+    } else if (low.contains('0x1ffff800:')) {
+      _markStage('fap');
+    } else if (low.contains('verdict')) {
+      _markStage('verdict');
     }
   }
 

@@ -118,3 +118,12 @@ survive machine switches and chat history loss.
     and forced backup validation where useful.
   - Keep verdicts stricter than progress UI; do not green-light without the
     required evidence.
+- Flutter Linux RDP parity pass:
+  - Followed the Windows GUI RDP model: Dart writes `RACE=true` for shell RDP
+    config when Power-race is selected, Linux `rdp_lib.sh` resolves that as
+    launcher D, and Linux `rdp_check.sh` auto-hammers only the read-only check.
+  - Rescue/option-byte rewrite remains on the safer manual retry loop, matching
+    Windows GUI behavior.
+  - The Linux Flutter RDP console labels are intentionally GUI-neutral mode
+    names (`Power-race`, `C45 genuine`, etc.), not CLI launcher letters. GUI
+    visible labels remain C=Power-race and D=C45 genuine.

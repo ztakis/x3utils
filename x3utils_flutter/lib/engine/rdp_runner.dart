@@ -48,8 +48,14 @@ class RdpRunner {
   }
 
   /// Runs a verb (`Check` | `Rescue`). Returns the process exit code.
-  Future<int> run(String verb, ConnectionMode mode, int timeout,
-      {bool yes = false, required void Function(String) onLine}) async {
+  Future<int> run(
+    String verb,
+    ConnectionMode mode,
+    int timeout, {
+    bool yes = false,
+    required void Function(String) onLine,
+    void Function(String chunk)? onChunk,
+  }) async {
     final String exe;
     final List<String> args;
 
@@ -57,9 +63,13 @@ class RdpRunner {
       _writeConfigCmd(mode, timeout);
       exe = 'powershell';
       args = [
-        '-NoProfile', '-ExecutionPolicy', 'Bypass',
-        '-File', p.join(_rdpDir, 'rdp.ps1'),
-        '-$verb', '-Launcher',
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        p.join(_rdpDir, 'rdp.ps1'),
+        '-$verb',
+        '-Launcher',
         if (yes) '-Yes',
       ];
       onLine('> powershell rdp.ps1 -$verb -Launcher${yes ? ' -Yes' : ''}');
@@ -67,31 +77,51 @@ class RdpRunner {
       _writeConfigSh(mode, timeout);
       final script = _scriptFor(verb);
       exe = 'bash';
-      args = [
-        p.join(_rdpDir, script),
-        '--launcher',
-        if (yes) '--yes',
-      ];
+      args = [p.join(_rdpDir, script), '--launcher', if (yes) '--yes'];
       onLine('> bash $script --launcher${yes ? ' --yes' : ''}');
     }
 
     final proc = await Process.start(exe, args, workingDirectory: _root);
     _active = proc;
 
-    final out = proc.stdout
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen(onLine);
-    final err = proc.stderr
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen(onLine);
+    final out = _listenText(proc.stdout, onLine, onChunk);
+    final err = _listenText(proc.stderr, onLine, onChunk);
 
     final code = await proc.exitCode;
     await out.cancel();
     await err.cancel();
     if (identical(_active, proc)) _active = null;
     return code;
+  }
+
+  StreamSubscription<String> _listenText(
+    Stream<List<int>> stream,
+    void Function(String) onLine,
+    void Function(String chunk)? onChunk,
+  ) {
+    var pending = '';
+    return stream
+        .transform(utf8.decoder)
+        .listen(
+          (text) {
+            onChunk?.call(text);
+            pending += text;
+            while (true) {
+              final idx = pending.indexOf('\n');
+              if (idx < 0) break;
+              final line = pending
+                  .substring(0, idx)
+                  .replaceFirst(RegExp(r'\r$'), '');
+              pending = pending.substring(idx + 1);
+              onLine(line);
+            }
+          },
+          onDone: () {
+            if (pending.isNotEmpty) {
+              onLine(pending.replaceFirst(RegExp(r'\r$'), ''));
+            }
+          },
+        );
   }
 
   // Windows: config.cmd beside rdp.ps1 (our rdp.ps1 reads from its ScriptDir).
@@ -111,6 +141,7 @@ class RdpRunner {
   void _writeConfigSh(ConnectionMode mode, int timeout) {
     final oocd = paths.openOcdExe;
     final scripts = paths.scriptsDir;
+    final race = mode == ConnectionMode.powerRace ? 'RACE=true\n' : '';
     File(p.join(_rdpDir, 'config.sh')).writeAsStringSync(
       'export CL_NC="\\033[0m"\n'
       'export CL_R="\\033[1;31m"\n'
@@ -124,6 +155,7 @@ class RdpRunner {
       'INTERFACE="${Cfg.interface}"\n'
       'TARGET="${Cfg.target(mode)}"\n'
       'CONNECT_TIMEOUT=$timeout\n'
+      '$race'
       'EXPECTED_SIZE=131072\n',
     );
   }
