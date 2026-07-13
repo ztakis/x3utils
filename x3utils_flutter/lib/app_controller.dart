@@ -45,7 +45,7 @@ class AppController extends ChangeNotifier {
     final adv = _prefs!.getStringList('advancedModes');
     _advancedModes.clear();
     if (adv == null) {
-      // Ship default: Power-race (C) and genuine C45 (D) start in Advanced. The
+      // Ship default: genuine C45 (C) and Power-race (D) start in Advanced. The
       // user can right-click either back to Main; that choice then persists.
       _advancedModes
         ..add(ConnectionMode.powerRace)
@@ -161,10 +161,13 @@ class AppController extends ChangeNotifier {
   String eyebrow = 'Ready';
   String title = 'Check connection';
   String sub = 'Pick a connection mode and an action, then hit start.';
+  String progressDetail = '';
 
   int countdownValue = 0;
   int activeStage = -1;
   List<bool> stageDone = const [];
+  DateTime? _progressShownAt;
+  DateTime? _lastProgressAt;
 
   bool showContinue = false;
   String continueLabel = 'Continue';
@@ -181,6 +184,9 @@ class AppController extends ChangeNotifier {
 
   int _token = 0;
   Completer<void>? _continue;
+
+  static const _minChecklistVisible = Duration(milliseconds: 1000);
+  static const _minAfterLastChecklistStep = Duration(milliseconds: 1500);
 
   FlashAction get action => kActions.firstWhere((a) => a.id == actionId);
 
@@ -319,6 +325,9 @@ class AppController extends ChangeNotifier {
     showContinue = false;
     activeStage = -1;
     stageDone = const [];
+    _progressShownAt = null;
+    _lastProgressAt = null;
+    progressDetail = '';
     notifyListeners();
   }
 
@@ -354,6 +363,18 @@ class AppController extends ChangeNotifier {
     sub = sb;
     showContinue = continueBtn != null;
     if (continueBtn != null) continueLabel = continueBtn;
+    notifyListeners();
+  }
+
+  void _setProgressDetail(String value) {
+    if (progressDetail == value) return;
+    progressDetail = value;
+    notifyListeners();
+  }
+
+  void _setInstruction(String value) {
+    if (sub == value) return;
+    sub = value;
     notifyListeners();
   }
 
@@ -402,7 +423,11 @@ class AppController extends ChangeNotifier {
           guided: g,
         );
         if (r != null) {
-          _finishReal(
+          if (r.ok) {
+            _setInstruction('Target answered. You can continue.');
+            _markStage('report');
+          }
+          await _finishRealAfterHold(
             r.ok,
             action.okMsg,
             'OpenOCD exited with code ${r.exitCode}. Check the console.',
@@ -470,7 +495,7 @@ class AppController extends ChangeNotifier {
         countdownSeconds,
         yes: yes,
         onLine: (line) {
-          _onRealLine(line, mode.guided);
+          _onRealLine(line, mode.guided, driveOpenOcdProgress: false);
           if (raceCheck) _advanceRdpRaceLine(line);
         },
         onChunk: (chunk) {
@@ -609,7 +634,7 @@ class AppController extends ChangeNotifier {
         'Hammering the connect…',
         'Cut & re-apply power now — it catches the instant the window opens.',
       );
-    } else {
+    } else if (stage != StageState.run) {
       _set(
         StageState.connect,
         'Linking',
@@ -625,7 +650,6 @@ class AppController extends ChangeNotifier {
           args,
           onLine: (line) {
             _onRealLine(line, false);
-            _advanceRaceStage(line);
           },
           onCaught: () {
             if (my != _token) return;
@@ -685,11 +709,16 @@ class AppController extends ChangeNotifier {
     return result;
   }
 
-  void _onRealLine(String line, bool guided) {
+  void _onRealLine(
+    String line,
+    bool guided, {
+    bool driveOpenOcdProgress = true,
+  }) {
     _log(line);
     final low = line.toLowerCase();
     if (low.contains('target halted')) lastConnect = 'PASS';
     _diagnose(low);
+    if (driveOpenOcdProgress) _advanceOpenOcdStage(low);
     if (guided) _parseGuided(line, low);
   }
 
@@ -800,6 +829,46 @@ class AppController extends ChangeNotifier {
     );
   }
 
+  Future<void> _finishRealAfterHold(
+    bool ok,
+    String okMsg,
+    String failMsg, {
+    bool reseat = true,
+  }) async {
+    final my = _token;
+    final hadChecklist = stage == StageState.run && _progressShownAt != null;
+    await _holdChecklistForReading();
+    if (my != _token) return;
+    if (hadChecklist && stage != StageState.run) return;
+    _finishReal(ok, okMsg, failMsg, reseat: reseat);
+  }
+
+  Future<void> _holdChecklistForReading() async {
+    if (stage != StageState.run) return;
+    final shownAt = _progressShownAt;
+    if (shownAt == null) return;
+
+    final now = DateTime.now();
+    var wait = Duration.zero;
+    final shownElapsed = now.difference(shownAt);
+    if (shownElapsed < _minChecklistVisible) {
+      wait = _minChecklistVisible - shownElapsed;
+    }
+
+    final lastAt = _lastProgressAt;
+    if (lastAt != null) {
+      final lastElapsed = now.difference(lastAt);
+      if (lastElapsed < _minAfterLastChecklistStep) {
+        final afterLastWait = _minAfterLastChecklistStep - lastElapsed;
+        if (afterLastWait > wait) wait = afterLastWait;
+      }
+    }
+
+    if (wait > Duration.zero) {
+      await Future.delayed(wait);
+    }
+  }
+
   /// Live operator hint for a power-race miss, keyed to how far it got.
   String _raceHint(RaceTier tier) => switch (tier) {
     RaceTier.searching => 'No contact yet — cut & re-apply power.',
@@ -810,22 +879,61 @@ class AppController extends ChangeNotifier {
       'OpenOCD stalled — power-cycle and try the next catch.',
   };
 
-  /// Once the race catches, drive the stage-list checkmarks from the winning
-  /// attempt's live output — the same visual the guided A/B/C paths would show,
-  /// but fed by real OpenOCD progress markers instead of the simulate timer.
-  void _advanceRaceStage(String line) {
-    final low = line.toLowerCase();
-    if (low.contains('target halted') || low.contains('caught; hold power')) {
-      _markStage('connect');
+  /// Drive the stage-list checkmarks from live OpenOCD progress markers.
+  void _advanceOpenOcdStage(String low) {
+    if (low.contains('target halted') ||
+        low.contains('caught; hold power') ||
+        low.contains('x3_caught_hold_power')) {
+      _setProgressDetail('OpenOCD: connected');
+      _markVisibleStage('connect');
+    } else if (low.contains("flash 'at32f415xx' found")) {
+      _setProgressDetail('OpenOCD: flash detected');
+      _markVisibleStage('detect');
     } else if (low.contains('dumped')) {
-      _markStage('read');
+      _setProgressDetail('OpenOCD: read complete');
+      _markVisibleStage('read');
     } else if (low.contains('erased')) {
-      _markStage('eras');
+      _setProgressDetail('OpenOCD: erase complete');
+      _markVisibleStage('eras');
     } else if (low.contains('wrote')) {
-      _markStage('writ');
+      _setProgressDetail('OpenOCD: write complete');
+      _markVisibleStage('writ');
     } else if (low.contains('verified')) {
-      _markStage('verif');
+      _setProgressDetail('OpenOCD: verify complete');
+      _markVisibleStage('verif');
     }
+  }
+
+  bool _markVisibleStage(String part) {
+    if (!_hasStage(part)) return false;
+    _showOpenOcdProgress();
+    _markStage(part);
+    return true;
+  }
+
+  bool _hasStage(String part) =>
+      action.stages.any((s) => s.toLowerCase().contains(part));
+
+  void _armStage(String part) {
+    final stages = action.stages;
+    if (stageDone.length != stages.length) {
+      stageDone = List<bool>.filled(stages.length, false);
+    }
+    final idx = stages.indexWhere((s) => s.toLowerCase().contains(part));
+    if (idx < 0) return;
+    activeStage = idx;
+    notifyListeners();
+  }
+
+  void _showOpenOcdProgress() {
+    if (stage == StageState.run ||
+        stage == StageState.hold ||
+        stage == StageState.count ||
+        stage == StageState.release) {
+      return;
+    }
+    _progressShownAt ??= DateTime.now();
+    _set(StageState.run, action.name, '${action.name}…', sub);
   }
 
   /// Mark the stage whose label contains [part] (and every stage before it) done,
@@ -842,6 +950,7 @@ class AppController extends ChangeNotifier {
       stageDone[i] = true;
     }
     activeStage = idx + 1 < stages.length ? idx + 1 : idx;
+    _lastProgressAt = DateTime.now();
     notifyListeners();
   }
 
@@ -872,19 +981,27 @@ class AppController extends ChangeNotifier {
       folder: backupFolder,
       prefix: backupPrefix,
     );
+    _showOpenOcdProgress();
+    _setInstruction('Reading the full 128 KB flash into a backup file...');
+    _armStage('connect');
     final r = await _runRealCore(
       runner.dumpArgs(mode, countdownSeconds, outPath),
       guided: guided,
     );
     if (r == null) return;
     if (!_dumpConfirmed(r)) {
-      _finishReal(false, '', _dumpFailMessage(r));
+      await _finishRealAfterHold(false, '', _dumpFailMessage(r));
       return;
     }
+    _setInstruction('Backup saved to $outPath');
+    _markStage('save');
+    _setInstruction('Validating backup file...');
+    _setProgressDetail('Validating backup...');
+    _armStage('valid');
     final v = Firmware.validate(outPath);
     if (!v.ok) {
       _log('== validation FAILED: ${v.message} ==');
-      _finishReal(
+      await _finishRealAfterHold(
         false,
         '',
         'Dump saved but failed validation — do not trust it. ${v.message} '
@@ -894,8 +1011,11 @@ class AppController extends ChangeNotifier {
       return;
     }
     _log('== validated OK → $outPath ==');
+    _setInstruction('Backup validated. Keep this file safe.');
+    _setProgressDetail('Backup validated');
+    _markStage('valid');
     _maybeSecondCopy(outPath);
-    _finishReal(true, 'Backed up & verified → $outPath', '');
+    await _finishRealAfterHold(true, 'Backed up & verified → $outPath', '');
   }
 
   Future<void> _runFlash(
@@ -922,12 +1042,18 @@ class AppController extends ChangeNotifier {
       return;
     }
 
+    String? backupPath;
+
     // Mandatory backup first (the scripts' safety floor) — abort flash if it fails.
     if (backup) {
       final outPath = Firmware.newDumpPath(
         folder: backupFolder,
         prefix: backupPrefix,
       );
+      _showOpenOcdProgress();
+      _setInstruction('Backing up the chip before flashing...');
+      _setProgressDetail('Reading current firmware...');
+      _armStage('read');
       final b = await _runRealCore(
         runner.dumpArgs(mode, countdownSeconds, outPath),
         guided: guided,
@@ -935,17 +1061,22 @@ class AppController extends ChangeNotifier {
       );
       if (b == null) return;
       if (!_dumpConfirmed(b)) {
-        _finishReal(
+        await _finishRealAfterHold(
           false,
           '',
           'Backup did not confirm a complete dump — flash aborted for safety. ${_dumpFailMessage(b)}',
         );
         return;
       }
+      _setInstruction('Backup saved to $outPath');
+      _markStage('save');
+      _setInstruction('Validating backup file before writing...');
+      _setProgressDetail('Validating backup...');
+      _armStage('valid');
       final backupCheck = Firmware.validate(outPath);
       if (!backupCheck.ok) {
         _log('== validation FAILED: ${backupCheck.message} ==');
-        _finishReal(
+        await _finishRealAfterHold(
           false,
           '',
           'Backup validation failed — flash aborted for safety. ${backupCheck.message} '
@@ -955,25 +1086,60 @@ class AppController extends ChangeNotifier {
         return;
       }
       _log('== backup ok → $outPath ==');
+      _setInstruction('Backup validated. Writing can continue.');
+      _setProgressDetail('Backup validated');
+      _markStage('valid');
       _maybeSecondCopy(outPath);
+      backupPath = outPath;
     }
 
     final args = slot0
         ? runner.flashSlot0Args(mode, countdownSeconds, fw)
         : runner.flashArgs(mode, countdownSeconds, fw);
+    _showOpenOcdProgress();
+    _setInstruction(
+      slot0
+          ? 'Writing slot 0 only. Bootloader and identity stay untouched.'
+          : backup
+          ? 'Writing the selected firmware...'
+          : 'Writing without a backup. Keep the ST-LINK and SWD wires steady.',
+    );
+    _setProgressDetail(
+      slot0 ? 'Writing slot 0...' : 'Preparing flash write...',
+    );
+    _armStage(slot0 ? 'writ' : 'eras');
     final r = await _runRealCore(
       args,
       guided: guided,
       title: '${action.name}…',
     );
     if (r == null) return;
-    _finishReal(_flashConfirmed(r), action.okMsg, _flashFailMessage(r));
+    final flashOk = _flashConfirmed(r);
+    if (flashOk) {
+      _setInstruction(
+        slot0
+            ? 'Slot 0 verified.'
+            : backup
+            ? 'Flash verified. Backup was saved first.'
+            : 'Flash verified. No backup was taken.',
+      );
+    }
+    final okMsg = backup && backupPath != null
+        ? slot0
+              ? 'Slot 0 flashed & verified. Backup saved to $backupPath'
+              : 'Flashed & verified. Backup saved to $backupPath'
+        : action.okMsg;
+    await _finishRealAfterHold(flashOk, okMsg, _flashFailMessage(r));
   }
 
   /// SHU-compat: dump the chip → patch its own firmware → flash it back
   /// (mirrors flash_compat.bat; no user .bin — uses the chip's own image).
   Future<void> _runCompat(OpenOcdRunner runner, bool guided) async {
     final (raw, patched) = Firmware.newCompatPaths(prefix: backupPrefix);
+    _showOpenOcdProgress();
+    _setInstruction('Reading the chip before patching...');
+    _setProgressDetail('Reading current firmware...');
+    _armStage('read');
 
     // Step 1 — read the current firmware.
     final d = await _runRealCore(
@@ -983,7 +1149,7 @@ class AppController extends ChangeNotifier {
     );
     if (d == null) return;
     if (!_dumpConfirmed(d)) {
-      _finishReal(
+      await _finishRealAfterHold(
         false,
         '',
         'Could not confirm a complete chip read — nothing was changed. ${_dumpFailMessage(d)}',
@@ -993,7 +1159,7 @@ class AppController extends ChangeNotifier {
     final rawCheck = Firmware.validate(raw);
     if (!rawCheck.ok) {
       _log('== validation FAILED: ${rawCheck.message} ==');
-      _finishReal(
+      await _finishRealAfterHold(
         false,
         '',
         'The chip read back as invalid — nothing was written. ${rawCheck.message} '
@@ -1003,14 +1169,19 @@ class AppController extends ChangeNotifier {
       return;
     }
 
+    _setInstruction('Original backup saved to $raw');
+    _markStage('save');
     _maybeSecondCopy(raw);
 
     // Step 2 — patch (pure Dart, no hardware).
+    _setInstruction('Patching the SHU compatibility signature...');
+    _setProgressDetail('Patching firmware...');
+    _armStage('patch');
     _log('== patching SHU-compat signature @ 0x1420 ==');
     final patch = CompatPatch.apply(raw, patched);
     if (!patch.ok || !Firmware.validate(patched).ok) {
       _log('== patch FAILED: ${patch.message} ==');
-      _finishReal(
+      await _finishRealAfterHold(
         false,
         '',
         'Patch failed — the chip was NOT written. ${patch.message}',
@@ -1019,16 +1190,25 @@ class AppController extends ChangeNotifier {
       return;
     }
     _log('== patched → $patched ==');
+    _setInstruction('Flashing the patched firmware back to the chip...');
+    _setProgressDetail('Patch complete');
+    _markStage('patch');
 
     // Step 3 — flash the patched image back.
+    _setProgressDetail('Flashing patched firmware...');
+    _armStage('writ');
     final f = await _runRealCore(
       runner.flashArgs(mode, countdownSeconds, patched),
       guided: guided,
       title: 'Flashing SHU-compatible firmware…',
     );
     if (f == null) return;
-    _finishReal(
-      _flashConfirmed(f),
+    final flashOk = _flashConfirmed(f);
+    if (flashOk) {
+      _setInstruction('SHU-compatible firmware verified.');
+    }
+    await _finishRealAfterHold(
+      flashOk,
       'SHU-compatible firmware flashed & verified. Original saved to $raw',
       _flashFailMessage(f),
     );

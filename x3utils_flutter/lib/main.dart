@@ -95,12 +95,16 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(
-          content: Text(check.message,
-              style: const TextStyle(color: Colors.white)),
-          backgroundColor: AppColors.danger,
-          behavior: SnackBarBehavior.floating,
-        ));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              check.message,
+              style: const TextStyle(color: Colors.white),
+            ),
+            backgroundColor: AppColors.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       return;
     }
     c.setFirmware(file.path);
@@ -132,17 +136,30 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: accent.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(hard ? Icons.warning_amber_rounded : Icons.bolt,
-                    color: accent, size: 24),
+                child: Icon(
+                  hard ? Icons.warning_amber_rounded : Icons.bolt,
+                  color: accent,
+                  size: 24,
+                ),
               ),
               const SizedBox(height: 14),
-              Text(hard ? 'Heads up — this is destructive' : 'Confirm ${a.name}',
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.txt)),
+              Text(
+                hard ? 'Heads up — this is destructive' : 'Confirm ${a.name}',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.txt,
+                ),
+              ),
               const SizedBox(height: 8),
-              Text(_confirmBody(a),
-                  style: const TextStyle(
-                      fontSize: 13, height: 1.5, color: AppColors.dim)),
+              Text(
+                _confirmBody(a),
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AppColors.dim,
+                ),
+              ),
               const SizedBox(height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -175,18 +192,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _confirmBody(FlashAction a) => switch (a.id) {
-        'flash_only' =>
-          'No backup will be taken. If this write goes wrong there is nothing to restore from. Only do this if you already have a good dump.',
-        'flash_slot0' =>
-          'Only application slot 0 is erased and written. The bootloader and identity block stay untouched.',
-        'flash_backup' =>
-          'A full 128 KB backup runs first, then your firmware is written and verified. Keep the wires steady the whole time.',
-        'flash_compat' =>
-          'Backs up the chip, patches its own firmware for SHU compatibility, and flashes it back. The original is saved first. Keep the wires steady.',
-        'rdp_rescue' =>
-          'Clearing read protection triggers a full mass-erase — all firmware is wiped. Uses the deterministic option-byte rewrite. Continue only on a chip you accept erasing.',
-        _ => a.sub,
-      };
+    'flash_only' =>
+      'No backup will be taken. If this write goes wrong there is nothing to restore from. Only do this if you already have a good dump.',
+    'flash_slot0' =>
+      'Only application slot 0 is erased and written. The bootloader and identity block stay untouched.',
+    'flash_backup' =>
+      'A full 128 KB backup runs first, then your firmware is written and verified. Keep the wires steady the whole time.',
+    'flash_compat' =>
+      'Backs up the chip, patches its own firmware for SHU compatibility, and flashes it back. The original is saved first. Keep the wires steady.',
+    'rdp_rescue' =>
+      'Clearing read protection triggers a full mass-erase — all firmware is wiped. Uses the deterministic option-byte rewrite. Continue only on a chip you accept erasing.',
+    _ => a.sub,
+  };
 
   void _showSettings() {
     showDialog(
@@ -204,88 +221,111 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+                maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+              ),
               child: SingleChildScrollView(
                 child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.settings_rounded,
-                        color: AppColors.brand, size: 22),
-                    SizedBox(width: 10),
-                    Text('Settings',
-                        style: TextStyle(
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.settings_rounded,
+                          color: AppColors.brand,
+                          size: 22,
+                        ),
+                        SizedBox(width: 10),
+                        Text(
+                          'Settings',
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
-                            color: AppColors.txt)),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                _SettingRow(
-                  label: 'Default connection',
-                  child: _ModeDropdown(c: c, onChanged: () => setLocal(() {})),
-                ),
-                const SizedBox(height: 14),
-                _SettingRow(
-                  label: 'Hold countdown',
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _StepBtn(
-                          icon: Icons.remove,
-                          onTap: () {
-                            c.setDefaultCountdown(c.defaultCountdown - 1);
-                            setLocal(() {});
-                          }),
-                      SizedBox(
-                        width: 30,
-                        child: Text('${c.defaultCountdown}',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
+                            color: AppColors.txt,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    _SettingRow(
+                      label: 'Default connection',
+                      child: _ModeDropdown(
+                        c: c,
+                        onChanged: () => setLocal(() {}),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _SettingRow(
+                      label: 'Hold countdown',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _StepBtn(
+                            icon: Icons.remove,
+                            onTap: () {
+                              c.setDefaultCountdown(c.defaultCountdown - 1);
+                              setLocal(() {});
+                            },
+                          ),
+                          SizedBox(
+                            width: 30,
+                            child: Text(
+                              '${c.defaultCountdown}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
                                 fontFamily: kMono,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.txt)),
+                                color: AppColors.txt,
+                              ),
+                            ),
+                          ),
+                          _StepBtn(
+                            icon: Icons.add,
+                            onTap: () {
+                              c.setDefaultCountdown(c.defaultCountdown + 1);
+                              setLocal(() {});
+                            },
+                          ),
+                        ],
                       ),
-                      _StepBtn(
-                          icon: Icons.add,
-                          onTap: () {
-                            c.setDefaultCountdown(c.defaultCountdown + 1);
-                            setLocal(() {});
-                          }),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _SettingRow(
-                  label: 'Theme accent',
-                  child: _AccentPicker(c: c, onChanged: () => setLocal(() {})),
-                ),
-                const Divider(color: AppColors.line, height: 28),
-                _BackupSettingsSection(c: c),
-                const Divider(color: AppColors.line, height: 28),
-                Text('x3utils  ·  v$kAppVersion',
-                    style: const TextStyle(
+                    ),
+                    const SizedBox(height: 14),
+                    _SettingRow(
+                      label: 'Theme accent',
+                      child: _AccentPicker(
+                        c: c,
+                        onChanged: () => setLocal(() {}),
+                      ),
+                    ),
+                    const Divider(color: AppColors.line, height: 28),
+                    _BackupSettingsSection(c: c),
+                    const Divider(color: AppColors.line, height: 28),
+                    Text(
+                      'x3utils  ·  v$kAppVersion',
+                      style: const TextStyle(
                         color: AppColors.dim,
                         fontSize: 12,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                const Text('Engine: bundled OpenOCD (frozen) · AT32F415',
-                    style: TextStyle(color: AppColors.mut, fontSize: 12)),
-                const SizedBox(height: 20),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: _PillButton(
-                    label: 'Done',
-                    onTap: () => Navigator.pop(ctx),
-                    gradient: [AppColors.brand, AppColors.brand2],
-                    fg: const Color(0xFF04120F),
-                    small: true,
-                  ),
-                ),
-              ],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Engine: bundled OpenOCD (frozen) · AT32F415',
+                      style: TextStyle(color: AppColors.mut, fontSize: 12),
+                    ),
+                    const SizedBox(height: 20),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _PillButton(
+                        label: 'Done',
+                        onTap: () => Navigator.pop(ctx),
+                        gradient: [AppColors.brand, AppColors.brand2],
+                        fg: const Color(0xFF04120F),
+                        small: true,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -308,82 +348,93 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Focus(
           autofocus: true,
           child: ListenableBuilder(
-        listenable: c,
-        builder: (context, _) => Column(
-          children: [
-            _TitleBar(c: c, onSettings: _showSettings),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final maxH = constraints.maxHeight;
-                  final double h = c.consoleHeight
-                      .clamp(140.0, math.max(140.0, maxH - 100))
-                      .toDouble();
-                  final mainRow = Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _Rail(c: c),
-                      Expanded(
-                          child: _MainArea(
+            listenable: c,
+            builder: (context, _) => Column(
+              children: [
+                _TitleBar(c: c, onSettings: _showSettings),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final maxH = constraints.maxHeight;
+                      final double h = c.consoleHeight
+                          .clamp(140.0, math.max(140.0, maxH - 100))
+                          .toDouble();
+                      final mainRow = Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _Rail(c: c),
+                          Expanded(
+                            child: _MainArea(
                               c: c,
                               onStart: _onStart,
-                              onPickFirmware: _pickFirmware)),
-                    ],
-                  );
-
-                  // Pinned → dock alongside (pushes content up, stays put).
-                  if (c.consoleOpen && c.consolePinned) {
-                    return Column(
-                      children: [
-                        Expanded(child: mainRow),
-                        _ConsolePanel(
-                            c: c, height: h, maxHeight: maxH, docked: true),
-                      ],
-                    );
-                  }
-
-                  // Unpinned → float over, but reserve its height so the hero
-                  // centers ABOVE it instead of being hidden behind it.
-                  return Stack(
-                    children: [
-                      Padding(
-                        padding: EdgeInsets.only(
-                            bottom:
-                                c.consoleOpen && !c.consolePinned ? h : 0),
-                        child: mainRow,
-                      ),
-                      if (c.consoleOpen && !c.consolePinned)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          top: 0,
-                          bottom: h,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: c.toggleConsole,
+                              onPickFirmware: _pickFirmware,
+                            ),
                           ),
-                        ),
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: AnimatedSlide(
-                          offset:
-                              c.consoleOpen ? Offset.zero : const Offset(0, 1),
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                          child: _ConsolePanel(
-                              c: c, height: h, maxHeight: maxH, docked: false),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
+                        ],
+                      );
+
+                      // Pinned → dock alongside (pushes content up, stays put).
+                      if (c.consoleOpen && c.consolePinned) {
+                        return Column(
+                          children: [
+                            Expanded(child: mainRow),
+                            _ConsolePanel(
+                              c: c,
+                              height: h,
+                              maxHeight: maxH,
+                              docked: true,
+                            ),
+                          ],
+                        );
+                      }
+
+                      // Unpinned → float over, but reserve its height so the hero
+                      // centers ABOVE it instead of being hidden behind it.
+                      return Stack(
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.only(
+                              bottom: c.consoleOpen && !c.consolePinned ? h : 0,
+                            ),
+                            child: mainRow,
+                          ),
+                          if (c.consoleOpen && !c.consolePinned)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              top: 0,
+                              bottom: h,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: c.toggleConsole,
+                              ),
+                            ),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: AnimatedSlide(
+                              offset: c.consoleOpen
+                                  ? Offset.zero
+                                  : const Offset(0, 1),
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                              child: _ConsolePanel(
+                                c: c,
+                                height: h,
+                                maxHeight: maxH,
+                                docked: false,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
         ),
       ),
     );
@@ -413,36 +464,56 @@ class _TitleBar extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               gradient: SweepGradient(
-                colors: [AppColors.brand, AppColors.brand2, AppColors.pop, AppColors.brand],
+                colors: [
+                  AppColors.brand,
+                  AppColors.brand2,
+                  AppColors.pop,
+                  AppColors.brand,
+                ],
               ),
               boxShadow: [
-                BoxShadow(color: AppColors.brand.withValues(alpha: 0.5), blurRadius: 18),
+                BoxShadow(
+                  color: AppColors.brand.withValues(alpha: 0.5),
+                  blurRadius: 18,
+                ),
               ],
             ),
             child: const Icon(Icons.bolt, size: 16, color: Color(0xFF04120F)),
           ),
           const SizedBox(width: 11),
-          const Text('x3utils',
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.txt)),
+          const Text(
+            'x3utils',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.txt,
+            ),
+          ),
           const SizedBox(width: 10),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
               color: AppColors.brand.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppColors.brand.withValues(alpha: 0.35)),
+              border: Border.all(
+                color: AppColors.brand.withValues(alpha: 0.35),
+              ),
             ),
-            child: Text('v$kAppVersion',
-                style: TextStyle(
-                    fontFamily: kMono,
-                    fontSize: 11,
-                    color: AppColors.brand,
-                    fontWeight: FontWeight.w600)),
+            child: Text(
+              'v$kAppVersion',
+              style: TextStyle(
+                fontFamily: kMono,
+                fontSize: 11,
+                color: AppColors.brand,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           const Spacer(),
-          const Text('AT32F415 · X3 controller',
-              style: TextStyle(fontSize: 12, color: AppColors.mut)),
+          const Text(
+            'AT32F415 · X3 controller',
+            style: TextStyle(fontSize: 12, color: AppColors.mut),
+          ),
           const SizedBox(width: 8),
           _BarIconButton(
             icon: Icons.terminal_rounded,
@@ -463,22 +534,26 @@ class _TitleBar extends StatelessWidget {
 }
 
 class _BarIconButton extends StatelessWidget {
-  const _BarIconButton(
-      {required this.icon, required this.onTap, this.tooltip, this.active = false});
+  const _BarIconButton({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+    this.active = false,
+  });
   final IconData icon;
   final VoidCallback onTap;
   final String? tooltip;
   final bool active;
   @override
   Widget build(BuildContext context) => IconButton(
-        onPressed: onTap,
-        icon: Icon(icon, size: 18),
-        color: active ? AppColors.brand : AppColors.dim,
-        tooltip: tooltip,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.all(6),
-        constraints: const BoxConstraints(),
-      );
+    onPressed: onTap,
+    icon: Icon(icon, size: 18),
+    color: active ? AppColors.brand : AppColors.dim,
+    tooltip: tooltip,
+    visualDensity: VisualDensity.compact,
+    padding: const EdgeInsets.all(6),
+    constraints: const BoxConstraints(),
+  );
 }
 
 class _TitleMenu extends StatelessWidget {
@@ -512,8 +587,11 @@ class _TitleMenu extends StatelessWidget {
         }
       },
       itemBuilder: (_) => [
-        _mi('console', Icons.terminal_rounded,
-            c.consoleOpen ? 'Hide console' : 'Show console'),
+        _mi(
+          'console',
+          Icons.terminal_rounded,
+          c.consoleOpen ? 'Hide console' : 'Show console',
+        ),
         _mi('settings', Icons.settings_rounded, 'Settings…'),
         const PopupMenuDivider(),
         _mi('about', Icons.info_outline_rounded, 'About'),
@@ -522,16 +600,16 @@ class _TitleMenu extends StatelessWidget {
   }
 
   PopupMenuItem<String> _mi(String v, IconData i, String t) => PopupMenuItem(
-        value: v,
-        height: 40,
-        child: Row(
-          children: [
-            Icon(i, size: 16, color: AppColors.dim),
-            const SizedBox(width: 10),
-            Text(t, style: const TextStyle(color: AppColors.txt, fontSize: 13)),
-          ],
-        ),
-      );
+    value: v,
+    height: 40,
+    child: Row(
+      children: [
+        Icon(i, size: 16, color: AppColors.dim),
+        const SizedBox(width: 10),
+        Text(t, style: const TextStyle(color: AppColors.txt, fontSize: 13)),
+      ],
+    ),
+  );
 }
 
 // ─────────────────────────────────────────── left rail
@@ -553,14 +631,17 @@ class _Rail extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const _RailLabel('Connection'),
-            for (final m in c.modesIn(Section.standard)) _ModeTile(c: c, mode: m),
+            for (final m in c.modesIn(Section.standard))
+              _ModeTile(c: c, mode: m),
             if (c.mode.guided) ...[
               const SizedBox(height: 8),
               _CountdownStepper(c: c),
             ],
             const SizedBox(height: 20),
             const _RailLabel('Actions'),
-            for (final a in kActions.where((a) => a.section == Section.standard))
+            for (final a in kActions.where(
+              (a) => a.section == Section.standard,
+            ))
               _ActionTile(c: c, action: a),
             const SizedBox(height: 14),
             _AdvancedToggle(c: c),
@@ -575,8 +656,9 @@ class _Rail extends StatelessWidget {
                         const SizedBox(height: 6),
                         for (final m in c.modesIn(Section.advanced))
                           _ModeTile(c: c, mode: m),
-                        for (final a
-                            in kActions.where((a) => a.section == Section.advanced))
+                        for (final a in kActions.where(
+                          (a) => a.section == Section.advanced,
+                        ))
                           _ActionTile(c: c, action: a),
                       ],
                     )
@@ -594,14 +676,17 @@ class _RailLabel extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(2, 4, 2, 8),
-        child: Text(text.toUpperCase(),
-            style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.6,
-                color: AppColors.mut)),
-      );
+    padding: const EdgeInsets.fromLTRB(2, 4, 2, 8),
+    child: Text(
+      text.toUpperCase(),
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.6,
+        color: AppColors.mut,
+      ),
+    ),
+  );
 }
 
 class _AdvancedToggle extends StatelessWidget {
@@ -618,21 +703,32 @@ class _AdvancedToggle extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
           child: Row(
             children: [
-              const Text('ADVANCED',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.6,
-                      color: AppColors.mut)),
+              const Text(
+                'ADVANCED',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.6,
+                  color: AppColors.mut,
+                ),
+              ),
               const SizedBox(width: 7),
-              Icon(c.advancedOpen ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
-                  size: 12, color: AppColors.mut),
+              Icon(
+                c.advancedOpen
+                    ? Icons.lock_open_rounded
+                    : Icons.lock_outline_rounded,
+                size: 12,
+                color: AppColors.mut,
+              ),
               const Spacer(),
               AnimatedRotation(
                 turns: c.advancedOpen ? 0.5 : 0,
                 duration: const Duration(milliseconds: 200),
-                child: const Icon(Icons.expand_more_rounded,
-                    size: 18, color: AppColors.dim),
+                child: const Icon(
+                  Icons.expand_more_rounded,
+                  size: 18,
+                  color: AppColors.dim,
+                ),
               ),
             ],
           ),
@@ -656,7 +752,9 @@ class _ModeTile extends StatelessWidget {
     final target = await showMenu<Section>(
       context: context,
       position: RelativeRect.fromRect(
-          pos & const Size(40, 40), Offset.zero & overlay.size),
+        pos & const Size(40, 40),
+        Offset.zero & overlay.size,
+      ),
       items: [
         PopupMenuItem(
           value: inAdvanced ? Section.standard : Section.advanced,
@@ -673,7 +771,9 @@ class _ModeTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 7),
       child: Material(
-        color: selected ? AppColors.brand.withValues(alpha: 0.08) : AppColors.panel,
+        color: selected
+            ? AppColors.brand.withValues(alpha: 0.08)
+            : AppColors.panel,
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
@@ -684,9 +784,10 @@ class _ModeTile extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                  color: selected
-                      ? AppColors.brand.withValues(alpha: 0.55)
-                      : AppColors.line),
+                color: selected
+                    ? AppColors.brand.withValues(alpha: 0.55)
+                    : AppColors.line,
+              ),
             ),
             child: Row(
               children: [
@@ -698,28 +799,40 @@ class _ModeTile extends StatelessWidget {
                     color: selected ? AppColors.brand : const Color(0x0DFFFFFF),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                        color: selected ? Colors.transparent : AppColors.line),
+                      color: selected ? Colors.transparent : AppColors.line,
+                    ),
                   ),
-                  child: Text(mode.tag,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                          color: selected ? const Color(0xFF04120F) : AppColors.dim)),
+                  child: Text(
+                    mode.tag,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: selected ? const Color(0xFF04120F) : AppColors.dim,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 11),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(mode.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.txt)),
-                      Text(mode.sub,
-                          style: const TextStyle(fontSize: 11, color: AppColors.dim)),
+                      Text(
+                        mode.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.txt,
+                        ),
+                      ),
+                      Text(
+                        mode.sub,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.dim,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -747,21 +860,32 @@ class _CountdownStepper extends StatelessWidget {
       child: Row(
         children: [
           const Expanded(
-            child: Text('Hold countdown',
-                style: TextStyle(fontSize: 12, color: AppColors.dim)),
+            child: Text(
+              'Hold countdown',
+              style: TextStyle(fontSize: 12, color: AppColors.dim),
+            ),
           ),
-          _StepBtn(icon: Icons.remove, onTap: () => c.setCountdown(c.countdownSeconds - 1)),
+          _StepBtn(
+            icon: Icons.remove,
+            onTap: () => c.setCountdown(c.countdownSeconds - 1),
+          ),
           SizedBox(
             width: 30,
-            child: Text('${c.countdownSeconds}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontFamily: kMono,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.txt)),
+            child: Text(
+              '${c.countdownSeconds}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: kMono,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.txt,
+              ),
+            ),
           ),
-          _StepBtn(icon: Icons.add, onTap: () => c.setCountdown(c.countdownSeconds + 1)),
+          _StepBtn(
+            icon: Icons.add,
+            onTap: () => c.setCountdown(c.countdownSeconds + 1),
+          ),
         ],
       ),
     );
@@ -774,17 +898,17 @@ class _StepBtn extends StatelessWidget {
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) => Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Icon(icon, size: 16, color: AppColors.txt),
-          ),
-        ),
-      );
+    color: Colors.transparent,
+    shape: const CircleBorder(),
+    child: InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(icon, size: 16, color: AppColors.txt),
+      ),
+    ),
+  );
 }
 
 class _ActionTile extends StatelessWidget {
@@ -806,11 +930,15 @@ class _ActionTile extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               onTap: () => c.selectAction(action.id),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                      color: selected ? AppColors.line2 : Colors.transparent),
+                    color: selected ? AppColors.line2 : Colors.transparent,
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -818,27 +946,35 @@ class _ActionTile extends StatelessWidget {
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                          color: action.danger.dot, shape: BoxShape.circle),
+                        color: action.danger.dot,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                     const SizedBox(width: 11),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(action.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.txt)),
-                          Text(action.script,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontFamily: kMono,
-                                  fontSize: 11,
-                                  color: AppColors.dim)),
+                          Text(
+                            action.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.txt,
+                            ),
+                          ),
+                          Text(
+                            action.script,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: kMono,
+                              fontSize: 11,
+                              color: AppColors.dim,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -872,8 +1008,11 @@ class _ActionTile extends StatelessWidget {
 // ─────────────────────────────────────────── main area
 
 class _MainArea extends StatelessWidget {
-  const _MainArea(
-      {required this.c, required this.onStart, required this.onPickFirmware});
+  const _MainArea({
+    required this.c,
+    required this.onStart,
+    required this.onPickFirmware,
+  });
   final AppController c;
   final Future<void> Function() onStart;
   final Future<void> Function() onPickFirmware;
@@ -893,15 +1032,23 @@ class _MainArea extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(a.name,
-                        style: const TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.txt)),
+                    Text(
+                      a.name,
+                      style: const TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.txt,
+                      ),
+                    ),
                     const SizedBox(height: 5),
-                    Text(a.sub,
-                        style: const TextStyle(
-                            fontSize: 13, height: 1.45, color: AppColors.dim)),
+                    Text(
+                      a.sub,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.45,
+                        color: AppColors.dim,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -919,8 +1066,12 @@ class _MainArea extends StatelessWidget {
           ),
         ),
         Expanded(
-            child: _HeroStage(
-                c: c, onStart: onStart, onPickFirmware: onPickFirmware)),
+          child: _HeroStage(
+            c: c,
+            onStart: onStart,
+            onPickFirmware: onPickFirmware,
+          ),
+        ),
         _StatusBar(c: c),
       ],
     );
@@ -944,14 +1095,20 @@ class _Chip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-              width: 6, height: 6, decoration: BoxDecoration(color: col, shape: BoxShape.circle)),
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: col, shape: BoxShape.circle),
+          ),
           const SizedBox(width: 5),
-          Text(data.label.toUpperCase(),
-              style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                  color: col)),
+          Text(
+            data.label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+              color: col,
+            ),
+          ),
         ],
       ),
     );
@@ -961,8 +1118,11 @@ class _Chip extends StatelessWidget {
 // ─────────────────────────────────────────── hero stage
 
 class _HeroStage extends StatefulWidget {
-  const _HeroStage(
-      {required this.c, required this.onStart, required this.onPickFirmware});
+  const _HeroStage({
+    required this.c,
+    required this.onStart,
+    required this.onPickFirmware,
+  });
   final AppController c;
   final Future<void> Function() onStart;
   final Future<void> Function() onPickFirmware;
@@ -972,9 +1132,10 @@ class _HeroStage extends StatefulWidget {
 
 class _HeroStageState extends State<_HeroStage>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
-        ..repeat();
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat();
 
   @override
   void dispose() {
@@ -1009,12 +1170,16 @@ class _HeroStageState extends State<_HeroStage>
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
                 decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(18),
+                  ),
                   gradient: RadialGradient(
                     center: Alignment.topCenter,
                     radius: 1.1,
                     colors: [
-                      accent.withValues(alpha: c.stage == StageState.idle ? 0.05 : 0.16),
+                      accent.withValues(
+                        alpha: c.stage == StageState.idle ? 0.05 : 0.16,
+                      ),
                       Colors.transparent,
                     ],
                   ),
@@ -1030,25 +1195,36 @@ class _HeroStageState extends State<_HeroStage>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(c.eyebrow.toUpperCase(),
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 2.8,
-                                color: accent)),
+                        Text(
+                          c.eyebrow.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 2.8,
+                            color: accent,
+                          ),
+                        ),
                         const SizedBox(height: 14),
-                        Text(c.title,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w800,
-                                height: 1.08,
-                                color: AppColors.txt)),
+                        Text(
+                          c.title,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                            height: 1.08,
+                            color: AppColors.txt,
+                          ),
+                        ),
                         const SizedBox(height: 12),
-                        Text(c.sub,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                fontSize: 14, height: 1.5, color: AppColors.dim)),
+                        Text(
+                          c.sub,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.5,
+                            color: AppColors.dim,
+                          ),
+                        ),
                         const SizedBox(height: 22),
                         _Visual(c: c, accent: accent, pulse: _pulse),
                         if (c.stage == StageState.idle &&
@@ -1105,12 +1281,15 @@ class _Visual extends StatelessWidget {
           child: CustomPaint(
             painter: _RingPainter(frac, accent),
             child: Center(
-              child: Text('${c.countdownValue}',
-                  style: TextStyle(
-                      fontFamily: kMono,
-                      fontSize: 56,
-                      fontWeight: FontWeight.w800,
-                      color: accent)),
+              child: Text(
+                '${c.countdownValue}',
+                style: TextStyle(
+                  fontFamily: kMono,
+                  fontSize: 56,
+                  fontWeight: FontWeight.w800,
+                  color: accent,
+                ),
+              ),
             ),
           ),
         );
@@ -1119,7 +1298,10 @@ class _Visual extends StatelessWidget {
           width: 64,
           height: 64,
           child: CircularProgressIndicator(
-              strokeWidth: 5, color: accent, backgroundColor: AppColors.line2),
+            strokeWidth: 5,
+            color: accent,
+            backgroundColor: AppColors.line2,
+          ),
         );
       case StageState.run:
         return _Progress(c: c);
@@ -1137,8 +1319,11 @@ class _Visual extends StatelessWidget {
 /// (hold — press the wire on) or OUT of it (release — pull the wire off), with
 /// a pulsing glowing contact dot.
 class _Pad extends StatelessWidget {
-  const _Pad(
-      {required this.accent, required this.pulse, required this.release});
+  const _Pad({
+    required this.accent,
+    required this.pulse,
+    required this.release,
+  });
   final Color accent;
   final AnimationController pulse;
   final bool release;
@@ -1151,7 +1336,10 @@ class _Pad extends StatelessWidget {
         animation: pulse,
         builder: (context, _) => CustomPaint(
           painter: _PadPainter(
-              accent: accent, t: pulse.value, release: release),
+            accent: accent,
+            t: pulse.value,
+            release: release,
+          ),
         ),
       ),
     );
@@ -1169,7 +1357,11 @@ class _PadPainter extends CustomPainter {
     final cy = size.height / 2;
     const padSize = 68.0;
     final padRect = Rect.fromLTWH(
-        size.width - padSize, (size.height - padSize) / 2, padSize, padSize);
+      size.width - padSize,
+      (size.height - padSize) / 2,
+      padSize,
+      padSize,
+    );
     final rrect = RRect.fromRectAndRadius(padRect, const Radius.circular(18));
     final center = padRect.center;
 
@@ -1177,14 +1369,14 @@ class _PadPainter extends CustomPainter {
     final g = 0.5 + 0.5 * math.sin(t * 2 * math.pi);
 
     // pad body
+    canvas.drawRRect(rrect, Paint()..color = const Color(0xFF1B2331));
     canvas.drawRRect(
-        rrect, Paint()..color = const Color(0xFF1B2331));
-    canvas.drawRRect(
-        rrect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5
-          ..color = AppColors.line2);
+      rrect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = AppColors.line2,
+    );
 
     // wire tip (arrow) + tail
     final padSide = Offset(padRect.left - 8, cy);
@@ -1199,8 +1391,7 @@ class _PadPainter extends CustomPainter {
       Paint()
         ..strokeWidth = 4
         ..strokeCap = StrokeCap.round
-        ..shader = ui.Gradient.linear(
-            tail, tip, [AppColors.mut, accent]),
+        ..shader = ui.Gradient.linear(tail, tip, [AppColors.mut, accent]),
     );
 
     // arrowhead
@@ -1217,20 +1408,25 @@ class _PadPainter extends CustomPainter {
 
     // glowing contact dot
     canvas.drawCircle(
-        center,
-        24,
-        Paint()
-          ..color = accent.withValues(alpha: 0.10 + 0.12 * g)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 10 + 4 * g));
+      center,
+      24,
+      Paint()
+        ..color = accent.withValues(alpha: 0.10 + 0.12 * g)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 10 + 4 * g),
+    );
     canvas.drawCircle(
-        center,
-        15,
-        Paint()
-          ..color = accent.withValues(alpha: 0.35)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+      center,
+      15,
+      Paint()
+        ..color = accent.withValues(alpha: 0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
     canvas.drawCircle(center, 11, Paint()..color = accent);
-    canvas.drawCircle(center.translate(-3, -3), 3.5,
-        Paint()..color = Colors.white.withValues(alpha: 0.55));
+    canvas.drawCircle(
+      center.translate(-3, -3),
+      3.5,
+      Paint()..color = Colors.white.withValues(alpha: 0.55),
+    );
   }
 
   @override
@@ -1259,12 +1455,17 @@ class _Progress extends StatelessWidget {
               valueColor: AlwaysStoppedAnimation(AppColors.brand),
             ),
           ),
+          if (c.progressDetail.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _MiniConsoleLine(text: c.progressDetail),
+          ],
           const SizedBox(height: 16),
           for (var i = 0; i < a.stages.length; i++)
             _StageRow(
               label: a.stages[i],
               done: i < c.stageDone.length && c.stageDone[i],
-              active: i == c.activeStage &&
+              active:
+                  i == c.activeStage &&
                   !(i < c.stageDone.length && c.stageDone[i]),
             ),
         ],
@@ -1273,9 +1474,33 @@ class _Progress extends StatelessWidget {
   }
 }
 
+class _MiniConsoleLine extends StatelessWidget {
+  const _MiniConsoleLine({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        fontFamily: kMono,
+        fontSize: 12,
+        color: AppColors.hold,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+}
+
 class _StageRow extends StatelessWidget {
-  const _StageRow(
-      {required this.label, required this.done, required this.active});
+  const _StageRow({
+    required this.label,
+    required this.done,
+    required this.active,
+  });
   final String label;
   final bool done;
   final bool active;
@@ -1284,8 +1509,8 @@ class _StageRow extends StatelessWidget {
     final color = done
         ? AppColors.dim
         : active
-            ? AppColors.txt
-            : AppColors.mut;
+        ? AppColors.txt
+        : AppColors.mut;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1298,29 +1523,36 @@ class _StageRow extends StatelessWidget {
               shape: BoxShape.circle,
               color: done ? AppColors.ok : Colors.transparent,
               border: Border.all(
-                  color: done
-                      ? AppColors.ok
-                      : active
-                          ? AppColors.brand
-                          : AppColors.line2,
-                  width: 2),
+                color: done
+                    ? AppColors.ok
+                    : active
+                    ? AppColors.brand
+                    : AppColors.line2,
+                width: 2,
+              ),
             ),
             child: done
                 ? const Icon(Icons.check, size: 12, color: Color(0xFF04120F))
                 : active
-                    ? SizedBox(
-                        width: 9,
-                        height: 9,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.brand))
-                    : null,
+                ? SizedBox(
+                    width: 9,
+                    height: 9,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.brand,
+                    ),
+                  )
+                : null,
           ),
           const SizedBox(width: 11),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 13,
-                  color: color,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              color: color,
+              fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
         ],
       ),
     );
@@ -1333,17 +1565,17 @@ class _ResultBadge extends StatelessWidget {
   final IconData icon;
   @override
   Widget build(BuildContext context) => Container(
-        width: 112,
-        height: 112,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: accent, width: 2),
-          gradient: RadialGradient(
-            colors: [accent.withValues(alpha: 0.18), Colors.transparent],
-          ),
-        ),
-        child: Icon(icon, size: 52, color: accent),
-      );
+    width: 112,
+    height: 112,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: accent, width: 2),
+      gradient: RadialGradient(
+        colors: [accent.withValues(alpha: 0.18), Colors.transparent],
+      ),
+    ),
+    child: Icon(icon, size: 52, color: accent),
+  );
 }
 
 class _RingPainter extends CustomPainter {
@@ -1365,8 +1597,13 @@ class _RingPainter extends CustomPainter {
       ..strokeWidth = 9
       ..strokeCap = StrokeCap.round
       ..color = color;
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -math.pi / 2,
-        2 * math.pi * fraction.clamp(0.0, 1.0), false, fg);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2,
+      2 * math.pi * fraction.clamp(0.0, 1.0),
+      false,
+      fg,
+    );
   }
 
   @override
@@ -1386,68 +1623,79 @@ class _StageButtons extends StatelessWidget {
     final children = <Widget>[];
     switch (c.stage) {
       case StageState.idle:
-        final needsFirmware =
-            c.action.needsFirmware && c.firmwarePath == null;
-        children.add(_PillButton(
-          label: c.action.cta,
-          onTap: needsFirmware ? null : onStart,
-          gradient: c.action.danger == DangerLevel.hard
-              ? const [Color(0xFFFF6472), AppColors.danger]
-              : [AppColors.brand, AppColors.brand2],
-          fg: c.action.danger == DangerLevel.hard
-              ? Colors.white
-              : const Color(0xFF04120F),
-        ));
+        final needsFirmware = c.action.needsFirmware && c.firmwarePath == null;
+        children.add(
+          _PillButton(
+            label: c.action.cta,
+            onTap: needsFirmware ? null : onStart,
+            gradient: c.action.danger == DangerLevel.hard
+                ? const [Color(0xFFFF6472), AppColors.danger]
+                : [AppColors.brand, AppColors.brand2],
+            fg: c.action.danger == DangerLevel.hard
+                ? Colors.white
+                : const Color(0xFF04120F),
+          ),
+        );
         break;
       case StageState.hold:
       case StageState.release:
         final rel = c.stage == StageState.release;
-        children.add(_PillButton(
-          label: c.continueLabel,
-          onTap: c.showContinue ? c.continueStep : null,
-          gradient: rel
-              ? const [Color(0xFFFF9A5C), AppColors.release]
-              : const [Color(0xFFFFC44D), AppColors.hold],
-          fg: const Color(0xFF160F00),
-        ));
+        children.add(
+          _PillButton(
+            label: c.continueLabel,
+            onTap: c.showContinue ? c.continueStep : null,
+            gradient: rel
+                ? const [Color(0xFFFF9A5C), AppColors.release]
+                : const [Color(0xFFFFC44D), AppColors.hold],
+            fg: const Color(0xFF160F00),
+          ),
+        );
         children.add(_cancel(c));
         break;
       case StageState.count:
       case StageState.connect:
       case StageState.run:
         if (c.showContinue) {
-          children.add(_PillButton(
-            label: c.continueLabel,
-            onTap: c.continueStep,
-            gradient: [AppColors.brand, AppColors.brand2],
-            fg: const Color(0xFF04120F),
-          ));
+          children.add(
+            _PillButton(
+              label: c.continueLabel,
+              onTap: c.continueStep,
+              gradient: [AppColors.brand, AppColors.brand2],
+              fg: const Color(0xFF04120F),
+            ),
+          );
         }
         children.add(_cancel(c));
         break;
       case StageState.ok:
       case StageState.warn:
-        children.add(_PillButton(
-          label: 'Done',
-          onTap: c.dismiss,
-          gradient: [AppColors.brand, AppColors.brand2],
-          fg: const Color(0xFF04120F),
-        ));
+        children.add(
+          _PillButton(
+            label: 'Done',
+            onTap: c.dismiss,
+            gradient: [AppColors.brand, AppColors.brand2],
+            fg: const Color(0xFF04120F),
+          ),
+        );
         break;
       case StageState.fail:
-        children.add(_PillButton(
-          label: 'Retry',
-          onTap: () => c.retry(),
-          gradient: [AppColors.brand, AppColors.brand2],
-          fg: const Color(0xFF04120F),
-        ));
-        children.add(_PillButton(
-          label: 'Dismiss',
-          onTap: c.dismiss,
-          bg: AppColors.line,
-          fg: AppColors.txt,
-          border: AppColors.line2,
-        ));
+        children.add(
+          _PillButton(
+            label: 'Retry',
+            onTap: () => c.retry(),
+            gradient: [AppColors.brand, AppColors.brand2],
+            fg: const Color(0xFF04120F),
+          ),
+        );
+        children.add(
+          _PillButton(
+            label: 'Dismiss',
+            onTap: c.dismiss,
+            bg: AppColors.line,
+            fg: AppColors.txt,
+            border: AppColors.line2,
+          ),
+        );
         break;
     }
     return Wrap(
@@ -1459,12 +1707,12 @@ class _StageButtons extends StatelessWidget {
   }
 
   Widget _cancel(AppController c) => _PillButton(
-        label: 'Cancel',
-        onTap: c.cancel,
-        bg: AppColors.line,
-        fg: AppColors.txt,
-        border: AppColors.line2,
-      );
+    label: 'Cancel',
+    onTap: c.cancel,
+    bg: AppColors.line,
+    fg: AppColors.txt,
+    border: AppColors.line2,
+  );
 }
 
 class _PillButton extends StatelessWidget {
@@ -1497,7 +1745,9 @@ class _PillButton extends StatelessWidget {
           onTap: onTap,
           child: Container(
             padding: EdgeInsets.symmetric(
-                horizontal: small ? 16 : 22, vertical: small ? 10 : 12),
+              horizontal: small ? 16 : 22,
+              vertical: small ? 10 : 12,
+            ),
             decoration: BoxDecoration(
               color: gradient == null ? (bg ?? Colors.transparent) : null,
               gradient: gradient == null
@@ -1505,23 +1755,28 @@ class _PillButton extends StatelessWidget {
                   : LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: gradient!),
+                      colors: gradient!,
+                    ),
               borderRadius: BorderRadius.circular(999),
               border: border == null ? null : Border.all(color: border!),
               boxShadow: gradient == null
                   ? null
                   : [
                       BoxShadow(
-                          color: gradient!.last.withValues(alpha: 0.35),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8)),
+                        color: gradient!.last.withValues(alpha: 0.35),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
                     ],
             ),
-            child: Text(label,
-                style: TextStyle(
-                    fontSize: small ? 13 : 14,
-                    fontWeight: FontWeight.w700,
-                    color: fg)),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: small ? 13 : 14,
+                fontWeight: FontWeight.w700,
+                color: fg,
+              ),
+            ),
           ),
         ),
       ),
@@ -1546,12 +1801,15 @@ class _StatusBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _stat('OpenOCD', c.openOcdStatus,
-              led: c.openOcdStatus == 'ready'
-                  ? AppColors.ok
-                  : c.openOcdStatus == 'missing'
-                      ? AppColors.danger
-                      : AppColors.hold),
+          _stat(
+            'OpenOCD',
+            c.openOcdStatus,
+            led: c.openOcdStatus == 'ready'
+                ? AppColors.ok
+                : c.openOcdStatus == 'missing'
+                ? AppColors.danger
+                : AppColors.hold,
+          ),
           _sep(),
           _stat('Mode', c.mode.title),
           _sep(),
@@ -1562,11 +1820,14 @@ class _StatusBar extends StatelessWidget {
             borderRadius: BorderRadius.circular(6),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              child: Text(c.consoleOpen ? '▾ Console' : '▤ Console',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.brand,
-                      fontWeight: FontWeight.w600)),
+              child: Text(
+                c.consoleOpen ? '▾ Console' : '▤ Console',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.brand,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ],
@@ -1575,38 +1836,41 @@ class _StatusBar extends StatelessWidget {
   }
 
   Widget _stat(String k, String v, {Color? led}) => Row(
-        children: [
-          if (led != null) ...[
-            Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                    color: led,
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: led, blurRadius: 8)])),
-            const SizedBox(width: 7),
-          ],
-          Text('$k ',
-              style: const TextStyle(fontSize: 12, color: AppColors.mut)),
-          Text(v, style: const TextStyle(fontSize: 12, color: AppColors.dim)),
-        ],
-      );
+    children: [
+      if (led != null) ...[
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            color: led,
+            shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: led, blurRadius: 8)],
+          ),
+        ),
+        const SizedBox(width: 7),
+      ],
+      Text('$k ', style: const TextStyle(fontSize: 12, color: AppColors.mut)),
+      Text(v, style: const TextStyle(fontSize: 12, color: AppColors.dim)),
+    ],
+  );
 
   Widget _sep() => Container(
-      width: 1,
-      height: 18,
-      margin: const EdgeInsets.symmetric(horizontal: 14),
-      color: AppColors.line);
+    width: 1,
+    height: 18,
+    margin: const EdgeInsets.symmetric(horizontal: 14),
+    color: AppColors.line,
+  );
 }
 
 // ─────────────────────────────────────────── console drawer
 
 class _ConsolePanel extends StatefulWidget {
-  const _ConsolePanel(
-      {required this.c,
-      required this.height,
-      required this.maxHeight,
-      required this.docked});
+  const _ConsolePanel({
+    required this.c,
+    required this.height,
+    required this.maxHeight,
+    required this.docked,
+  });
   final AppController c;
   final double height;
   final double maxHeight;
@@ -1626,23 +1890,29 @@ class _ConsolePanelState extends State<_ConsolePanel> {
 
   void _copy(BuildContext context) {
     final body = widget.c.console.join('\n');
-    final text =
-        body.isEmpty ? '' : '${widget.c.contextHeader()}\n\n$body';
+    final text = body.isEmpty ? '' : '${widget.c.contextHeader()}\n\n$body';
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(text.isEmpty ? 'Console is empty' : 'Console copied',
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            text.isEmpty ? 'Console is empty' : 'Console copied',
             style: const TextStyle(
-                color: AppColors.txt, fontWeight: FontWeight.w600)),
-        duration: const Duration(milliseconds: 1200),
-        behavior: SnackBarBehavior.floating,
-        width: 200,
-        backgroundColor: AppColors.elev,
-        shape: RoundedRectangleBorder(
+              color: AppColors.txt,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          duration: const Duration(milliseconds: 1200),
+          behavior: SnackBarBehavior.floating,
+          width: 200,
+          backgroundColor: AppColors.elev,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
-            side: const BorderSide(color: AppColors.line2)),
-      ));
+            side: const BorderSide(color: AppColors.line2),
+          ),
+        ),
+      );
   }
 
   @override
@@ -1658,7 +1928,11 @@ class _ConsolePanelState extends State<_ConsolePanel> {
         color: Color(0xFF080B10),
         border: Border(top: BorderSide(color: AppColors.line2)),
         boxShadow: [
-          BoxShadow(color: Color(0x66000000), blurRadius: 30, offset: Offset(0, -12)),
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 30,
+            offset: Offset(0, -12),
+          ),
         ],
       ),
       child: Column(
@@ -1673,14 +1947,19 @@ class _ConsolePanelState extends State<_ConsolePanel> {
               children: [
                 Icon(Icons.terminal_rounded, size: 16, color: AppColors.brand),
                 const SizedBox(width: 8),
-                const Text('OpenOCD console',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.txt,
-                        fontSize: 13)),
+                const Text(
+                  'OpenOCD console',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.txt,
+                    fontSize: 13,
+                  ),
+                ),
                 const SizedBox(width: 10),
-                const Text('stdout · stderr',
-                    style: TextStyle(color: AppColors.mut, fontSize: 12)),
+                const Text(
+                  'stdout · stderr',
+                  style: TextStyle(color: AppColors.mut, fontSize: 12),
+                ),
                 const SizedBox(width: 14),
                 _LogToggle(c: widget.c),
                 const Spacer(),
@@ -1697,20 +1976,31 @@ class _ConsolePanelState extends State<_ConsolePanel> {
           Expanded(
             child: lines.isEmpty
                 ? const Center(
-                    child: Text('// waiting for first action…',
-                        style: TextStyle(
-                            fontFamily: kMono, color: AppColors.mut, fontSize: 12)),
+                    child: Text(
+                      '// waiting for first action…',
+                      style: TextStyle(
+                        fontFamily: kMono,
+                        color: AppColors.mut,
+                        fontSize: 12,
+                      ),
+                    ),
                   )
                 : ListView.builder(
                     controller: _sc,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     itemCount: lines.length,
-                    itemBuilder: (_, i) => Text(lines[i],
-                        style: TextStyle(
-                            fontFamily: kMono,
-                            fontSize: 12,
-                            height: 1.55,
-                            color: _lineColor(lines[i]))),
+                    itemBuilder: (_, i) => Text(
+                      lines[i],
+                      style: TextStyle(
+                        fontFamily: kMono,
+                        fontSize: 12,
+                        height: 1.55,
+                        color: _lineColor(lines[i]),
+                      ),
+                    ),
                   ),
           ),
         ],
@@ -1744,17 +2034,20 @@ class _ConsoleAction extends StatelessWidget {
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: Text(label,
-              style: TextStyle(
-                  color: AppColors.brand,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600)),
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(6),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: AppColors.brand,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _FirmwareBar extends StatelessWidget {
@@ -1773,21 +2066,28 @@ class _FirmwareBar extends StatelessWidget {
         color: AppColors.panel,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-            color: has ? AppColors.brand.withValues(alpha: 0.4) : AppColors.line2),
+          color: has ? AppColors.brand.withValues(alpha: 0.4) : AppColors.line2,
+        ),
       ),
       child: Row(
         children: [
-          Icon(has ? Icons.memory_rounded : Icons.folder_open_rounded,
-              size: 18, color: has ? AppColors.brand : AppColors.mut),
+          Icon(
+            has ? Icons.memory_rounded : Icons.folder_open_rounded,
+            size: 18,
+            color: has ? AppColors.brand : AppColors.mut,
+          ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(name ?? 'No firmware chosen',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontFamily: has ? kMono : null,
-                    fontSize: 13,
-                    color: has ? AppColors.txt : AppColors.dim)),
+            child: Text(
+              name ?? 'No firmware chosen',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: has ? kMono : null,
+                fontSize: 13,
+                color: has ? AppColors.txt : AppColors.dim,
+              ),
+            ),
           ),
           const SizedBox(width: 10),
           _PillButton(
@@ -1830,11 +2130,14 @@ class _LogToggle extends StatelessWidget {
                 color: on ? AppColors.brand : AppColors.mut,
               ),
               const SizedBox(width: 5),
-              Text('Save log',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: on ? AppColors.brand : AppColors.mut,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                'Save log',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: on ? AppColors.brand : AppColors.mut,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -1856,8 +2159,11 @@ class _PinButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         child: Padding(
           padding: const EdgeInsets.all(3),
-          child: Icon(pinned ? Icons.push_pin : Icons.push_pin_outlined,
-              size: 16, color: pinned ? AppColors.brand : AppColors.dim),
+          child: Icon(
+            pinned ? Icons.push_pin : Icons.push_pin_outlined,
+            size: 16,
+            color: pinned ? AppColors.brand : AppColors.dim,
+          ),
         ),
       ),
     );
@@ -1907,17 +2213,20 @@ class _SettingRow extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) => Row(
-        children: [
-          Expanded(
-            child: Text(label,
-                style: const TextStyle(
-                    color: AppColors.txt,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600)),
+    children: [
+      Expanded(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.txt,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
           ),
-          child,
-        ],
-      );
+        ),
+      ),
+      child,
+    ],
+  );
 }
 
 class _AccentPicker extends StatelessWidget {
@@ -1944,7 +2253,8 @@ class _AccentPicker extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
-                      colors: [kAccents[i].brand, kAccents[i].pop]),
+                    colors: [kAccents[i].brand, kAccents[i].pop],
+                  ),
                   border: Border.all(
                     color: c.accentIndex == i
                         ? AppColors.txt
@@ -1954,8 +2264,9 @@ class _AccentPicker extends StatelessWidget {
                   boxShadow: c.accentIndex == i
                       ? [
                           BoxShadow(
-                              color: kAccents[i].brand.withValues(alpha: 0.5),
-                              blurRadius: 8)
+                            color: kAccents[i].brand.withValues(alpha: 0.5),
+                            blurRadius: 8,
+                          ),
                         ]
                       : null,
                 ),
@@ -1976,8 +2287,9 @@ class _BackupSettingsSection extends StatefulWidget {
 }
 
 class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
-  late final TextEditingController _prefix =
-      TextEditingController(text: widget.c.backupPrefix);
+  late final TextEditingController _prefix = TextEditingController(
+    text: widget.c.backupPrefix,
+  );
 
   @override
   void dispose() {
@@ -2008,31 +2320,39 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
           children: [
             Icon(Icons.folder_copy_rounded, size: 18, color: AppColors.brand),
             const SizedBox(width: 8),
-            Text('Backups',
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.txt)),
+            Text(
+              'Backups',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.txt,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 14),
         Row(
           children: [
             const Expanded(
-                child: Text('Backup folder',
-                    style: TextStyle(
-                        color: AppColors.txt,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600))),
+              child: Text(
+                'Backup folder',
+                style: TextStyle(
+                  color: AppColors.txt,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
             _ConsoleAction(label: 'Browse…', onTap: () => _browse()),
             if (c.backupFolder != null) ...[
               const SizedBox(width: 14),
               _ConsoleAction(
-                  label: 'Reset',
-                  onTap: () {
-                    c.setBackupFolder(null);
-                    setState(() {});
-                  }),
+                label: 'Reset',
+                onTap: () {
+                  c.setBackupFolder(null);
+                  setState(() {});
+                },
+              ),
             ],
           ],
         ),
@@ -2045,21 +2365,30 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: AppColors.line2),
           ),
-          child: Text(folder,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  fontFamily: kMono, fontSize: 12, color: AppColors.dim)),
+          child: Text(
+            folder,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontFamily: kMono,
+              fontSize: 12,
+              color: AppColors.dim,
+            ),
+          ),
         ),
         const SizedBox(height: 14),
         Row(
           children: [
             const Expanded(
-                child: Text('Filename prefix',
-                    style: TextStyle(
-                        color: AppColors.txt,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600))),
+              child: Text(
+                'Filename prefix',
+                style: TextStyle(
+                  color: AppColors.txt,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
             SizedBox(
               width: 150,
               child: TextField(
@@ -2069,39 +2398,55 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
                   setState(() {});
                 },
                 style: const TextStyle(
-                    color: AppColors.txt, fontSize: 13, fontFamily: kMono),
+                  color: AppColors.txt,
+                  fontSize: 13,
+                  fontFamily: kMono,
+                ),
                 decoration: InputDecoration(
                   isDense: true,
                   hintText: 'none',
                   hintStyle: const TextStyle(color: AppColors.mut),
                   filled: true,
                   fillColor: AppColors.panel2,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                   enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: AppColors.line2)),
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: AppColors.line2),
+                  ),
                   focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: AppColors.brand)),
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: AppColors.brand),
+                  ),
                 ),
               ),
             ),
           ],
         ),
         const SizedBox(height: 6),
-        Text('${pre.isEmpty ? '' : '${pre}_'}dump_<time>.bin',
-            style: const TextStyle(
-                color: AppColors.mut, fontSize: 12, fontFamily: kMono)),
+        Text(
+          '${pre.isEmpty ? '' : '${pre}_'}dump_<time>.bin',
+          style: const TextStyle(
+            color: AppColors.mut,
+            fontSize: 12,
+            fontFamily: kMono,
+          ),
+        ),
         const SizedBox(height: 10),
         Row(
           children: [
             const Expanded(
-                child: Text('Keep a 2nd copy',
-                    style: TextStyle(
-                        color: AppColors.txt,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600))),
+              child: Text(
+                'Keep a 2nd copy',
+                style: TextStyle(
+                  color: AppColors.txt,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
             Switch(
               value: c.secondCopy,
               activeThumbColor: AppColors.brand,
@@ -2112,9 +2457,14 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
             ),
           ],
         ),
-        Text(Firmware.secondCopyLabel,
-            style: const TextStyle(
-                color: AppColors.mut, fontSize: 12, fontFamily: kMono)),
+        Text(
+          Firmware.secondCopyLabel,
+          style: const TextStyle(
+            color: AppColors.mut,
+            fontSize: 12,
+            fontFamily: kMono,
+          ),
+        ),
       ],
     );
   }
@@ -2126,30 +2476,30 @@ class _ModeDropdown extends StatelessWidget {
   final VoidCallback onChanged;
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: AppColors.panel2,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.line2),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<ConnectionMode>(
-            value: c.defaultMode,
-            dropdownColor: AppColors.panel2,
-            style: const TextStyle(color: AppColors.txt, fontSize: 13),
-            items: [
-              for (final m in [...ConnectionMode.values]
-                ..sort((a, b) => a.tag.compareTo(b.tag)))
-                DropdownMenuItem(
-                    value: m, child: Text('${m.tag} · ${m.title}')),
-            ],
-            onChanged: (m) {
-              if (m != null) {
-                c.setDefaultMode(m);
-                onChanged();
-              }
-            },
-          ),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    decoration: BoxDecoration(
+      color: AppColors.panel2,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: AppColors.line2),
+    ),
+    child: DropdownButtonHideUnderline(
+      child: DropdownButton<ConnectionMode>(
+        value: c.defaultMode,
+        dropdownColor: AppColors.panel2,
+        style: const TextStyle(color: AppColors.txt, fontSize: 13),
+        items: [
+          for (final m in [
+            ...ConnectionMode.values,
+          ]..sort((a, b) => a.tag.compareTo(b.tag)))
+            DropdownMenuItem(value: m, child: Text('${m.tag} · ${m.title}')),
+        ],
+        onChanged: (m) {
+          if (m != null) {
+            c.setDefaultMode(m);
+            onChanged();
+          }
+        },
+      ),
+    ),
+  );
 }

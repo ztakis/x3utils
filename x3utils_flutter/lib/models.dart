@@ -1,30 +1,29 @@
 import 'package:flutter/material.dart';
 import 'theme.dart';
 
-// powerRace (D) is the respawn power-race connect. Placeholder for now: it copies
-// A's plain-SWD behavior everywhere (guided=false, default cfg) until the respawn
-// engine is built; only the tile identity below is D-specific.
+// Script-compatible labels keep genuine C45 on C. Power-race is the extra GUI
+// respawn connect mode, so it lives on D.
 enum ConnectionMode { defaultSwd, cloneC45, genuineC45, powerRace }
 
 extension ConnectionModeX on ConnectionMode {
   String get tag => switch (this) {
-        ConnectionMode.defaultSwd => 'A',
-        ConnectionMode.cloneC45 => 'B',
-        ConnectionMode.genuineC45 => 'D',
-        ConnectionMode.powerRace => 'C',
-      };
+    ConnectionMode.defaultSwd => 'A',
+    ConnectionMode.cloneC45 => 'B',
+    ConnectionMode.genuineC45 => 'C',
+    ConnectionMode.powerRace => 'D',
+  };
   String get title => switch (this) {
-        ConnectionMode.defaultSwd => 'Default SWD',
-        ConnectionMode.cloneC45 => 'C45 · Clone',
-        ConnectionMode.genuineC45 => 'C45 · Genuine',
-        ConnectionMode.powerRace => 'Power-race',
-      };
+    ConnectionMode.defaultSwd => 'Default SWD',
+    ConnectionMode.cloneC45 => 'C45 · Clone',
+    ConnectionMode.genuineC45 => 'C45 · Genuine',
+    ConnectionMode.powerRace => 'Power-race',
+  };
   String get sub => switch (this) {
-        ConnectionMode.defaultSwd => 'Blinker buttons',
-        ConnectionMode.cloneC45 => 'Guided hold / release',
-        ConnectionMode.genuineC45 => 'Hardware nRST',
-        ConnectionMode.powerRace => 'Respawn connect',
-      };
+    ConnectionMode.defaultSwd => 'Blinker buttons',
+    ConnectionMode.cloneC45 => 'Guided hold / release',
+    ConnectionMode.genuineC45 => 'Hardware nRST',
+    ConnectionMode.powerRace => 'Respawn connect',
+  };
   bool get guided => this == ConnectionMode.cloneC45;
 }
 
@@ -33,13 +32,13 @@ enum StageState { idle, hold, count, release, connect, run, ok, warn, fail }
 
 extension StageStateX on StageState {
   Color get accent => switch (this) {
-        StageState.hold || StageState.count || StageState.warn => AppColors.hold,
-        StageState.release => AppColors.release,
-        StageState.connect || StageState.run => AppColors.brand,
-        StageState.ok => AppColors.ok,
-        StageState.fail => AppColors.danger,
-        StageState.idle => AppColors.brand,
-      };
+    StageState.hold || StageState.count || StageState.warn => AppColors.hold,
+    StageState.release => AppColors.release,
+    StageState.connect || StageState.run => AppColors.brand,
+    StageState.ok => AppColors.ok,
+    StageState.fail => AppColors.danger,
+    StageState.idle => AppColors.brand,
+  };
 }
 
 /// Rail grouping: everyday tasks vs power-user tools (Advanced is collapsible).
@@ -54,21 +53,21 @@ enum DangerLevel { none, soft, hard }
 extension DangerLevelX on DangerLevel {
   /// The tile dot encodes risk at a glance: safe / write / destructive.
   Color get dot => switch (this) {
-        DangerLevel.none => AppColors.ok,
-        DangerLevel.soft => AppColors.brand,
-        DangerLevel.hard => AppColors.danger,
-      };
+    DangerLevel.none => AppColors.ok,
+    DangerLevel.soft => AppColors.brand,
+    DangerLevel.hard => AppColors.danger,
+  };
 }
 
 enum ChipKind { ok, brand, warn, danger }
 
 extension ChipKindX on ChipKind {
   Color get color => switch (this) {
-        ChipKind.ok => AppColors.ok,
-        ChipKind.brand => AppColors.brand,
-        ChipKind.warn => AppColors.hold,
-        ChipKind.danger => AppColors.danger,
-      };
+    ChipKind.ok => AppColors.ok,
+    ChipKind.brand => AppColors.brand,
+    ChipKind.warn => AppColors.hold,
+    ChipKind.danger => AppColors.danger,
+  };
 }
 
 class InfoChipData {
@@ -114,7 +113,7 @@ const kActions = <FlashAction>[
     script: 'connect · probe',
     sub: 'Probe the ST-LINK and the target. Reads nothing, writes nothing.',
     chips: [InfoChipData('read-only', ChipKind.ok)],
-    stages: ['Connect', 'Probe flash'],
+    stages: ['Connect to chip', 'Detect flash', 'Report connection'],
     cta: 'Check connection',
     okMsg: 'Target answered. You’re good to go.',
   ),
@@ -125,7 +124,13 @@ const kActions = <FlashAction>[
     script: 'dump · 128 KB',
     sub: 'Read the whole flash to a timestamped backup you can restore later.',
     chips: [InfoChipData('read-only', ChipKind.ok)],
-    stages: ['Connect', 'Probe', 'Read 128 KB', 'Verify'],
+    stages: [
+      'Connect to chip',
+      'Detect flash',
+      'Read flash',
+      'Save backup file',
+      'Validate backup',
+    ],
     cta: 'Start backup',
     okMsg: 'Backed up & verified → backup/dump_2026-07-09.bin',
   ),
@@ -134,9 +139,19 @@ const kActions = <FlashAction>[
     section: Section.standard,
     name: 'SHU compatible',
     script: 'flash_compat',
-    sub: 'Back up the chip, patch its own firmware for SHU compatibility (ZT3 / G3 / F3), and flash it back. No file needed.',
-    chips: [InfoChipData('backs up first', ChipKind.brand), InfoChipData('patches firmware', ChipKind.warn)],
-    stages: ['Read chip', 'Patch', 'Erase', 'Write', 'Verify'],
+    sub:
+        'Back up the chip, patch its own firmware for SHU compatibility (ZT3 / G3 / F3), and flash it back. No file needed.',
+    chips: [
+      InfoChipData('backs up first', ChipKind.brand),
+      InfoChipData('patches firmware', ChipKind.warn),
+    ],
+    stages: [
+      'Read chip',
+      'Save original backup',
+      'Patch firmware',
+      'Write patched firmware',
+      'Verify write',
+    ],
     cta: 'Make SHU compatible',
     danger: DangerLevel.soft,
     okMsg: 'SHU-compatible firmware flashed & verified.',
@@ -148,7 +163,14 @@ const kActions = <FlashAction>[
     script: 'flash',
     sub: 'Back up the chip first, then write and verify your firmware.',
     chips: [InfoChipData('backs up first', ChipKind.brand)],
-    stages: ['Backup', 'Connect', 'Erase', 'Write', 'Verify'],
+    stages: [
+      'Read current firmware',
+      'Save backup file',
+      'Validate backup',
+      'Erase flash',
+      'Write firmware',
+      'Verify write',
+    ],
     cta: 'Start flash',
     danger: DangerLevel.soft,
     okMsg: 'Flashed & verified. Backup saved first.',
@@ -162,7 +184,7 @@ const kActions = <FlashAction>[
     script: 'flash_only',
     sub: 'Write and verify with no backup.',
     chips: [InfoChipData('no backup', ChipKind.warn)],
-    stages: ['Connect', 'Erase', 'Write', 'Verify'],
+    stages: ['Erase flash', 'Write firmware', 'Verify write'],
     cta: 'Flash without backup',
     danger: DangerLevel.hard,
     okMsg: 'Flashed & verified. No backup was taken.',
@@ -173,9 +195,19 @@ const kActions = <FlashAction>[
     section: Section.advanced,
     name: 'Flash slot 0',
     script: 'flash_slot0',
-    sub: 'Backs up the chip first, then writes slot 0 only — boot, slot 1 and user-data stay untouched.',
-    chips: [InfoChipData('backs up first', ChipKind.brand), InfoChipData('identity-safe', ChipKind.ok)],
-    stages: ['Connect', 'Erase slot 0', 'Write slot 0', 'Verify'],
+    sub:
+        'Backs up the chip first, then writes slot 0 only — boot, slot 1 and user-data stay untouched.',
+    chips: [
+      InfoChipData('backs up first', ChipKind.brand),
+      InfoChipData('identity-safe', ChipKind.ok),
+    ],
+    stages: [
+      'Read current firmware',
+      'Save backup file',
+      'Validate backup',
+      'Write slot 0',
+      'Verify slot 0',
+    ],
     cta: 'Flash slot 0',
     danger: DangerLevel.soft,
     okMsg: 'Slot 0 flashed & verified. Identity intact.',
@@ -197,11 +229,21 @@ const kActions = <FlashAction>[
     section: Section.advanced,
     name: 'Unlock / rescue',
     script: 'rdp_rescue',
-    sub: 'Rewrite the option bytes to clear read protection. This mass-erases the flash.',
-    chips: [InfoChipData('rewrites option bytes', ChipKind.danger), InfoChipData('erases flash', ChipKind.danger)],
-    stages: ['Connect', 'Rewrite option bytes', 'Mass erase', 'Verify unlocked'],
+    sub:
+        'Rewrite the option bytes to clear read protection. This mass-erases the flash.',
+    chips: [
+      InfoChipData('rewrites option bytes', ChipKind.danger),
+      InfoChipData('erases flash', ChipKind.danger),
+    ],
+    stages: [
+      'Connect',
+      'Rewrite option bytes',
+      'Mass erase',
+      'Verify unlocked',
+    ],
     cta: 'Run rescue',
     danger: DangerLevel.hard,
-    okMsg: 'Rewrite sent. Power-cycle the board, then run Check protection to confirm it’s unlocked.',
+    okMsg:
+        'Rewrite sent. Power-cycle the board, then run Check protection to confirm it’s unlocked.',
   ),
 ];
