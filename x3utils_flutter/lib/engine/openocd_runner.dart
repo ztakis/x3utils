@@ -30,12 +30,19 @@ class OpenOcdEvidence {
         low.contains('target halted') ||
         low.contains('x3_caught_hold_power') ||
         low.contains('caught; hold power');
-    dumped |= low.contains('dumped ');
-    erased |= low.contains('erased ');
-    wrote |= low.contains('wrote ');
-    verified |= low.contains('verified ');
+    dumped |= _dumpedEvidence.hasMatch(low);
+    erased |= _erasedEvidence.hasMatch(low);
+    wrote |= _hasWriteEvidence(low);
+    verified |= _verifiedEvidence.hasMatch(low);
   }
 }
+
+final _dumpedEvidence = RegExp(r'\bdumped\b');
+final _erasedEvidence = RegExp(r'\berased\b');
+final _writeEvidence = RegExp(r'\b(wrote|written)\b');
+final _verifiedEvidence = RegExp(r'\bverified\b');
+
+bool _hasWriteEvidence(String low) => _writeEvidence.hasMatch(low);
 
 /// Spawns the frozen OpenOCD and streams stdout+stderr line-by-line.
 ///
@@ -142,16 +149,17 @@ class OpenOcdRunner {
         evidence.record(l);
         if (timedOut) return;
         final marker = l.contains(_raceCatchMarker);
+        final low = l.toLowerCase();
         // Catch signal: 'target halted' on a running core, OR the op's own progress
         // (dump/erase/write) when the core was ALREADY halted from a prior catch
         // (the 2-catch backup+flash / SHU flows) so 'target halted' isn't reprinted
         // — without this, the 2nd catch's whole output gets suppressed.
         if (!caught &&
             (marker ||
-                l.contains('target halted') ||
-                l.contains('dumped ') ||
-                l.contains('erased ') ||
-                l.contains('wrote '))) {
+                low.contains('target halted') ||
+                _dumpedEvidence.hasMatch(low) ||
+                _erasedEvidence.hasMatch(low) ||
+                _hasWriteEvidence(low))) {
           caught = true;
           evidence.record('== race attempt $attempt caught; hold power ==');
           onLine('== race attempt $attempt caught; hold power ==');

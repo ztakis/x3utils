@@ -895,7 +895,7 @@ class AppController extends ChangeNotifier {
     } else if (low.contains('erased')) {
       _setProgressDetail('OpenOCD: erase complete');
       _markVisibleStage('eras');
-    } else if (low.contains('wrote')) {
+    } else if (_hasOpenOcdWriteMarker(low)) {
       _setProgressDetail('OpenOCD: write complete');
       _markVisibleStage('writ');
     } else if (low.contains('verified')) {
@@ -903,6 +903,9 @@ class AppController extends ChangeNotifier {
       _markVisibleStage('verif');
     }
   }
+
+  bool _hasOpenOcdWriteMarker(String low) =>
+      low.contains('wrote') || low.contains('written');
 
   bool _markVisibleStage(String part) {
     if (!_hasStage(part)) return false;
