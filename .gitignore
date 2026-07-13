@@ -17,6 +17,9 @@ Desktop.ini
 # Kilo
 .kilo/
 
+# VS Code local workspace settings
+.vscode/
+
 # Visual Studio / .NET local output
 .vs/
 *.csproj.user
