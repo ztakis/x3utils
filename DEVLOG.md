@@ -25,6 +25,31 @@ survive machine switches and chat history loss.
 - Flutter GUI is now the active Windows path.
 - Python refactor planning is obsolete; do not revive it as the default
   direction.
+- Workstation context:
+  - Home primary has Windows, Linux Mint, and Mac.
+  - Work secondary has Windows, Linux Mint, and Mac.
+  - Helper laptop dual-boots Windows/Linux.
+  - Current machine is the home primary Linux Mint PC and is the intended first
+    `x3utils_flutter` AppImage build box unless this changes.
+  - Work Linux Mint reportedly received similar Flutter/dev prep, a build, and
+    local VS Code debug setup earlier on 2026-07-13 in another Codex session;
+    recheck exact state before treating it as a release machine.
+- Development sync policy:
+  - `.vscode/` is intentionally local/ignored because Windows, Linux, and macOS
+    workstation settings differ.
+  - Keep cross-machine and AI handoff state in tracked docs such as
+    `DEVLOG.md`, `docs/testing.md`, and `AGENTS.md`.
+- CLI/GUI direction:
+  - CLI target is v1.7.0 for Windows, Linux, and macOS.
+  - CLI should keep the existing A/B/C/D order, with Windows mode D
+    Power-race behavior ported to Bash for Linux/macOS.
+  - After v1.7.0, CLI is expected to become mostly stable maintenance/helper
+    tooling and a behavior reference for the GUI.
+  - Port order: finish Bash CLI mode D parity first, solve Bash RDP race
+    behavior next, then port the settled behavior into Flutter.
+  - Flutter GUI is allowed to diverge from CLI labels/order; it may abandon
+    ABCD labels in favor of human connection-mode names. Do not force the GUI
+    back to CLI taxonomy merely for parity.
 - Power-race result handling was improved before this handoff:
   - OpenOCD output evidence is collected in `openocd_runner.dart`.
   - Flash success requires `wrote` plus `verified`.
