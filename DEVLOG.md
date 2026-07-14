@@ -158,3 +158,22 @@ survive machine switches and chat history loss.
   - Add a non-race OpenOCD supervisor/timeout later. Distinguish explicit Tcl
     `shutdown error` failures from runner timeouts/hangs so the GUI can give a
     short retry verdict without over-explaining.
+- Flutter GUI progress UI decision:
+  - Removed checklist rows from the active hero flow for all actions and modes.
+  - Real OpenOCD/Tcl output remains visible in the console and still drives final
+    success/failure evidence, but the hero now uses a single busy spinner plus
+    concise operator text instead of pretending to have precise per-step
+    checklist timing.
+  - Deferred accurate typed progress/checklists to a later version that can
+    coordinate with Tcl/OpenOCD events cleanly.
+  - Kept guided C45 hold/count/release hero prompts as the special live operator
+    flow.
+  - Kept presentation delays only around the busy/result transition; they do not
+    slow OpenOCD or hardware operations.
+  - Mode A and Mode B were manually passed across the main actions after the
+    spinner cleanup.
+  - RDP/protection actions are now treated as best-effort tools. Power-race mode
+    shows a Not supported warning instead of launching RDP, because protection
+    checks/rescue need a stable OpenOCD session.
+  - SHU compatibility patch messaging was simplified to neutral operator text:
+    "SHU patch applied. Flashing it back to the chip..."

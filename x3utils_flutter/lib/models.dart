@@ -41,6 +41,16 @@ extension StageStateX on StageState {
   };
 }
 
+enum MessageTone { normal, notice, danger }
+
+extension MessageToneX on MessageTone {
+  Color get color => switch (this) {
+    MessageTone.normal => AppColors.dim,
+    MessageTone.notice => AppColors.hold,
+    MessageTone.danger => AppColors.danger,
+  };
+}
+
 /// Rail grouping: everyday tasks vs power-user tools (Advanced is collapsible).
 enum Section { standard, advanced }
 
@@ -83,7 +93,6 @@ class FlashAction {
   final String script; // underlying script / command, shown smaller
   final String sub;
   final List<InfoChipData> chips;
-  final List<String> stages;
   final String cta;
   final DangerLevel danger;
   final String okMsg;
@@ -95,7 +104,6 @@ class FlashAction {
     required this.script,
     required this.sub,
     required this.chips,
-    required this.stages,
     required this.cta,
     required this.okMsg,
     this.danger = DangerLevel.none,
@@ -113,7 +121,6 @@ const kActions = <FlashAction>[
     script: 'connect · probe',
     sub: 'Probe the ST-LINK and the target. Reads nothing, writes nothing.',
     chips: [InfoChipData('read-only', ChipKind.ok)],
-    stages: ['Connect to chip', 'Detect flash', 'Report connection'],
     cta: 'Check connection',
     okMsg: 'Target answered. You’re good to go.',
   ),
@@ -124,13 +131,6 @@ const kActions = <FlashAction>[
     script: 'dump · 128 KB',
     sub: 'Read the whole flash to a timestamped backup you can restore later.',
     chips: [InfoChipData('read-only', ChipKind.ok)],
-    stages: [
-      'Connect to chip',
-      'Detect flash',
-      'Read flash',
-      'Save backup file',
-      'Validate backup',
-    ],
     cta: 'Start backup',
     okMsg: 'Backed up & verified → backup/dump_2026-07-09.bin',
   ),
@@ -145,13 +145,6 @@ const kActions = <FlashAction>[
       InfoChipData('backs up first', ChipKind.brand),
       InfoChipData('patches firmware', ChipKind.warn),
     ],
-    stages: [
-      'Read chip',
-      'Save original backup',
-      'Patch firmware',
-      'Write patched firmware',
-      'Verify write',
-    ],
     cta: 'Make SHU compatible',
     danger: DangerLevel.soft,
     okMsg: 'SHU-compatible firmware flashed & verified.',
@@ -163,14 +156,6 @@ const kActions = <FlashAction>[
     script: 'flash',
     sub: 'Back up the chip first, then write and verify your firmware.',
     chips: [InfoChipData('backs up first', ChipKind.brand)],
-    stages: [
-      'Read current firmware',
-      'Save backup file',
-      'Validate backup',
-      'Erase flash',
-      'Write firmware',
-      'Verify write',
-    ],
     cta: 'Start flash',
     danger: DangerLevel.soft,
     okMsg: 'Flashed & verified. Backup saved first.',
@@ -184,7 +169,6 @@ const kActions = <FlashAction>[
     script: 'flash_only',
     sub: 'Write and verify with no backup.',
     chips: [InfoChipData('no backup', ChipKind.warn)],
-    stages: ['Erase flash', 'Write firmware', 'Verify write'],
     cta: 'Flash without backup',
     danger: DangerLevel.hard,
     okMsg: 'Flashed & verified. No backup was taken.',
@@ -201,13 +185,6 @@ const kActions = <FlashAction>[
       InfoChipData('backs up first', ChipKind.brand),
       InfoChipData('identity-safe', ChipKind.ok),
     ],
-    stages: [
-      'Read current firmware',
-      'Save backup file',
-      'Validate backup',
-      'Write slot 0',
-      'Verify slot 0',
-    ],
     cta: 'Flash slot 0',
     danger: DangerLevel.soft,
     okMsg: 'Slot 0 flashed & verified. Identity intact.',
@@ -220,7 +197,6 @@ const kActions = <FlashAction>[
     script: 'rdp_check',
     sub: 'Read the flash-access-protection state and report a plain verdict.',
     chips: [InfoChipData('read-only', ChipKind.ok)],
-    stages: ['Connect', 'Read FAP', 'Verdict'],
     cta: 'Check protection',
     okMsg: 'PROTECTED · FAP active, flash is read-locked.',
   ),
@@ -234,12 +210,6 @@ const kActions = <FlashAction>[
     chips: [
       InfoChipData('rewrites option bytes', ChipKind.danger),
       InfoChipData('erases flash', ChipKind.danger),
-    ],
-    stages: [
-      'Connect',
-      'Rewrite option bytes',
-      'Mass erase',
-      'Verify unlocked',
     ],
     cta: 'Run rescue',
     danger: DangerLevel.hard,

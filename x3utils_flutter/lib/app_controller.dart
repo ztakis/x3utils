@@ -161,13 +161,13 @@ class AppController extends ChangeNotifier {
   String eyebrow = 'Ready';
   String title = 'Check connection';
   String sub = 'Pick a connection mode and an action, then hit start.';
-  String progressDetail = '';
+  MessageTone messageTone = MessageTone.normal;
 
   int countdownValue = 0;
-  int activeStage = -1;
-  List<bool> stageDone = const [];
   DateTime? _progressShownAt;
   DateTime? _lastProgressAt;
+  String? _runIssue;
+  int _runIssuePriority = 0;
 
   bool showContinue = false;
   String continueLabel = 'Continue';
@@ -185,8 +185,8 @@ class AppController extends ChangeNotifier {
   int _token = 0;
   Completer<void>? _continue;
 
-  static const _minChecklistVisible = Duration(milliseconds: 1000);
-  static const _minAfterLastChecklistStep = Duration(milliseconds: 1500);
+  static const _minBusyVisible = Duration(milliseconds: 1000);
+  static const _minAfterLastProgress = Duration(milliseconds: 2500);
 
   FlashAction get action => kActions.firstWhere((a) => a.id == actionId);
 
@@ -323,11 +323,11 @@ class AppController extends ChangeNotifier {
     title = action.name;
     sub = action.sub;
     showContinue = false;
-    activeStage = -1;
-    stageDone = const [];
     _progressShownAt = null;
     _lastProgressAt = null;
-    progressDetail = '';
+    messageTone = MessageTone.normal;
+    _runIssue = null;
+    _runIssuePriority = 0;
     notifyListeners();
   }
 
@@ -361,20 +361,16 @@ class AppController extends ChangeNotifier {
     eyebrow = eb;
     title = t;
     sub = sb;
+    messageTone = MessageTone.normal;
     showContinue = continueBtn != null;
     if (continueBtn != null) continueLabel = continueBtn;
     notifyListeners();
   }
 
-  void _setProgressDetail(String value) {
-    if (progressDetail == value) return;
-    progressDetail = value;
-    notifyListeners();
-  }
-
-  void _setInstruction(String value) {
-    if (sub == value) return;
+  void _setInstruction(String value, {MessageTone tone = MessageTone.normal}) {
+    if (sub == value && messageTone == tone) return;
     sub = value;
+    messageTone = tone;
     notifyListeners();
   }
 
@@ -398,6 +394,9 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> start() async {
+    _runIssue = null;
+    _runIssuePriority = 0;
+    messageTone = MessageTone.normal;
     _runLog.clear();
     _capturing = true;
     _log(contextHeader());
@@ -425,7 +424,6 @@ class AppController extends ChangeNotifier {
         if (r != null) {
           if (r.ok) {
             _setInstruction('Target answered. You can continue.');
-            _markStage('report');
           }
           await _finishRealAfterHold(
             r.ok,
@@ -453,6 +451,19 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _runRdp(String verb, {required bool yes}) async {
+    if (mode == ConnectionMode.powerRace) {
+      running = false;
+      _realRun = false;
+      lastConnect = '—';
+      _set(
+        StageState.warn,
+        'Not supported',
+        '${action.name} is not supported in Power-race',
+        'RDP/protection work needs a stable OpenOCD session. Use Default SWD, C45 Clone, or C45 Genuine instead.',
+      );
+      return;
+    }
+
     final rdp = _rdp;
     if (rdp == null || !rdp.available) {
       _set(
@@ -594,11 +605,6 @@ class AppController extends ChangeNotifier {
         'Caught — checking…',
         'Hold everything steady until the verdict is printed.',
       );
-      _markStage('connect');
-    } else if (low.contains('0x1ffff800:')) {
-      _markStage('fap');
-    } else if (low.contains('verdict')) {
-      _markStage('verdict');
     }
   }
 
@@ -653,9 +659,6 @@ class AppController extends ChangeNotifier {
           },
           onCaught: () {
             if (my != _token) return;
-            if (stageDone.length != action.stages.length) {
-              stageDone = List<bool>.filled(action.stages.length, false);
-            }
             _set(
               StageState.run,
               'Power-race',
@@ -691,17 +694,8 @@ class AppController extends ChangeNotifier {
       return null;
     }
     if (my != _token) return null;
-    // Final-hold: when the race just filled the last checkmark, freeze the
-    // fully-checked stage list for a readable beat before the caller flips to
-    // the 'complete' screen (chosen over per-stage dwell). Self-gated on every
-    // stage being done, so it fires only on the action's true final step — never
-    // after the backup catch in a 2-catch flow, whose list isn't full yet.
-    if (race &&
-        result.exitCode == 0 &&
-        stageDone.isNotEmpty &&
-        stageDone.every((d) => d)) {
-      await Future.delayed(const Duration(milliseconds: 1500));
-      if (my != _token) return null;
+    if (result.exitCode != 0 && _runIssue == null) {
+      _setRunIssue(_openOcdExitFallback(result.exitCode, args), priority: 2);
     }
     _realRun = false;
     running = false;
@@ -715,11 +709,86 @@ class AppController extends ChangeNotifier {
     bool driveOpenOcdProgress = true,
   }) {
     _log(line);
-    final low = line.toLowerCase();
+    final clean = line.replaceAll(_ansi, '').trim();
+    final low = clean.toLowerCase();
     if (low.contains('target halted')) lastConnect = 'PASS';
     _diagnose(low);
+    _surfaceOpenOcdIssue(clean, low);
     if (driveOpenOcdProgress) _advanceOpenOcdStage(low);
     if (guided) _parseGuided(line, low);
+  }
+
+  void _surfaceOpenOcdIssue(String clean, String low) {
+    final issue = _openOcdIssueText(clean, low);
+    if (issue != null) {
+      _setRunIssue(issue, priority: low.contains('[fail]') ? 3 : 1);
+    }
+  }
+
+  void _setRunIssue(String issue, {required int priority}) {
+    if (priority < _runIssuePriority) return;
+    _runIssue = issue;
+    _runIssuePriority = priority;
+    if (stage == StageState.fail) {
+      _setInstruction(issue, tone: MessageTone.danger);
+    }
+  }
+
+  String _openOcdExitFallback(int exitCode, List<String> args) {
+    final joined = args.join(' ').toLowerCase();
+    if (actionId == 'check' || joined.contains('flash probe')) {
+      return 'OpenOCD: connection check failed';
+    }
+    if (joined.contains('dump_image')) return 'OpenOCD: dump did not complete';
+    if (joined.contains('do_flash_and_verify') ||
+        joined.contains('flash erase') ||
+        joined.contains('flash write') ||
+        joined.contains('write_image')) {
+      return 'OpenOCD: flash did not complete';
+    }
+    return 'OpenOCD: failed with exit $exitCode';
+  }
+
+  String? _openOcdIssueText(String clean, String low) {
+    if (clean.isEmpty) return null;
+    if (low.contains('shutdown error')) return 'OpenOCD: shutdown error';
+    if (low.contains('write protected') ||
+        low.contains('read out protection')) {
+      return 'OpenOCD: target is protected';
+    }
+    if (low.contains('timed out') || low.contains('timeout')) {
+      return 'OpenOCD: timeout';
+    }
+    if (low.contains('open failed')) return 'OpenOCD: open failed';
+    if (low.contains('unable to open')) return 'OpenOCD: unable to open';
+    if (low.contains('adapter init failed')) {
+      return 'OpenOCD: adapter init failed';
+    }
+    if (low.contains('init mode failed')) {
+      return 'OpenOCD: init mode failed';
+    }
+    if (low.contains('unable to connect to the target')) {
+      return 'OpenOCD: unable to connect to target';
+    }
+    if (low.contains('no device found')) return 'OpenOCD: no device found';
+    if (low.contains('target not halted')) {
+      return 'OpenOCD: target not halted';
+    }
+    if (low.contains('[fail]')) {
+      final idx = low.indexOf('[fail]');
+      return 'OpenOCD: ${clean.substring(idx + 6).trim()}';
+    }
+    if (low.contains('verify failed')) return 'OpenOCD: verify failed';
+    if (low.contains('erase failed')) return 'OpenOCD: erase failed';
+    if (low.contains('write failed')) return 'OpenOCD: write failed';
+    if (low.startsWith('error:')) {
+      return 'OpenOCD: ${clean.substring(6).trim()}';
+    }
+    if (low.contains(' error:')) {
+      final idx = low.indexOf(' error:');
+      return 'OpenOCD: ${clean.substring(idx + 7).trim()}';
+    }
+    return null;
   }
 
   /// Classify known OpenOCD error lines so the failure message names the real
@@ -758,6 +827,7 @@ class AppController extends ChangeNotifier {
       );
     } else if (low.contains('connected') && low.contains('ready')) {
       showContinue = false;
+      _progressShownAt ??= DateTime.now();
       _set(
         StageState.connect,
         'Linking',
@@ -818,6 +888,8 @@ class AppController extends ChangeNotifier {
       msg = okMsg;
     } else if (_diagnosis != null) {
       msg = _diagnosis!; // a specific diagnosed cause — no contact hint
+    } else if (_runIssue != null) {
+      msg = reseat ? '$_runIssue\n$_reseatHint' : _runIssue!;
     } else {
       msg = reseat ? '$failMsg\n$_reseatHint' : failMsg;
     }
@@ -836,30 +908,30 @@ class AppController extends ChangeNotifier {
     bool reseat = true,
   }) async {
     final my = _token;
-    final hadChecklist = stage == StageState.run && _progressShownAt != null;
-    await _holdChecklistForReading();
+    final hadBusySurface = _busySurfaceIsVisible;
+    await _holdBusySurfaceForReading();
     if (my != _token) return;
-    if (hadChecklist && stage != StageState.run) return;
+    if (hadBusySurface && !_busySurfaceIsVisible) return;
     _finishReal(ok, okMsg, failMsg, reseat: reseat);
   }
 
-  Future<void> _holdChecklistForReading() async {
-    if (stage != StageState.run) return;
+  Future<void> _holdBusySurfaceForReading() async {
+    if (!_busySurfaceIsVisible) return;
     final shownAt = _progressShownAt;
     if (shownAt == null) return;
 
     final now = DateTime.now();
     var wait = Duration.zero;
     final shownElapsed = now.difference(shownAt);
-    if (shownElapsed < _minChecklistVisible) {
-      wait = _minChecklistVisible - shownElapsed;
+    if (shownElapsed < _minBusyVisible) {
+      wait = _minBusyVisible - shownElapsed;
     }
 
     final lastAt = _lastProgressAt;
     if (lastAt != null) {
       final lastElapsed = now.difference(lastAt);
-      if (lastElapsed < _minAfterLastChecklistStep) {
-        final afterLastWait = _minAfterLastChecklistStep - lastElapsed;
+      if (lastElapsed < _minAfterLastProgress) {
+        final afterLastWait = _minAfterLastProgress - lastElapsed;
         if (afterLastWait > wait) wait = afterLastWait;
       }
     }
@@ -868,6 +940,10 @@ class AppController extends ChangeNotifier {
       await Future.delayed(wait);
     }
   }
+
+  bool get _busySurfaceIsVisible =>
+      (stage == StageState.run || stage == StageState.connect) &&
+      _progressShownAt != null;
 
   /// Live operator hint for a power-race miss, keyed to how far it got.
   String _raceHint(RaceTier tier) => switch (tier) {
@@ -883,49 +959,16 @@ class AppController extends ChangeNotifier {
   void _advanceOpenOcdStage(String low) {
     if (low.contains('target halted') ||
         low.contains('caught; hold power') ||
-        low.contains('x3_caught_hold_power')) {
-      _setProgressDetail('OpenOCD: connected');
-      _markVisibleStage('connect');
-    } else if (low.contains("flash 'at32f415xx' found")) {
-      _setProgressDetail('OpenOCD: flash detected');
-      _markVisibleStage('detect');
-    } else if (low.contains('dumped')) {
-      _setProgressDetail('OpenOCD: read complete');
-      _markVisibleStage('read');
-    } else if (low.contains('erased')) {
-      _setProgressDetail('OpenOCD: erase complete');
-      _markVisibleStage('eras');
-    } else if (_hasOpenOcdWriteMarker(low)) {
-      _setProgressDetail('OpenOCD: write complete');
-      _markVisibleStage('writ');
-    } else if (low.contains('verified')) {
-      _setProgressDetail('OpenOCD: verify complete');
-      _markVisibleStage('verif');
+        low.contains('x3_caught_hold_power') ||
+        low.contains("flash 'at32f415xx' found") ||
+        low.contains('dumped') ||
+        low.contains('erased') ||
+        low.contains('wrote') ||
+        low.contains('written') ||
+        low.contains('verified')) {
+      _lastProgressAt = DateTime.now();
+      _showOpenOcdProgress();
     }
-  }
-
-  bool _hasOpenOcdWriteMarker(String low) =>
-      low.contains('wrote') || low.contains('written');
-
-  bool _markVisibleStage(String part) {
-    if (!_hasStage(part)) return false;
-    _showOpenOcdProgress();
-    _markStage(part);
-    return true;
-  }
-
-  bool _hasStage(String part) =>
-      action.stages.any((s) => s.toLowerCase().contains(part));
-
-  void _armStage(String part) {
-    final stages = action.stages;
-    if (stageDone.length != stages.length) {
-      stageDone = List<bool>.filled(stages.length, false);
-    }
-    final idx = stages.indexWhere((s) => s.toLowerCase().contains(part));
-    if (idx < 0) return;
-    activeStage = idx;
-    notifyListeners();
   }
 
   void _showOpenOcdProgress() {
@@ -937,24 +980,6 @@ class AppController extends ChangeNotifier {
     }
     _progressShownAt ??= DateTime.now();
     _set(StageState.run, action.name, '${action.name}…', sub);
-  }
-
-  /// Mark the stage whose label contains [part] (and every stage before it) done,
-  /// then arm the next one. Prior stages cascade, so a marker for a later step
-  /// also ticks the earlier ones we have no explicit marker for.
-  void _markStage(String part) {
-    final stages = action.stages;
-    if (stageDone.length != stages.length) {
-      stageDone = List<bool>.filled(stages.length, false);
-    }
-    final idx = stages.indexWhere((s) => s.toLowerCase().contains(part));
-    if (idx < 0) return;
-    for (var i = 0; i <= idx; i++) {
-      stageDone[i] = true;
-    }
-    activeStage = idx + 1 < stages.length ? idx + 1 : idx;
-    _lastProgressAt = DateTime.now();
-    notifyListeners();
   }
 
   bool _dumpConfirmed(OpenOcdResult r) => r.ok && r.evidence.dumped;
@@ -986,7 +1011,6 @@ class AppController extends ChangeNotifier {
     );
     _showOpenOcdProgress();
     _setInstruction('Reading the full 128 KB flash into a backup file...');
-    _armStage('connect');
     final r = await _runRealCore(
       runner.dumpArgs(mode, countdownSeconds, outPath),
       guided: guided,
@@ -997,10 +1021,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     _setInstruction('Backup saved to $outPath');
-    _markStage('save');
     _setInstruction('Validating backup file...');
-    _setProgressDetail('Validating backup...');
-    _armStage('valid');
     final v = Firmware.validate(outPath);
     if (!v.ok) {
       _log('== validation FAILED: ${v.message} ==');
@@ -1015,8 +1036,6 @@ class AppController extends ChangeNotifier {
     }
     _log('== validated OK → $outPath ==');
     _setInstruction('Backup validated. Keep this file safe.');
-    _setProgressDetail('Backup validated');
-    _markStage('valid');
     _maybeSecondCopy(outPath);
     await _finishRealAfterHold(true, 'Backed up & verified → $outPath', '');
   }
@@ -1055,8 +1074,6 @@ class AppController extends ChangeNotifier {
       );
       _showOpenOcdProgress();
       _setInstruction('Backing up the chip before flashing...');
-      _setProgressDetail('Reading current firmware...');
-      _armStage('read');
       final b = await _runRealCore(
         runner.dumpArgs(mode, countdownSeconds, outPath),
         guided: guided,
@@ -1072,10 +1089,7 @@ class AppController extends ChangeNotifier {
         return;
       }
       _setInstruction('Backup saved to $outPath');
-      _markStage('save');
       _setInstruction('Validating backup file before writing...');
-      _setProgressDetail('Validating backup...');
-      _armStage('valid');
       final backupCheck = Firmware.validate(outPath);
       if (!backupCheck.ok) {
         _log('== validation FAILED: ${backupCheck.message} ==');
@@ -1090,8 +1104,6 @@ class AppController extends ChangeNotifier {
       }
       _log('== backup ok → $outPath ==');
       _setInstruction('Backup validated. Writing can continue.');
-      _setProgressDetail('Backup validated');
-      _markStage('valid');
       _maybeSecondCopy(outPath);
       backupPath = outPath;
     }
@@ -1107,10 +1119,6 @@ class AppController extends ChangeNotifier {
           ? 'Writing the selected firmware...'
           : 'Writing without a backup. Keep the ST-LINK and SWD wires steady.',
     );
-    _setProgressDetail(
-      slot0 ? 'Writing slot 0...' : 'Preparing flash write...',
-    );
-    _armStage(slot0 ? 'writ' : 'eras');
     final r = await _runRealCore(
       args,
       guided: guided,
@@ -1141,8 +1149,6 @@ class AppController extends ChangeNotifier {
     final (raw, patched) = Firmware.newCompatPaths(prefix: backupPrefix);
     _showOpenOcdProgress();
     _setInstruction('Reading the chip before patching...');
-    _setProgressDetail('Reading current firmware...');
-    _armStage('read');
 
     // Step 1 — read the current firmware.
     final d = await _runRealCore(
@@ -1173,13 +1179,10 @@ class AppController extends ChangeNotifier {
     }
 
     _setInstruction('Original backup saved to $raw');
-    _markStage('save');
     _maybeSecondCopy(raw);
 
     // Step 2 — patch (pure Dart, no hardware).
     _setInstruction('Patching the SHU compatibility signature...');
-    _setProgressDetail('Patching firmware...');
-    _armStage('patch');
     _log('== patching SHU-compat signature @ 0x1420 ==');
     final patch = CompatPatch.apply(raw, patched);
     if (!patch.ok || !Firmware.validate(patched).ok) {
@@ -1193,13 +1196,10 @@ class AppController extends ChangeNotifier {
       return;
     }
     _log('== patched → $patched ==');
-    _setInstruction('Flashing the patched firmware back to the chip...');
-    _setProgressDetail('Patch complete');
-    _markStage('patch');
+    _setInstruction('SHU patch applied. Flashing it back to the chip...');
+    await Future.delayed(const Duration(milliseconds: 900));
 
     // Step 3 — flash the patched image back.
-    _setProgressDetail('Flashing patched firmware...');
-    _armStage('writ');
     final f = await _runRealCore(
       runner.flashArgs(mode, countdownSeconds, patched),
       guided: guided,
@@ -1278,22 +1278,15 @@ class AppController extends ChangeNotifier {
     lastConnect = 'PASS';
     notifyListeners();
 
-    stageDone = List<bool>.filled(a.stages.length, false);
-    activeStage = -1;
+    _progressShownAt = DateTime.now();
     _set(
       StageState.run,
       a.name,
       '${a.name}…',
       'Keep the ST-LINK and SWD wires steady until it finishes.',
     );
-    for (var i = 0; i < a.stages.length; i++) {
-      activeStage = i;
-      notifyListeners();
-      await Future.delayed(Duration(milliseconds: 720 + i * 90));
-      if (my != _token) return;
-      stageDone[i] = true;
-      notifyListeners();
-    }
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (my != _token) return;
 
     _log('== ${a.name} OK ==');
     _set(StageState.ok, 'Done', '${a.name} complete', a.okMsg);

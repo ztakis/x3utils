@@ -1219,10 +1219,10 @@ class _HeroStageState extends State<_HeroStage>
                         Text(
                           c.sub,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             height: 1.5,
-                            color: AppColors.dim,
+                            color: c.messageTone.color,
                           ),
                         ),
                         const SizedBox(height: 22),
@@ -1294,17 +1294,8 @@ class _Visual extends StatelessWidget {
           ),
         );
       case StageState.connect:
-        return SizedBox(
-          width: 64,
-          height: 64,
-          child: CircularProgressIndicator(
-            strokeWidth: 5,
-            color: accent,
-            backgroundColor: AppColors.line2,
-          ),
-        );
       case StageState.run:
-        return _Progress(c: c);
+        return _BusyProgress(accent: accent);
       case StageState.ok:
         return _ResultBadge(accent: accent, icon: Icons.check_rounded);
       case StageState.warn:
@@ -1434,126 +1425,22 @@ class _PadPainter extends CustomPainter {
       old.t != t || old.accent != accent || old.release != release;
 }
 
-class _Progress extends StatelessWidget {
-  const _Progress({required this.c});
-  final AppController c;
+class _BusyProgress extends StatelessWidget {
+  const _BusyProgress({required this.accent});
+  final Color accent;
+
   @override
   Widget build(BuildContext context) {
-    final a = c.action;
-    final done = c.stageDone.where((d) => d).length;
-    final frac = a.stages.isEmpty ? 0.0 : done / a.stages.length;
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 420),
-      child: Column(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              value: frac,
-              minHeight: 8,
-              backgroundColor: const Color(0x14FFFFFF),
-              valueColor: AlwaysStoppedAnimation(AppColors.brand),
-            ),
-          ),
-          if (c.progressDetail.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _MiniConsoleLine(text: c.progressDetail),
-          ],
-          const SizedBox(height: 16),
-          for (var i = 0; i < a.stages.length; i++)
-            _StageRow(
-              label: a.stages[i],
-              done: i < c.stageDone.length && c.stageDone[i],
-              active:
-                  i == c.activeStage &&
-                  !(i < c.stageDone.length && c.stageDone[i]),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniConsoleLine extends StatelessWidget {
-  const _MiniConsoleLine({required this.text});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      textAlign: TextAlign.center,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        fontFamily: kMono,
-        fontSize: 12,
-        color: AppColors.hold,
-        fontWeight: FontWeight.w700,
-      ),
-    );
-  }
-}
-
-class _StageRow extends StatelessWidget {
-  const _StageRow({
-    required this.label,
-    required this.done,
-    required this.active,
-  });
-  final String label;
-  final bool done;
-  final bool active;
-  @override
-  Widget build(BuildContext context) {
-    final color = done
-        ? AppColors.dim
-        : active
-        ? AppColors.txt
-        : AppColors.mut;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Container(
-            width: 20,
-            height: 20,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: done ? AppColors.ok : Colors.transparent,
-              border: Border.all(
-                color: done
-                    ? AppColors.ok
-                    : active
-                    ? AppColors.brand
-                    : AppColors.line2,
-                width: 2,
-              ),
-            ),
-            child: done
-                ? const Icon(Icons.check, size: 12, color: Color(0xFF04120F))
-                : active
-                ? SizedBox(
-                    width: 9,
-                    height: 9,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.brand,
-                    ),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 11),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              color: color,
-              fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-            ),
-          ),
-        ],
+      child: SizedBox(
+        width: 72,
+        height: 72,
+        child: CircularProgressIndicator(
+          strokeWidth: 6,
+          color: accent,
+          backgroundColor: AppColors.line2,
+        ),
       ),
     );
   }
