@@ -85,9 +85,9 @@ The Dart is OS-agnostic; a port is mostly binaries + scaffolding:
 
 ## Versioning
 
-Version lives in three places — **keep them in sync**: `VERSION`,
+Version lives in four places — **keep them in sync**: `VERSION`,
 `pubspec.yaml` (`version:`), and `kAppVersion` in `lib/theme.dart` (drives the
-UI). Current: **0.9.0**.
+UI). Current: **1.1.2**. Also in installer/x3utils.iss `AppVer`.
 
 ## Safety
 

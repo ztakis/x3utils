@@ -79,4 +79,4 @@ ThemeData buildTheme() {
 const kMono = 'Consolas';
 
 /// App version — single source of truth (keep pubspec.yaml `version:` in sync).
-const kAppVersion = '1.1.1';
+const kAppVersion = '1.1.2';
