@@ -127,3 +127,34 @@ survive machine switches and chat history loss.
   - The Linux Flutter RDP console labels are intentionally GUI-neutral mode
     names (`Power-race`, `C45 genuine`, etc.), not CLI launcher letters. GUI
     visible labels remain C=Power-race and D=C45 genuine.
+
+## 2026-07-14
+
+- Flutter GUI checklist/progress planning:
+  - Current checklist progress is useful but too tied to display labels and
+    specific modes. Avoid making English stage labels the logic keys.
+  - Keep OpenOCD/Tcl/script output as the source of truth. Parse many low-level
+    signals, but show only a few readable user-facing facts.
+  - Prefer a simpler checklist with macro phases such as Backup, Flash, and
+    Verify. Use the mini status line for intermediate confirmed facts such as
+    "Backup in progress", "Backup completed", "Backup verified", "Writing
+    firmware", and "Firmware verified".
+  - Delays should be presentation-only, never slowing OpenOCD or hardware
+    operations. The UI may queue already-confirmed facts and display them at a
+    readable pace before the final Done/Failed screen.
+  - Preserve full raw OpenOCD output in the console for debugging.
+  - Final verdicts should be short and evidence-based, for example:
+    "Backup is safe. Flash failed before verification. Retry flashing.",
+    "Write started, but verification did not complete. Retry required.", or
+    "Backup validation failed. Flash was not attempted."
+  - Future skeleton should separate action plan, connection strategy, evidence
+    parser, progress presenter, and final verdict.
+  - C45 guided prompts and Power-race attempts should drive the hero/operator
+    state, but once the chip is connected the checklist should be driven by the
+    same typed progress events as other real OpenOCD modes.
+  - Add typed progress IDs/events later so parser code marks facts such as
+    connect, detect flash, read flash, validate backup, erase, write, and verify
+    without searching display text.
+  - Add a non-race OpenOCD supervisor/timeout later. Distinguish explicit Tcl
+    `shutdown error` failures from runner timeouts/hangs so the GUI can give a
+    short retry verdict without over-explaining.
