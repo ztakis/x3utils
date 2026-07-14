@@ -14,11 +14,11 @@ CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENOCD_BIN="$CONFIG_DIR/oocd/bin/openocd"
 SCRIPTS_DIR="$CONFIG_DIR/oocd/scripts"
 INTERFACE="interface/stlink.cfg"
-TARGET="target/at32f415xx.cfg"
+TARGET="target/at32f415xx_c45.cfg"
 
 # Connection mode D (power-race): true = scripts use the respawn power-race
 # connect. Set by the launcher radio; A/B/C reset it false.
-RACE=true
+RACE=false
 
 # Power-race DEBUG (diagnostic only). true = each catch attempt's full verbose
 # OpenOCD output is appended to /tmp/x3utils_race_debug.log while the live
