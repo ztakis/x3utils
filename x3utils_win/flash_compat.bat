@@ -249,11 +249,15 @@ set "norm_raw_dump=%raw_dump:\=/%"
 set "norm_patched_dump=%patched_dump:\=/%"
 echo.
 echo %D%
-echo    %CL_M%SHU-compat power-race (mode D) - 2 catches: dump, then flash%CL_NC%
+echo    %CL_M%SHU-compat power-race (mode D)%CL_NC%
+echo    %CL_M%2 catches: dump, then flash%CL_NC%
 echo %D%
-echo    You'll catch the window TWICE: once to read the current firmware, once
-echo    to flash the patched version. %CL_C%Ctrl+C to stop.%CL_NC%
-echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier  %CL_G%H%CL_NC%=almost  %CL_R%x%CL_NC%=probe/USB gone
+echo    You'll catch the window TWICE:
+echo    1. read the current firmware
+echo    2. flash the patched version
+echo    %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier
+echo          %CL_G%H%CL_NC%=almost    %CL_R%x%CL_NC%=probe/USB gone
 echo.
 :: Graded live symbols via the shared race_grade.cmd; RACE_DEBUG appends each
 :: attempt's verbose output to race_dbg_log. Both catches (dump + flash) capture
@@ -267,7 +271,8 @@ if /i "%RACE_DEBUG%"=="true" (
     set "race_v=-d0"
 )
 echo %D%
-echo    Stage 1/3: catch + dump current firmware. %CL_C%Apply POWER now...%CL_NC%
+echo    Stage 1/3: catch + dump current firmware.
+echo    %CL_C%Apply POWER now...%CL_NC%
 echo %D%
 set /a race_tries=0
 :rc_dump_loop
@@ -324,7 +329,9 @@ echo [ %CL_G%OK%CL_NC% ] Patched image ready: "%patched_dump%"
 
 echo.
 echo %D%
-echo    Stage 3/3: catch + flash patched firmware. %CL_C%Cut and re-apply POWER...%CL_NC%
+echo    Stage 3/3: catch + flash patched firmware.
+echo    %CL_C%Keep POWER on; waiting for the flash catch...%CL_NC%
+echo    Once caught, hold power steady and do NOT replug.
 echo %D%
 set /a race_tries=0
 :rc_flash_loop

@@ -106,9 +106,12 @@ goto :dump_attempt
 echo %D%
 echo    %CL_M%Power-race dump (mode D) - respawn, read-only%CL_NC%
 echo %D%
-echo    Hammering connects. %CL_C%Apply POWER now%CL_NC%; if it misses, cut and
-echo    re-apply POWER (each power-ON is a fresh window). %CL_C%Ctrl+C to stop.%CL_NC%
-echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier  %CL_G%H%CL_NC%=almost  %CL_R%x%CL_NC%=probe/USB gone
+echo    Hammering connects.
+echo    %CL_C%Apply POWER now%CL_NC%; if it misses, cut and
+echo    re-apply POWER. Each power-ON is a fresh window.
+echo    %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier
+echo          %CL_G%H%CL_NC%=almost    %CL_R%x%CL_NC%=probe/USB gone
 echo.
 set "race_dbg_log=%TEMP%\x3utils_race_debug.log"
 set "race_last=%TEMP%\x3utils_race_last.log"

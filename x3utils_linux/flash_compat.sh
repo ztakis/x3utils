@@ -55,11 +55,15 @@ if [[ "${RACE:-false}" == "true" ]]; then
 
     echo
     echo "$D"
-    echo -e "   ${CL_M}SHU-compat power-race (mode D) - 2 catches: dump, then flash${CL_NC}"
+    echo -e "   ${CL_M}SHU-compat power-race (mode D)${CL_NC}"
+    echo -e "   ${CL_M}2 catches: dump, then flash${CL_NC}"
     echo "$D"
-    echo -e "   You'll catch the window TWICE: once to read the current firmware, once"
-    echo -e "   to flash the patched version. ${CL_C}Ctrl+C to stop.${CL_NC}"
-    echo -e "   Live: .=searching  ${CL_Y}N${CL_NC}=noisy, hold steadier  ${CL_G}H${CL_NC}=almost  ${CL_R}x${CL_NC}=probe/USB gone"
+    echo "   You'll catch the window TWICE:"
+    echo "   1. read the current firmware"
+    echo "   2. flash the patched version"
+    echo -e "   ${CL_C}Ctrl+C to stop.${CL_NC}"
+    echo -e "   Live: .=searching  ${CL_Y}N${CL_NC}=noisy, hold steadier"
+    echo -e "         ${CL_G}H${CL_NC}=almost    ${CL_R}x${CL_NC}=probe/USB gone"
     echo
 
     race_dbg_log="${TMPDIR:-/tmp}/x3utils_race_debug.log"
@@ -72,7 +76,8 @@ if [[ "${RACE:-false}" == "true" ]]; then
     fi
 
     echo "$D"
-    echo -e "   Stage 1/3: catch + dump current firmware. ${CL_C}Apply POWER now...${CL_NC}"
+    echo "   Stage 1/3: catch + dump current firmware."
+    echo -e "   ${CL_C}Apply POWER now...${CL_NC}"
     echo "$D"
     race_tries=0
     while true; do
@@ -137,7 +142,9 @@ EOF
 
     echo
     echo "$D"
-    echo -e "   Stage 3/3: catch + flash patched firmware. ${CL_C}Cut and re-apply POWER...${CL_NC}"
+    echo "   Stage 3/3: catch + flash patched firmware."
+    echo -e "   ${CL_C}Keep POWER on; waiting for the flash catch...${CL_NC}"
+    echo "   Once caught, hold power steady and do NOT replug."
     echo "$D"
     race_tries=0
     while true; do

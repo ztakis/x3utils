@@ -28,11 +28,11 @@ set "D=^============================================================"
 set "OPENOCD_BIN=%~dp0oocd\bin\openocd.exe"
 set "SCRIPTS_DIR=%~dp0oocd\scripts"
 set "INTERFACE=interface\stlink.cfg"
-set "TARGET=target\at32f415xx_c45.cfg"
+set "TARGET=target\at32f415xx.cfg"
 
 :: Connection mode D (power-race): true = Dump uses the respawn power-race connect
-:: (target\at32f415xx_c45.cfg). Set by the launcher radio; A/B/C reset it false.
-set "RACE=false"
+:: (target\at32f415xx.cfg). Set by the launcher radio; A/B/C reset it false.
+set "RACE=true"
 
 :: Power-race DEBUG (diagnostic only). true = each catch attempt's full verbose
 :: OpenOCD output is APPENDED to a log (with a per-attempt header) WHILE the dots

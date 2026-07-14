@@ -123,13 +123,17 @@ goto :end
 :race_flash_only
 echo.
 echo %D%
-echo    %CL_M%Power-race flash-only (mode D) - respawn erase+write+verify, no backup%CL_NC%
+echo    %CL_M%Power-race flash-only (mode D)%CL_NC%
+echo    %CL_M%Erase + write + verify, no backup%CL_NC%
 echo %D%
-echo    Hammering connects. %CL_C%Apply POWER now%CL_NC%; cut and re-apply POWER on a miss.
-echo    When the symbols pause it CAUGHT and is flashing [%bin_file%] - ~5s quiet is
-echo    normal. %CL_C%Do NOT replug mid-flash%CL_NC%: a stalled write fails and retries by
-echo    itself, and erase precedes write so a retry is safe. %CL_C%Ctrl+C to stop.%CL_NC%
-echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier  %CL_G%H%CL_NC%=almost  %CL_R%x%CL_NC%=probe/USB gone
+echo    Hammering connects.
+echo    %CL_C%Apply POWER now%CL_NC%; cut and re-apply on a miss.
+echo    When symbols pause, it CAUGHT.
+echo    Hold power steady; do NOT replug.
+echo    Erase/write/verify may be quiet for a few seconds.
+echo    %CL_C%Ctrl+C to stop.%CL_NC%
+echo    Live: .=searching  %CL_Y%N%CL_NC%=noisy, hold steadier
+echo          %CL_G%H%CL_NC%=almost    %CL_R%x%CL_NC%=probe/USB gone
 echo.
 set "race_dbg_log=%TEMP%\x3utils_race_debug.log"
 set "race_last=%TEMP%\x3utils_race_last.log"

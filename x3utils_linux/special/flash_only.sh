@@ -64,13 +64,17 @@ echo
 if [[ "${RACE:-false}" == "true" ]]; then
     echo
     echo "$D"
-    echo -e "   ${CL_M}Power-race flash-only (mode D) - respawn erase+write+verify, no backup${CL_NC}"
+    echo -e "   ${CL_M}Power-race flash-only (mode D)${CL_NC}"
+    echo -e "   ${CL_M}Erase + write + verify, no backup${CL_NC}"
     echo "$D"
-    echo -e "   Hammering connects. ${CL_C}Apply POWER now${CL_NC}; cut and re-apply POWER on a miss."
-    echo -e "   When the symbols pause it CAUGHT and is flashing [$bin_file] - ~5s quiet is"
-    echo -e "   normal. ${CL_C}Do NOT replug mid-flash${CL_NC}: a stalled write fails and retries by"
-    echo -e "   itself, and erase precedes write so a retry is safe. ${CL_C}Ctrl+C to stop.${CL_NC}"
-    echo -e "   Live: .=searching  ${CL_Y}N${CL_NC}=noisy, hold steadier  ${CL_G}H${CL_NC}=almost  ${CL_R}x${CL_NC}=probe/USB gone"
+    echo "   Hammering connects."
+    echo -e "   ${CL_C}Apply POWER now${CL_NC}; cut and re-apply on a miss."
+    echo "   When symbols pause, it CAUGHT."
+    echo "   Hold power steady; do NOT replug."
+    echo "   Erase/write/verify may be quiet for a few seconds."
+    echo -e "   ${CL_C}Ctrl+C to stop.${CL_NC}"
+    echo -e "   Live: .=searching  ${CL_Y}N${CL_NC}=noisy, hold steadier"
+    echo -e "         ${CL_G}H${CL_NC}=almost    ${CL_R}x${CL_NC}=probe/USB gone"
     echo
     race_dbg_log="${TMPDIR:-/tmp}/x3utils_race_debug.log"
     race_last="${TMPDIR:-/tmp}/x3utils_race_last.log"

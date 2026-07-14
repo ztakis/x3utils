@@ -63,9 +63,12 @@ done
 if [[ "${RACE:-false}" == "true" ]]; then
     echo
     echo "$D"
-    echo -e "   ${CL_M}Power-race slot0 flash (mode D) - backup, then flash slot0 (2 catches)${CL_NC}"
+    echo -e "   ${CL_M}Power-race slot0 flash (mode D)${CL_NC}"
+    echo -e "   ${CL_M}Backup, then flash slot0 (2 catches)${CL_NC}"
     echo "$D"
-    echo "   Stage 1 backs up the current firmware; Stage 2 flashes slot0 [$bin_file]."
+    echo "   Stage 1 backs up current firmware."
+    echo "   Stage 2 flashes slot0:"
+    echo "       [$bin_file]"
     echo
     echo "$D"
     echo "   Stage 1/2: backup current firmware (dump.sh)"
@@ -83,12 +86,17 @@ if [[ "${RACE:-false}" == "true" ]]; then
 
     echo
     echo "$D"
-    echo "   Stage 2/2: flash slot0 [$bin_file] - respawn until caught, then write+verify"
+    echo "   Stage 2/2: flash slot0."
+    echo "   Respawn until caught, then write+verify."
     echo "$D"
-    echo -e "   Hammering connects. ${CL_C}Apply POWER now${CL_NC}; cut and re-apply POWER on a miss."
-    echo -e "   When the symbols pause it CAUGHT and is flashing (~5s quiet is normal - do"
-    echo -e "   NOT replug mid-flash; write_image re-erases, so a retry is safe). ${CL_C}Ctrl+C to stop.${CL_NC}"
-    echo -e "   Live: .=searching  ${CL_Y}N${CL_NC}=noisy, hold steadier  ${CL_G}H${CL_NC}=almost  ${CL_R}x${CL_NC}=probe/USB gone"
+    echo "   Hammering connects."
+    echo -e "   ${CL_C}Apply POWER now${CL_NC}; cut and re-apply on a miss."
+    echo "   When symbols pause, it CAUGHT."
+    echo "   Hold power steady; do NOT replug."
+    echo "   Write/verify may be quiet for a few seconds."
+    echo -e "   ${CL_C}Ctrl+C to stop.${CL_NC}"
+    echo -e "   Live: .=searching  ${CL_Y}N${CL_NC}=noisy, hold steadier"
+    echo -e "         ${CL_G}H${CL_NC}=almost    ${CL_R}x${CL_NC}=probe/USB gone"
     echo
     race_dbg_log="${TMPDIR:-/tmp}/x3utils_race_debug.log"
     race_last="${TMPDIR:-/tmp}/x3utils_race_last.log"
