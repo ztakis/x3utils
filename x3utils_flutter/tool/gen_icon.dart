@@ -1,15 +1,43 @@
 // Renders the x3utils app icon (the in-app logo: teal→magenta rounded square
-// with a lightning bolt) to windows/runner/resources/app_icon.ico + icon.png.
+// with a lightning bolt) to icon.png, Windows .ico, and macOS AppIcon assets.
 // Run:  dart run tool/gen_icon.dart
 import 'dart:io';
 import 'package:image/image.dart' as img;
 
 void main() {
-  const size = 256;
-  const pad = size * 0.06;
-  const left = pad, top = pad, right = size - pad, bottom = size - pad;
-  const w = right - left, h = bottom - top;
-  const r = w * 0.24; // corner radius
+  final master = _renderIcon(1024);
+  final icon256 = img.copyResize(master,
+      width: 256, height: 256, interpolation: img.Interpolation.average);
+
+  File('icon.png').writeAsBytesSync(img.encodePng(icon256));
+
+  Directory('windows/runner/resources').createSync(recursive: true);
+  File('windows/runner/resources/app_icon.ico')
+      .writeAsBytesSync(img.encodeIco(icon256));
+
+  final macIconDir =
+      Directory('macos/Runner/Assets.xcassets/AppIcon.appiconset');
+  macIconDir.createSync(recursive: true);
+  for (final size in <int>[16, 32, 64, 128, 256, 512, 1024]) {
+    final icon = size == 1024
+        ? master
+        : img.copyResize(master,
+            width: size,
+            height: size,
+            interpolation: img.Interpolation.average);
+    File('${macIconDir.path}/app_icon_$size.png')
+        .writeAsBytesSync(img.encodePng(icon));
+  }
+
+  stdout.writeln(
+      'wrote icon.png + windows/runner/resources/app_icon.ico + macOS AppIcon assets');
+}
+
+img.Image _renderIcon(int size) {
+  final pad = size * 0.06;
+  final left = pad, top = pad, right = size - pad, bottom = size - pad;
+  final w = right - left, h = bottom - top;
+  final r = w * 0.24; // corner radius
 
   // brand teal -> hot magenta (matches AppColors.brand / AppColors.pop)
   const c0 = [0x16, 0xE0, 0xC4];
@@ -49,11 +77,7 @@ void main() {
   img.fillPolygon(image,
       vertices: verts, color: img.ColorRgba8(0x04, 0x12, 0x0F, 255));
 
-  File('icon.png').writeAsBytesSync(img.encodePng(image));
-  Directory('windows/runner/resources').createSync(recursive: true);
-  File('windows/runner/resources/app_icon.ico')
-      .writeAsBytesSync(img.encodeIco(image));
-  stdout.writeln('wrote icon.png + windows/runner/resources/app_icon.ico');
+  return image;
 }
 
 bool _inRoundRect(
