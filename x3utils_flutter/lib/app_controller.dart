@@ -166,6 +166,7 @@ class AppController extends ChangeNotifier {
   int countdownValue = 0;
   DateTime? _progressShownAt;
   DateTime? _lastProgressAt;
+  String? _activeRunEyebrow;
   String? _runIssue;
   int _runIssuePriority = 0;
 
@@ -325,6 +326,7 @@ class AppController extends ChangeNotifier {
     showContinue = false;
     _progressShownAt = null;
     _lastProgressAt = null;
+    _activeRunEyebrow = null;
     messageTone = MessageTone.normal;
     _runIssue = null;
     _runIssuePriority = 0;
@@ -830,8 +832,8 @@ class AppController extends ChangeNotifier {
       _progressShownAt ??= DateTime.now();
       _set(
         StageState.connect,
-        'Linking',
-        'Connected',
+        _activeRunEyebrow ?? 'Linking',
+        _activeRunEyebrow == null ? 'Connected' : action.name,
         'Keep the ST-LINK and SWD wires steady.',
       );
     } else if (low.contains('connecting in')) {
@@ -840,7 +842,7 @@ class AppController extends ChangeNotifier {
       showContinue = false;
       _set(
         StageState.count,
-        'Under reset',
+        'Step 2 of 3',
         'Connecting under reset',
         'Keep holding the wire — do not lift it yet.',
       );
@@ -852,7 +854,7 @@ class AppController extends ChangeNotifier {
         showContinue = false;
         _set(
           StageState.count,
-          'Under reset',
+          'Step 2 of 3',
           'Connecting under reset',
           'Keep holding the wire — do not lift it yet.',
         );
@@ -971,16 +973,32 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  void _showOpenOcdProgress() {
-    if (stage == StageState.run ||
-        stage == StageState.hold ||
+  void _showOpenOcdProgress({String? eyebrow}) {
+    if (stage == StageState.hold ||
         stage == StageState.count ||
         stage == StageState.release) {
       return;
     }
+    if (eyebrow != null) _activeRunEyebrow = eyebrow;
+    if (eyebrow == null && stage == StageState.run) return;
     _progressShownAt ??= DateTime.now();
-    _set(StageState.run, action.name, '${action.name}…', sub);
+    _set(
+      StageState.run,
+      eyebrow ?? _activeRunEyebrow ?? _runEyebrow(),
+      action.name,
+      sub,
+    );
   }
+
+  String _runEyebrow() => switch (actionId) {
+    'check' => 'Checking',
+    'dump' => 'Backing up',
+    'flash_backup' || 'flash_only' || 'flash_slot0' => 'Flashing',
+    'flash_compat' => 'Working',
+    'rdp_check' => 'Protection',
+    'rdp_rescue' => 'Rescue',
+    _ => 'Working',
+  };
 
   bool _dumpConfirmed(OpenOcdResult r) => r.ok && r.evidence.dumped;
 
@@ -1009,7 +1027,7 @@ class AppController extends ChangeNotifier {
       folder: backupFolder,
       prefix: backupPrefix,
     );
-    _showOpenOcdProgress();
+    _showOpenOcdProgress(eyebrow: 'Backing up');
     _setInstruction('Reading the full 128 KB flash into a backup file...');
     final r = await _runRealCore(
       runner.dumpArgs(mode, countdownSeconds, outPath),
@@ -1072,7 +1090,7 @@ class AppController extends ChangeNotifier {
         folder: backupFolder,
         prefix: backupPrefix,
       );
-      _showOpenOcdProgress();
+      _showOpenOcdProgress(eyebrow: 'Backing up');
       _setInstruction('Backing up the chip before flashing...');
       final b = await _runRealCore(
         runner.dumpArgs(mode, countdownSeconds, outPath),
@@ -1111,7 +1129,7 @@ class AppController extends ChangeNotifier {
     final args = slot0
         ? runner.flashSlot0Args(mode, countdownSeconds, fw)
         : runner.flashArgs(mode, countdownSeconds, fw);
-    _showOpenOcdProgress();
+    _showOpenOcdProgress(eyebrow: 'Flashing');
     _setInstruction(
       slot0
           ? 'Writing slot 0 only. Bootloader and identity stay untouched.'
@@ -1147,7 +1165,7 @@ class AppController extends ChangeNotifier {
   /// (mirrors flash_compat.bat; no user .bin — uses the chip's own image).
   Future<void> _runCompat(OpenOcdRunner runner, bool guided) async {
     final (raw, patched) = Firmware.newCompatPaths(prefix: backupPrefix);
-    _showOpenOcdProgress();
+    _showOpenOcdProgress(eyebrow: 'Backing up');
     _setInstruction('Reading the chip before patching...');
 
     // Step 1 — read the current firmware.
@@ -1182,6 +1200,7 @@ class AppController extends ChangeNotifier {
     _maybeSecondCopy(raw);
 
     // Step 2 — patch (pure Dart, no hardware).
+    _showOpenOcdProgress(eyebrow: 'Patching');
     _setInstruction('Patching the SHU compatibility signature...');
     _log('== patching SHU-compat signature @ 0x1420 ==');
     final patch = CompatPatch.apply(raw, patched);
@@ -1196,10 +1215,13 @@ class AppController extends ChangeNotifier {
       return;
     }
     _log('== patched → $patched ==');
-    _setInstruction('SHU patch applied. Flashing it back to the chip...');
+    _showOpenOcdProgress(eyebrow: 'Patching');
+    _setInstruction('SHU patch applied. Ready to flash...');
     await Future.delayed(const Duration(milliseconds: 900));
 
     // Step 3 — flash the patched image back.
+    _showOpenOcdProgress(eyebrow: 'Flashing');
+    _setInstruction('Flashing it back to the chip...');
     final f = await _runRealCore(
       runner.flashArgs(mode, countdownSeconds, patched),
       guided: guided,
