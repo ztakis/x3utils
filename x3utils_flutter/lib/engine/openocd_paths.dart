@@ -21,7 +21,11 @@ class OpenOcdPaths {
   static String get osDir {
     if (Platform.isWindows) return 'windows';
     if (Platform.isMacOS) return 'macos';
-    return 'linux';
+    if (Platform.isLinux) return 'linux';
+    throw OpenOcdNotFound(
+      'Unsupported platform: ${Platform.operatingSystem}. '
+      'This build has no bundled OpenOCD backend for this OS.',
+    );
   }
 
   static OpenOcdPaths find() {
@@ -47,8 +51,9 @@ class OpenOcdPaths {
     }
 
     throw OpenOcdNotFound(
-        'Bundled OpenOCD not found. Expected native/$osDir/oocd/bin/$exeName '
-        '+ scripts beside the app or up the tree.');
+      'Bundled OpenOCD not found. Expected native/$osDir/oocd/bin/$exeName '
+      '+ scripts beside the app or up the tree.',
+    );
   }
 }
 

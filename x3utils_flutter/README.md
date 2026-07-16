@@ -48,6 +48,27 @@ flutter build windows --release
 The release output is in `build/<os>/…`. For distribution, place a copy of the
 per-OS `native/<os>/` folder next to the executable (see below).
 
+## v1.1.3 missing-backend hotfix
+
+The app must never fake a hardware success when OpenOCD is missing. In v1.1.3,
+if the bundled backend cannot be found, actions fail closed with `OpenOCD
+missing`, `Cannot run <action>`, and `Last connect: FAIL`. The console must not
+show simulated `target halted`, `PASS`, or `OK` lines.
+
+This is especially important for source builds, unsupported platforms, and
+release packaging smoke tests. Android and other unsupported OS targets are not
+treated as Linux; they fail as unsupported backends.
+
+To smoke-test an installed Windows package, temporarily rename:
+
+```powershell
+%LOCALAPPDATA%\Programs\x3utils\native\windows\oocd
+```
+
+Launch the app and run **Check connection**. Expected result: a red
+missing-OpenOCD failure, no simulated console output. Rename the folder back
+before normal use.
+
 ## Layout
 
 ```
@@ -87,7 +108,7 @@ The Dart is OS-agnostic; a port is mostly binaries + scaffolding:
 
 Version lives in four places — **keep them in sync**: `VERSION`,
 `pubspec.yaml` (`version:`), and `kAppVersion` in `lib/theme.dart` (drives the
-UI). Current: **1.1.2**. Also in installer/x3utils.iss `AppVer`.
+UI). Current: **1.1.3**. Also in installer/x3utils.iss `AppVer`.
 
 ## Safety
 

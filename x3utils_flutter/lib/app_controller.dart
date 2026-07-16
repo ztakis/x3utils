@@ -10,9 +10,6 @@ import 'engine/rdp_runner.dart';
 import 'engine/firmware.dart';
 
 /// Drives the whole UI via a single StageState the hero binds to.
-///
-/// PHASE 1: non-guided "Check connection" runs REAL OpenOCD (see _runReal).
-/// Everything else still runs the SIMULATION (_simulate) until wired.
 class AppController extends ChangeNotifier {
   AppController() {
     try {
@@ -184,8 +181,6 @@ class AppController extends ChangeNotifier {
   bool _capturing = false;
 
   int _token = 0;
-  Completer<void>? _continue;
-
   static const _minBusyVisible = Duration(milliseconds: 1000);
   static const _minAfterLastProgress = Duration(milliseconds: 2500);
 
@@ -257,18 +252,14 @@ class AppController extends ChangeNotifier {
   }
 
   void continueStep() {
-    if (_realRun) {
-      if (actionId.startsWith('rdp')) {
-        _rdp?.sendContinue();
-      } else {
-        _runner?.sendContinue();
-      }
-      showContinue = false;
-      notifyListeners();
-      return;
+    if (!_realRun) return;
+    if (actionId.startsWith('rdp')) {
+      _rdp?.sendContinue();
+    } else {
+      _runner?.sendContinue();
     }
-    _continue?.complete();
-    _continue = null;
+    showContinue = false;
+    notifyListeners();
   }
 
   void toggleConsole() {
@@ -376,13 +367,6 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _waitContinue() {
-    // Guided hardware steps must wait for a real Continue click — never
-    // auto-advance past holding/releasing the wire.
-    _continue = Completer<void>();
-    return _continue!.future;
-  }
-
   /// One-line self-describing header for logs + clipboard (version/OS/mode/time).
   String contextHeader() {
     final os = switch (Platform.operatingSystem) {
@@ -413,7 +397,11 @@ class AppController extends ChangeNotifier {
   Future<void> _dispatch() async {
     final runner = _runner;
     if (runner == null) {
-      await _simulate();
+      _failCannotRun(
+        'OpenOCD missing',
+        'Cannot run ${action.name}',
+        'Bundled OpenOCD was not found. This build cannot talk to the controller.',
+      );
       return;
     }
     final g = mode.guided;
@@ -448,8 +436,20 @@ class AppController extends ChangeNotifier {
       case 'rdp_rescue':
         await _runRdp('Rescue', yes: true);
       default:
-        await _simulate(); // anything not yet wired
+        _failCannotRun(
+          'Action unavailable',
+          'Cannot run this action',
+          'This action is not wired to a real OpenOCD command.',
+        );
     }
+  }
+
+  void _failCannotRun(String eb, String t, String sb) {
+    running = false;
+    _realRun = false;
+    lastConnect = 'FAIL';
+    _log('== $t ==');
+    _set(StageState.fail, eb, t, sb);
   }
 
   Future<void> _runRdp(String verb, {required bool yes}) async {
@@ -1237,82 +1237,5 @@ class AppController extends ChangeNotifier {
       'SHU-compatible firmware flashed & verified. Original saved to $raw',
       _flashFailMessage(f),
     );
-  }
-
-  Future<void> _simulate() async {
-    final my = ++_token;
-    running = true;
-    final a = action;
-    _log('> ${a.name}  [${mode.title}]  (simulated)');
-    lastConnect = 'connecting…';
-    notifyListeners();
-
-    if (mode.guided) {
-      _set(
-        StageState.hold,
-        'Step 1 of 3',
-        'Hold C45 → GND',
-        'Touch the wire to the C45 pad and keep it steady. Then hit continue.',
-        continueBtn: 'I’m holding — continue',
-      );
-      _log('hold a wire between C45 and GND…');
-      await _waitContinue();
-      if (my != _token) return;
-
-      _set(
-        StageState.count,
-        'Under reset',
-        'Connecting under reset',
-        'Keep holding. Do not lift the wire yet.',
-      );
-      for (var n = countdownSeconds; n > 0; n--) {
-        countdownValue = n;
-        _log('connecting in $n…');
-        notifyListeners();
-        await Future.delayed(const Duration(milliseconds: 720));
-        if (my != _token) return;
-      }
-      countdownValue = 0;
-      notifyListeners();
-
-      _set(
-        StageState.release,
-        'Step 3 of 3',
-        'Release now',
-        'Lift the wire off the pad — right now.',
-        continueBtn: 'Released — continue',
-      );
-      _log('>>> remove the wire from GND');
-      await _waitContinue();
-      if (my != _token) return;
-    }
-
-    _set(
-      StageState.connect,
-      'Linking',
-      'Connecting…',
-      'Re-examining the target over SWD.',
-    );
-    _log('init');
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (my != _token) return;
-    _log('target halted');
-    lastConnect = 'PASS';
-    notifyListeners();
-
-    _progressShownAt = DateTime.now();
-    _set(
-      StageState.run,
-      a.name,
-      '${a.name}…',
-      'Keep the ST-LINK and SWD wires steady until it finishes.',
-    );
-    await Future.delayed(const Duration(milliseconds: 1200));
-    if (my != _token) return;
-
-    _log('== ${a.name} OK ==');
-    _set(StageState.ok, 'Done', '${a.name} complete', a.okMsg);
-    running = false;
-    notifyListeners();
   }
 }
