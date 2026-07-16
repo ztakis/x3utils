@@ -7,13 +7,13 @@ It's a front-end over the same bundled **OpenOCD** + `rdp` toolkit the
 field-proven `x3utils_win` / `x3utils_linux` / `x3utils_mac` scripts use — the
 flashing brains stay in OpenOCD + the `.cfg` procs; this app is the shell.
 
-> Windows-first, but written to be cross-platform (macOS / Linux). The command
-> logic is OS-agnostic Dart; each OS just needs its native binaries bundled.
+The GUI runs on Windows, Linux, and macOS. The command logic is shared Dart,
+with a vetted native OpenOCD/RDP bundle for each desktop OS.
 
 ## What it does
 
 Connection modes: **A** Default SWD · **B** C45 clone (guided hold/release) ·
-**C** C45 genuine (nRST).
+**C** C45 genuine (nRST) · **D** Power-race (respawn connect).
 
 Actions:
 
@@ -43,10 +43,32 @@ Run `flutter doctor` and resolve anything for your target OS.
 flutter pub get
 flutter run -d windows      # or: macos | linux
 flutter build windows --release
+./tool/package_macos.sh     # universal app + embedded OpenOCD + ZIP
 ```
 
 The release output is in `build/<os>/…`. For distribution, place a copy of the
-per-OS `native/<os>/` folder next to the executable (see below).
+per-OS `native/<os>/` folder where `OpenOcdPaths.find()` can reach it. The
+macOS packaging script handles this automatically by embedding it at
+`x3utils.app/Contents/MacOS/native/macos`, then ad-hoc signing and verifying the
+complete app. Its output is written under `dist/` as a versioned app folder and
+`x3utils-<version>-macos-universal.zip`.
+
+### macOS package details
+
+`tool/package_macos.sh` is the supported macOS distribution path. It:
+
+- builds Flutter's universal x86_64 + arm64 release;
+- embeds `native/macos` under `Contents/MacOS/native/macos`;
+- preserves executable permissions for OpenOCD and RDP scripts;
+- verifies the app, Flutter framework, OpenOCD, and support dylib architectures;
+- ad-hoc signs and validates the complete app;
+- parses the packaged Power-race config without connecting to hardware;
+- creates the versioned `.app` folder and ZIP in `dist/`.
+
+The app uses the generated lightning `AppIcon` and a 1200x800 initial window.
+If Dock or Launchpad shows an old Flutter icon while Finder shows the correct
+one, that is macOS icon caching. Remove the old app and install the fresh
+package; do not change the icon identity as a cache workaround.
 
 ## v1.1.3 missing-backend hotfix
 
@@ -69,6 +91,31 @@ Launch the app and run **Check connection**. Expected result: a red
 missing-OpenOCD failure, no simulated console output. Rename the folder back
 before normal use.
 
+On macOS, the equivalent backend is:
+
+```text
+x3utils.app/Contents/MacOS/native/macos/oocd
+```
+
+Renaming it and relaunching the app must produce the same fail-closed result.
+The backend is resolved during app startup, so restore the directory name and
+relaunch before normal use.
+
+## Protection checks by connection mode
+
+The GUI honors the selected protection-check connection mode:
+
+- **A Default SWD** — plain init/reset halt.
+- **B C45 Clone** — guided hold/count/release flow.
+- **C C45 Genuine** — hardware nRST.
+- **D Power-race** — intentionally blocked; RDP/protection work requires a
+  stable session.
+
+On macOS, Flutter writes `config.sh` at its temporary RDP run root because the
+macOS CLI-derived scripts load it via `../../config.sh`. Linux keeps config
+beside its temporary RDP scripts. This platform-specific layout must be
+preserved.
+
 ## Layout
 
 ```
@@ -85,24 +132,23 @@ lib/
     firmware.dart       .bin validation, backup/compat/log paths
 native/
   windows/             oocd/ (openocd.exe + scripts) + special/rdp/ (rdp.ps1)
-  macos/  linux/       (added during the respective port)
+  macos/  linux/       per-OS OpenOCD + special/rdp shell toolkit
 design/flash-studio.html   the original visual mockup / spec
 ```
 
 `OpenOcdPaths.find()` walks up from the executable to resolve
-`native/<os>/oocd`, so it works both in a dev build (deep under `build/`) and a
-packaged build (next to the exe).
+`native/<os>/oocd`. In the packaged macOS app the executable is under
+`Contents/MacOS`, so the backend is embedded directly beneath that directory.
 
-## Adding macOS / Linux
+## Native backend layout
 
-The Dart is OS-agnostic; a port is mostly binaries + scaffolding:
+The Dart orchestration is shared; each OS supplies its native backend:
 
-1. `flutter create --platforms=macos .` (or `linux`) to generate the runner.
-2. Drop the OS's OpenOCD into `native/<os>/oocd/` (macOS uses the xpack build,
-   arm64 + x64; its Artery cfg lives at `target/artery/at32f4x*` — already
-   handled by `cfg.dart`).
-3. Drop the OS's `special/rdp/*.sh` + `rescue.cfg` into `native/<os>/special/rdp/`.
-4. `flutter build <os>` and test against hardware.
+1. Place the OS's OpenOCD in `native/<os>/oocd/` (macOS uses the universal
+   xPack build; its Artery cfgs live at `target/artery/at32f4x*`, including the
+   Power-race `_race.cfg` variant handled by `cfg.dart`).
+2. Place the OS's protection toolkit under `native/<os>/special/rdp/`.
+3. Build/package for the target OS and test against hardware.
 
 ## Versioning
 

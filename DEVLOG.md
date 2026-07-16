@@ -297,6 +297,9 @@ survive machine switches and chat history loss.
   1. Hardware-validate the macOS CLI v1.7.0 mode D port.
   2. Then add mode D / Power-race to the Flutter GUI.
   3. Then cut a GUI release at whatever v1.1.x it lands on.
+  - Superseded later on 2026-07-16: Flutter Power-race connection and macOS
+    packaging are now implemented and tested; GUI Power-race write flows still
+    need separate hardware coverage.
 - Release status (a version bump in this log does not mean released):
   - GUI v1.1.2 is released for Windows and Linux only. The macOS GUI has
     never been released.
@@ -305,3 +308,70 @@ survive machine switches and chat history loss.
     after the macOS CLI v1.7.0 port and the GUI Power-race work.
   - CLI for reference: Windows and Linux are released at v1.7.0; macOS CLI is
     bumped to v1.7.0 in-tree with hardware validation and release still pending.
+- Flutter macOS Power-race plumbing:
+  - Added the vetted macOS CLI v1.7.0
+    `target/artery/at32f4x_race.cfg` unchanged to the GUI's universal macOS
+    OpenOCD bundle.
+  - The existing shared Flutter respawn runner now resolves that artery config
+    for Power-race check, dump, full flash, SHU compatibility, flash-only, and
+    slot-0 flows on macOS.
+  - RDP/protection actions remain intentionally unsupported in Power-race.
+  - Non-hardware verification passed: the GUI race cfg is byte-identical to
+    both macOS CLI architecture copies, bundled universal OpenOCD parsed it
+    without `init`, `flutter analyze` passed, and the macOS debug app built.
+  - The existing widget smoke test still fails on two unrelated desktop-row
+    overflows at its default 800x600 viewport.
+  - Later hardware testing passed the packaged Power-race connection check on
+    attempt 78. GUI Power-race dump/flash/compat/slot0 write-path validation
+    remains separate release coverage.
+- Added `x3utils_flutter/tool/package_macos.sh` for repeatable macOS packaging.
+  - Builds Flutter's universal release app.
+  - Embeds the complete `native/macos` backend at
+    `Contents/MacOS/native/macos`, matching `OpenOcdPaths.find()`.
+  - Verifies version consistency, required backend files, x86_64 + arm64
+    slices, the app signature, and a no-hardware parse of the Power-race cfg.
+  - Produces a versioned app folder and ZIP under `x3utils_flutter/dist/`.
+  - First end-to-end v1.1.3 package run passed on Intel macOS; the existing
+    v1.1.2 app under `~/Applications` was inspected but not replaced.
+- macOS icon investigation confirmed the packaged app already contained the
+  correct lightning icon; the stale Flutter logo was a Dock/Launchpad cache.
+  The temporary icon-identity rename and build-number bump were reverted.
+- Flutter macOS RDP packaging fix:
+  - Real packaged testing found `rdp_check.sh --launcher` failed immediately
+    with `Missing config.sh`.
+  - The shared runner had written config beside `special/rdp`, matching Linux,
+    while the macOS CLI-derived scripts intentionally load `../../config.sh`.
+  - macOS now writes config at the temporary run root; Linux keeps its existing
+    beside-script config. Toolkit setup failures no longer receive the generic
+    SWD/C45 re-seat hint.
+  - Added a fake-OpenOCD regression test for the packaged-tree layout; it
+    confirms the root config is found and a complete read-only verdict reaches
+    Flutter without hardware.
+  - Verification passed before the follow-up: Bash syntax, targeted Flutter
+    test, `flutter analyze`, and universal package build.
+- Follow-up correction: the Flutter GUI must honor its selected A/B/C
+  connection mode for Check protection. The CLI's blanket macOS `-l` disable
+  was too broad for the GUI because Power-race is already blocked before the
+  script runs. Restored `--launcher` for Flutter macOS RDP checks while keeping
+  the corrected root-level config placement. The regression test now covers
+  launcher A, B, and C selection.
+  - Follow-up verification passed: targeted A/B/C regression test,
+    `flutter analyze`, Bash syntax, and universal package rebuild.
+- Session closeout — packaged Flutter macOS v1.1.3:
+  - Correct custom icon and 1200x800 initial window confirmed. The earlier
+    Flutter icon was Dock/Launchpad cache; a fresh install fixed it.
+  - Packaged Default SWD Check connection passed on real hardware.
+  - Packaged Power-race Check connection passed on real hardware, caught on
+    attempt 78, detected the `artery` flash bank, and exited 0.
+  - Power-race Check protection correctly showed Not supported and launched no
+    RDP hardware command.
+  - Check protection passed on real hardware in launcher A and launcher B.
+    Mode B preserved the guided hold/count/release flow. Both read FAP=0xA5,
+    FAP_COMP=0x5A, and readable main flash, producing NOT PROTECTED.
+  - C45 Genuine launcher C protection check was not hardware-tested in this
+    session.
+  - Renaming embedded `oocd` confirmed fail-closed behavior: OpenOCD missing,
+    action FAIL, no simulation or false success. Restore the name and relaunch
+    because backend discovery happens at startup.
+  - `AGENTS.md`, `docs/testing.md`, and the Flutter README now record the
+    settled package layout, RDP platform distinction, tests, and cache note.

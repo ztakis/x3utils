@@ -501,6 +501,7 @@ class AppController extends ChangeNotifier {
     }
 
     int code;
+    var setupFailure = false;
     try {
       code = await rdp.run(
         verb,
@@ -509,6 +510,10 @@ class AppController extends ChangeNotifier {
         yes: yes,
         onLine: (line) {
           _onRealLine(line, mode.guided, driveOpenOcdProgress: false);
+          if (line.toLowerCase().contains('missing config.sh')) {
+            setupFailure = true;
+            _setRunIssue('RDP toolkit: missing config.sh', priority: 4);
+          }
           if (raceCheck) _advanceRdpRaceLine(line);
         },
         onChunk: (chunk) {
@@ -552,6 +557,7 @@ class AppController extends ChangeNotifier {
             false,
             '',
             'Inconclusive — could not determine the protection state. Check the console.',
+            reseat: !setupFailure,
           );
       }
     } else {
@@ -559,6 +565,7 @@ class AppController extends ChangeNotifier {
         code == 0,
         action.okMsg,
         'rescue exited with code $code. Check the console for what happened.',
+        reseat: !setupFailure,
       );
     }
   }

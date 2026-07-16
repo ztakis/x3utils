@@ -7,9 +7,9 @@ Guidance for automated coding agents working in this repository.
 This repository contains cross-platform ST-LINK/OpenOCD utilities for
 third-generation Ninebot scooter controllers.
 
-The current active Windows user path is the Flutter GUI under
-`x3utils_flutter/`. The older script and launcher trees are still important
-as proven behavior references and platform support.
+The active GUI path is the Flutter app under `x3utils_flutter/`, currently
+packaged for Windows, Linux, and macOS. The older script and launcher trees are
+still important as proven behavior references and platform support.
 
 The tools cover:
 
@@ -40,7 +40,7 @@ Default to discussion/review mode for this repo.
 ## Repository Layout
 
 - `README.md` - top-level project documentation.
-- `x3utils_flutter/` - active Flutter GUI path, including Windows runtime
+- `x3utils_flutter/` - active Flutter GUI path, including desktop runtime
   assets and OpenOCD orchestration.
 - `x3utils_win/` - Windows `.bat`/`.cmd` implementation and bundled OpenOCD.
 - `x3utils_linux/` - Linux shell implementation and bundled OpenOCD.
@@ -74,7 +74,7 @@ says so.
 
 ## Flutter GUI Notes
 
-The Flutter GUI is now the active Windows path. For GUI work:
+The Flutter GUI is the active desktop path. For GUI work:
 
 - Prefer the existing controller/runner structure over adding parallel logic.
 - Keep OpenOCD output visible and do not hide important error lines behind
@@ -112,6 +112,44 @@ checklist:
 - Never simulate hardware output. A missing or unresolvable OpenOCD backend,
   an unknown action id, or an unsupported platform must fail closed rather than
   fall back to a dry run.
+
+### macOS Flutter Packaging
+
+- From the repository root, use
+  `cd x3utils_flutter && ./tool/package_macos.sh` for distributable macOS
+  builds. A plain `flutter build macos --release` does not assemble the
+  complete release package.
+- The script builds a universal x86_64/arm64 app, embeds `native/macos` at
+  `x3utils.app/Contents/MacOS/native/macos`, ad-hoc signs the backend and app,
+  verifies signatures and architecture slices, parses the Power-race cfg
+  without `init`, and creates a versioned ZIP under `x3utils_flutter/dist/`.
+- `OpenOcdPaths.find()` expects that embedded `Contents/MacOS/native/macos`
+  layout. Do not move the backend into Resources without redesigning path
+  discovery.
+- Preserve executable permissions for OpenOCD and the RDP shell scripts.
+- The custom app icon is the normal `AppIcon` catalog. A stale Flutter icon in
+  Dock/Launchpad was confirmed to be a macOS cache issue, not a bad package.
+  Do not rename the icon identity or bump the build number solely to clear it.
+- The macOS window starts at 1200x800 from `MainMenu.xib`; preserve that unless
+  the UI layout is intentionally redesigned.
+
+### Flutter RDP Platform Details
+
+- Power-race protection actions are blocked in `AppController` before an RDP
+  script starts. Keep this fail-safe warning.
+- Windows RDP uses the PowerShell toolkit and its existing `config.cmd`.
+- Linux copies the shell toolkit to a temporary tree and writes `config.sh`
+  beside `special/rdp`.
+- macOS also uses a temporary tree, but its CLI-derived scripts load
+  `../../config.sh`; Flutter must therefore write config at the temporary run
+  root.
+- Flutter macOS Check protection passes `--launcher` and honors selected modes
+  A Default SWD, B C45 Clone, and C C45 Genuine. This intentionally differs
+  from the standalone macOS CLI read-only check, where `-l` is globally disabled
+  because CLI mode D cannot be graded reliably.
+- Preserve guided hold/count/release parsing for Flutter mode B RDP checks.
+- Toolkit setup errors such as `Missing config.sh` are not contact failures and
+  must not receive the generic SWD/C45 re-seat hint.
 
 ## Platform Parity
 
@@ -161,7 +199,8 @@ validator and then consuming its result.
 
 - Windows and Linux use bundled `oocd/` directories.
 - macOS uses bundled `xpack-openocd-0.12.0-7-darwin-*` directories selected by
-  `uname -m`.
+  `uname -m` in the CLI. The Flutter bundle contains universal xPack OpenOCD
+  and support dylibs.
 - The C45 clone path uses guided OpenOCD Tcl helpers such as `guided_connect`,
   `guided_flash_connect`, and `do_flash_and_verify`.
 - Non-C45 paths call OpenOCD with the ST-LINK interface config,
@@ -200,6 +239,12 @@ non-hardware changes, prefer dry checks:
 
 - Flutter: `dart format`, `flutter analyze`, and the relevant `flutter build`
   target when available.
+- macOS Flutter packaging: run `tool/package_macos.sh`; confirm universal app
+  and OpenOCD slices, valid deep signature, embedded race cfg/RDP scripts, and
+  normal `AppIcon` metadata.
+- macOS Flutter RDP: run `flutter test test/rdp_runner_test.dart`; it uses fake
+  OpenOCD to verify temporary config placement and A/B/C mode selection without
+  touching hardware.
 - Bash syntax: `bash -n x3utils_linux/*.sh` and, where possible,
   `bash -n x3utils_mac/*.sh`.
 - Windows batch review: inspect with `cmd /c` only for non-hardware code paths,

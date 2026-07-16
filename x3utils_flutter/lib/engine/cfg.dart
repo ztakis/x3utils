@@ -15,15 +15,14 @@ class Cfg {
 
   /// Target cfg for a connection mode: guided C45, genuine nRST, or plain SWD.
   static String target(ConnectionMode mode) => switch (mode) {
-        ConnectionMode.cloneC45 => '${_base()}_c45.cfg',
-        ConnectionMode.genuineC45 => '${_base()}_nrst.cfg',
-        _ => '${_base()}.cfg',
-      };
+    ConnectionMode.cloneC45 => '${_base()}_c45.cfg',
+    ConnectionMode.genuineC45 => '${_base()}_nrst.cfg',
+    _ => '${_base()}.cfg',
+  };
 
   /// The guided C45 cfg (always the _c45 variant).
   static String get c45 => '${_base()}_c45.cfg';
 
-  /// The power-race respawn cfg (holds the race_connect proc). Windows + Linux
-  /// only for now; the macOS artery variant isn't bundled yet.
+  /// The power-race respawn cfg (holds the race_connect proc).
   static String get race => '${_base()}_race.cfg';
 }

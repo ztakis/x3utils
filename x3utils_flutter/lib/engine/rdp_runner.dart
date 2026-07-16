@@ -76,7 +76,10 @@ class RdpRunner {
     } else {
       final runRoot = _prepareUnixRunRoot();
       final runRdpDir = p.join(runRoot, 'special', 'rdp');
-      _writeConfigSh(mode, timeout, runRdpDir);
+      // Linux GUI scripts load config.sh beside themselves. The macOS scripts
+      // preserve the CLI layout and load ../../config.sh from special/rdp.
+      final configDir = Platform.isMacOS ? runRoot : runRdpDir;
+      _writeConfigSh(mode, timeout, configDir, runRoot);
       final script = _scriptFor(verb);
       exe = 'bash';
       args = [p.join(runRdpDir, script), '--launcher', if (yes) '--yes'];
@@ -138,8 +141,9 @@ class RdpRunner {
     );
   }
 
-  // macOS/Linux: config.sh beside the .sh scripts (they read $ScriptDir/config.sh),
-  // mirroring the Windows config.cmd handoff in _rdpDir.
+  // macOS/Linux run from a writable temporary copy because the installed app
+  // bundle is signed. Linux reads special/rdp/config.sh; macOS preserves the
+  // CLI tree and reads config.sh from the temporary run root.
   String _prepareUnixRunRoot() {
     final runRoot = Directory.systemTemp.createTempSync('x3utils_rdp_').path;
     final runRdpDir = p.join(runRoot, 'special', 'rdp');
@@ -161,7 +165,12 @@ class RdpRunner {
     }
   }
 
-  void _writeConfigSh(ConnectionMode mode, int timeout, String configDir) {
+  void _writeConfigSh(
+    ConnectionMode mode,
+    int timeout,
+    String configDir,
+    String runRoot,
+  ) {
     final oocd = paths.openOcdExe;
     final scripts = paths.scriptsDir;
     final race = mode == ConnectionMode.powerRace ? 'RACE=true\n' : '';
@@ -178,7 +187,7 @@ class RdpRunner {
       'INTERFACE="${Cfg.interface}"\n'
       'TARGET="${Cfg.target(mode)}"\n'
       'CONNECT_TIMEOUT=$timeout\n'
-      'X3UTILS_RDP_LOG_DIR="${p.join(p.dirname(p.dirname(configDir)), 'backup')}"\n'
+      'X3UTILS_RDP_LOG_DIR="${p.join(runRoot, 'backup')}"\n'
       '$race'
       'EXPECTED_SIZE=131072\n',
     );

@@ -35,6 +35,12 @@ Record one row per meaningful test run.
 | 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | D | special flash-only / slot0 | pass | `flash_only.sh` recovered from adapter-missing `x` symbols; `flash_slot0.sh` wrote slot0 and verified successfully. OpenOCD reported 61440 written vs 60868 verified for the slot image, matching cross-platform behavior. |
 | 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | D | RDP check / FAP enable / FAP clear / rescue unlock | pass | `rdp_check.sh -l` detected unlocked, protected, and unlocked-again states. FAP writers/rescue may miss the first race and then succeed on manual retry. |
 | 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | D | full dump | pass | Three successful validated 131072-byte dumps: attempts 75, 312, and 110. During experimentation, SWD could halt on attempts 31, 6, and 105 without the dump completing, consistent with marginal/parasitic powering. The live-catch experiment was reverted; mode D remains best-effort and reports success only after the complete action. |
+| 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | A | Flutter packaged Check connection | pass | Packaged v1.1.3 app detected the target and reported PASS using embedded universal OpenOCD. |
+| 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | D | Flutter packaged Check connection | pass | Power-race caught on attempt 78, detected the `artery` flash bank at `0x08000000`, exited 0, and produced an evidence-backed PASS. |
+| 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | D | Flutter Check protection | pass | Action was blocked as Not supported before launching the RDP toolkit; no hardware command ran. |
+| 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | A | Flutter Check protection | pass | `rdp_check.sh --launcher` used launcher A, read FAP=0xA5/FAP_COMP=0x5A and readable flash, then reported NOT PROTECTED. |
+| 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | B | Flutter Check protection | pass | Guided C45 hold/count/release completed; FAP and main-flash evidence produced NOT PROTECTED. |
+| 2026-07-16 | macOS Intel | packaged app | n/a | n/a | Missing-backend smoke test | pass | Renamed embedded `oocd`; app failed closed with OpenOCD missing, no simulation and no false hardware evidence. Backend is resolved at startup, so restore the name and relaunch. |
 
 ## Dump Test
 
@@ -85,12 +91,17 @@ Record one row per meaningful test run.
 | Date | OS | Scope | Result | Notes |
 | --- | --- | --- | --- | --- |
 | 2026-07-16 | macOS Intel | CLI v1.7.0 Power-race port | pass | System Bash 3.2 syntax passed for all macOS scripts; `git diff --check` passed; arm64/x64 race configs are identical; x64 bundled OpenOCD parsed `target/artery/at32f4x_race.cfg` and shut down without `init`. The temporary live-catch monitor was reverted after hardware showed that SWD halt cannot prove stable external 3V3 power. The macOS read-only RDP check does not support `-l`; mode-D flash validation remains required. |
+| 2026-07-16 | macOS Intel | Flutter v1.1.3 package | pass | `tool/package_macos.sh` built a universal app, embedded `native/macos`, verified architecture slices and deep ad-hoc signature, parsed the packaged race cfg without `init`, and produced a ZIP. |
+| 2026-07-16 | macOS Intel | Flutter RDP temporary-tree regression | pass | `flutter test test/rdp_runner_test.dart` used fake OpenOCD to confirm macOS root-level `config.sh`, `--launcher`, and A/B/C mode selection. `flutter analyze` passed. |
 
 ### macOS mode-D RDP check note
 
 - `rdp_check.sh -l` is disabled on macOS. Stock xPack OpenOCD does not provide
   a reliable catch signal for this loop at either `-d0` or `-d2`.
 - Run `rdp_check.sh` without `-l` to use its guided rescue connection.
+- This restriction is for the standalone CLI. Flutter blocks Power-race RDP
+  before script launch, so its macOS RDP check safely uses `--launcher` for
+  modes A, B, and C.
 
 ## Regression Notes
 
@@ -125,3 +136,24 @@ Use this section for failures that should be remembered.
 - Fix or workaround: Treat as a testbed observation only, likely residual or
   SWD-provided power. Do not document as supported wiring; write/flash/rescue
   flows still require clean target power.
+
+### 2026-07-16
+
+- Issue: Packaged Flutter macOS RDP check failed with `Missing config.sh`.
+- Platform: macOS Intel, packaged Flutter v1.1.3.
+- Reproduction: Run Check protection; Flutter copied `special/rdp` to a
+  temporary tree but wrote config beside the scripts while macOS scripts load
+  `../../config.sh`.
+- Fix or workaround: Write macOS config at the temporary run root. Linux keeps
+  config beside its scripts. Added a fake-OpenOCD regression test.
+
+### 2026-07-16
+
+- Issue: Dock/Launchpad displayed Flutter's old icon although Finder and the
+  app bundle contained the correct lightning icon.
+- Platform: macOS Intel.
+- Reproduction: Replace an app with the same bundle identifier after changing
+  its icon.
+- Fix or workaround: Treat as macOS icon cache. Trashing the old app and
+  installing fresh resolved it. Do not rename `AppIcon` or bump versions solely
+  as a cache workaround.
