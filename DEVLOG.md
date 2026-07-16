@@ -263,3 +263,10 @@ survive machine switches and chat history loss.
      the Linux port as the reference).
   2. Then add mode D / Power-race to the Flutter GUI.
   3. Then cut a GUI release at whatever v1.1.x it lands on.
+- Release status (a version bump in this log does not mean released):
+  - GUI v1.1.2 is released for Windows and Linux only. The macOS GUI has
+    never been released.
+  - GUI v1.1.3 is bumped in-tree but not released.
+  - Intent: release all three OSes together at whatever v1.1.x it lands on,
+    after the macOS CLI v1.7.0 port and the GUI Power-race work.
+  - CLI for reference: Windows and Linux at v1.7.0, macOS CLI still v1.6.6.
