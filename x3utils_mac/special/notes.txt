@@ -5,6 +5,9 @@
 You need to use the launcher to choose a connection option,
 otherwise the scripts in this directory will use the last one chosen.
 
-flash_only.bat is exactly the same as flash.bat minus the forced backup.
+flash_only.sh is exactly the same as flash.sh minus the forced backup.
 
-flash_slot0.bat is for flashing decrypted repo files (experimental)
+flash_slot0.sh is for flashing decrypted repo files (experimental)
+
+rdp/rdp_check.sh does not support -l/--launcher on macOS.
+Run it without -l to use its guided rescue connection.

@@ -199,7 +199,7 @@ If you run `dump.sh`, `flash.sh`, or `flash_compat.sh` directly, they use the la
 If you are not sure:
 
 1. run `./launcher.sh`;
-2. select `A`, `B`, or `C`;
+2. select `A`, `B`, `C`, or `D`;
 3. exit or continue from the launcher;
 4. then run the direct script.
 
@@ -229,13 +229,20 @@ Dumps, patches with `python3`, and flashes back for SHU-compatible workflows.
 
 Shared macOS `.bin` validator used by flashing scripts.
 
+`race_grade.sh`
+
+Power-race attempt classifier used by mode D.
+
 `config.sh`
 
-Selects the correct bundled OpenOCD build and stores the selected target configuration.
+Selects the correct bundled OpenOCD build and stores the selected connection
+mode, target configuration, and timeout.
 
 `xpack-openocd-*`
 
-Bundled OpenOCD builds for Apple Silicon and Intel Macs.
+Bundled OpenOCD builds for Apple Silicon and Intel Macs. Each bundle includes
+the macOS-specific upstream Artery target configs, including mode D's
+`target/artery/at32f4x_race.cfg`.
 
 `special/`
 

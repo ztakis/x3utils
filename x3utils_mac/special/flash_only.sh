@@ -63,6 +63,58 @@ done
 
 echo
 
+if [[ "${RACE:-false}" == "true" ]]; then
+    echo
+    echo "$D"
+    echo -e "   ${CL_M}Power-race flash-only (mode D)${CL_NC}"
+    echo -e "   ${CL_M}Erase + write + verify, no backup${CL_NC}"
+    echo "$D"
+    echo "   Hammering connects."
+    echo -e "   ${CL_C}Apply POWER now${CL_NC}; cut and re-apply on a miss."
+    echo "   When symbols pause, it CAUGHT."
+    echo "   Hold power steady; do NOT replug."
+    echo "   Erase/write/verify may be quiet for a few seconds."
+    echo -e "   ${CL_C}Ctrl+C to stop.${CL_NC}"
+    echo -e "   Live: .=searching  ${CL_Y}N${CL_NC}=noisy, hold steadier"
+    echo -e "         ${CL_G}H${CL_NC}=almost    ${CL_R}x${CL_NC}=probe/USB gone"
+    echo
+    race_dbg_log="${TMPDIR:-/tmp}/x3utils_race_debug.log"
+    race_last="${TMPDIR:-/tmp}/x3utils_race_last.log"
+    if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
+        rm -f "$race_dbg_log"
+        race_v="-d2"
+    else
+        race_v="-d0"
+    fi
+    race_tries=0
+    while true; do
+        race_tries=$((race_tries + 1))
+        "$OPENOCD_BIN" $race_v -s "$SCRIPTS_DIR" -f "target/artery/at32f4x_race.cfg" \
+            -c "race_connect" \
+            -c "flash erase_address 0x08000000 0x20000" \
+            -c "flash write_bank 0 {$bin_file_path}" \
+            -c "verify_image {$bin_file_path} 0x08000000" \
+            -c "exit" > "$race_last" 2>&1
+        [[ $? -eq 0 ]] && break
+        if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
+            { echo "=== flash attempt $race_tries ==="; cat "$race_last"; } >> "$race_dbg_log"
+        fi
+        bash "$SCRIPT_DIR/../race_grade.sh" "$race_last"
+    done
+    echo
+    echo
+    echo -e "[ ${CL_G}CAUGHT${CL_NC} ] Flashed on attempt $race_tries - stages:"
+    echo "$D"
+    grep -Ei "halted|erased|wrote|verified" "$race_last" || true
+    echo "$D"
+    echo
+    echo -e "[ ${CL_G}OK${CL_NC} ] Flashed and verified: $bin_file"
+    echo
+    read -rp "Press ENTER to continue..."
+    echo
+    exit 0
+fi
+
 # Run OpenOCD flash using relative configuration mappings
 # Still no unlock operation.
 # We assume the target is not read-protected.

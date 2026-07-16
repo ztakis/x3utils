@@ -39,7 +39,11 @@ source "$SCRIPT_DIR/rdp_lib.sh"
 USE_LAUNCHER=0
 for a in "$@"; do
     case "$a" in
-        -l|--launcher) USE_LAUNCHER=1 ;;
+        -l|--launcher)
+            echo "[FAIL] Launcher mode is not supported by rdp_check.sh on macOS."
+            echo "       Run ./rdp_check.sh without -l to use the guided rescue connection."
+            exit 1
+            ;;
     esac
 done
 resolve_connect

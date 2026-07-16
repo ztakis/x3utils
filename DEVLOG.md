@@ -256,11 +256,45 @@ survive machine switches and chat history loss.
     Gatekeeper "open anyway" step. Earlier signing/notarization estimates were
     too pessimistic; unsigned distribution looks viable. Still TBD, not
     committed.
-  - macOS CLI is still at v1.6.6 while Windows and Linux are at v1.7.0. The mode
-    D Power-race Bash port remains outstanding.
+  - macOS CLI v1.7.0 Power-race port is implemented in-tree, following the
+    settled Linux v1.7.0 behavior while preserving macOS system Bash 3.2,
+    architecture-aware xPack paths, `stat -f`, Application Support backups, and
+    the upstream OpenOCD `artery` flash-driver name.
+  - Added launcher mode D, `RACE` / optional `RACE_DEBUG`, shared race grading,
+    race branches for dump/full flash/SHU compat/flash-only/slot0, and
+    launcher-D support for the RDP writers/rescue tools. The read-only macOS
+    RDP check remains guided-only.
+  - Added identical `target/artery/at32f4x_race.cfg` files to both arm64 and x64
+    bundled xPack script trees.
+  - First real macOS mode-D dump passed on Intel: caught on attempt 75,
+    validated 131072 bytes, and created both backup copies.
+  - Additional dump tests completed successfully on attempts 312 and 110.
+    During a temporary live-catch experiment, SWD also halted on attempts 31,
+    6, and 105 without the dump completing.
+  - Electrical conclusion: with only SWDIO/SWCLK/GND connected, touching or
+    loosely connecting the 3V3 Dupont lead can parasitically power the target
+    through the probe/user enough to halt, and sometimes enough to dump.
+    Software cannot prove stable intentional 3V3 from an SWD halt.
+  - Reverted the temporary Tcl live-catch marker and shell monitor. Mode D stays
+    aligned with Windows/Linux as a best-effort respawn strategy: live grade
+    symbols while searching, operator warning before the run, and CAUGHT/OK only
+    after the complete OpenOCD action succeeds. A failed flash remains
+    recoverable by reflashing.
+  - macOS `rdp_check.sh -l` was tested at `-d0` and `-d2`. Stock xPack OpenOCD
+    completed repeated reads of both `0x1FFFF800` and `0x08000000` but did not
+    provide the Linux loop's reliable `target halted` catch signal.
+  - Disabled `-l` / `--launcher` for the macOS read-only RDP check instead of
+    adding a platform-specific verdict heuristic. Run it without `-l` to use
+    the existing guided rescue connection. RDP writer/rescue launcher paths
+    remain unchanged.
+  - Dry verification passed on macOS Intel: all scripts passed system
+    `/bin/bash` 3.2 syntax, `git diff --check` passed, mode persistence and race
+    classification checks passed, and bundled x64 OpenOCD parsed the race
+    config then shut down without `init`.
+  - Real hardware validation remains outstanding before treating macOS CLI
+    v1.7.0 as released.
 - Sequencing decision for the next stretch of work:
-  1. Bring the macOS CLI up to v1.7.0 (mode D Power-race Bash port, following
-     the Linux port as the reference).
+  1. Hardware-validate the macOS CLI v1.7.0 mode D port.
   2. Then add mode D / Power-race to the Flutter GUI.
   3. Then cut a GUI release at whatever v1.1.x it lands on.
 - Release status (a version bump in this log does not mean released):
@@ -269,4 +303,5 @@ survive machine switches and chat history loss.
   - GUI v1.1.3 is bumped in-tree but not released.
   - Intent: release all three OSes together at whatever v1.1.x it lands on,
     after the macOS CLI v1.7.0 port and the GUI Power-race work.
-  - CLI for reference: Windows and Linux at v1.7.0, macOS CLI still v1.6.6.
+  - CLI for reference: Windows and Linux are released at v1.7.0; macOS CLI is
+    bumped to v1.7.0 in-tree with hardware validation and release still pending.

@@ -34,6 +34,7 @@ Record one row per meaningful test run.
 | 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | D | dump / full flash / SHU compat | pass | Power-race caught and verified dump, forced-backup flash, and SHU compat patch+flash. |
 | 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | D | special flash-only / slot0 | pass | `flash_only.sh` recovered from adapter-missing `x` symbols; `flash_slot0.sh` wrote slot0 and verified successfully. OpenOCD reported 61440 written vs 60868 verified for the slot image, matching cross-platform behavior. |
 | 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | D | RDP check / FAP enable / FAP clear / rescue unlock | pass | `rdp_check.sh -l` detected unlocked, protected, and unlocked-again states. FAP writers/rescue may miss the first race and then succeed on manual retry. |
+| 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | D | full dump | pass | Three successful validated 131072-byte dumps: attempts 75, 312, and 110. During experimentation, SWD could halt on attempts 31, 6, and 105 without the dump completing, consistent with marginal/parasitic powering. The live-catch experiment was reverted; mode D remains best-effort and reports success only after the complete action. |
 
 ## Dump Test
 
@@ -78,6 +79,18 @@ Record one row per meaningful test run.
 - Confirm stale timeout lines do not appear after a successful run.
 - Confirm dump success requires `dumped`.
 - Confirm flash success requires `wrote` plus `verified`.
+
+## Non-Hardware Port Checks
+
+| Date | OS | Scope | Result | Notes |
+| --- | --- | --- | --- | --- |
+| 2026-07-16 | macOS Intel | CLI v1.7.0 Power-race port | pass | System Bash 3.2 syntax passed for all macOS scripts; `git diff --check` passed; arm64/x64 race configs are identical; x64 bundled OpenOCD parsed `target/artery/at32f4x_race.cfg` and shut down without `init`. The temporary live-catch monitor was reverted after hardware showed that SWD halt cannot prove stable external 3V3 power. The macOS read-only RDP check does not support `-l`; mode-D flash validation remains required. |
+
+### macOS mode-D RDP check note
+
+- `rdp_check.sh -l` is disabled on macOS. Stock xPack OpenOCD does not provide
+  a reliable catch signal for this loop at either `-d0` or `-d2`.
+- Run `rdp_check.sh` without `-l` to use its guided rescue connection.
 
 ## Regression Notes
 
