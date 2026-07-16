@@ -177,3 +177,89 @@ survive machine switches and chat history loss.
     checks/rescue need a stable OpenOCD session.
   - SHU compatibility patch messaging was simplified to neutral operator text:
     "SHU patch applied. Flashing it back to the chip..."
+
+## 2026-07-15
+
+- Prepped GUI release v1.1.2 (`app_controller.dart`, Linux runner window setup,
+  macOS main menu).
+- Generated macOS app icons from the shared `x3utils_flutter/icon.png` via
+  `tool/gen_icon.dart`, which also refreshes the Windows `app_icon.ico`. Use that
+  tool rather than hand-editing per-platform icon assets.
+
+## 2026-07-16
+
+- Flutter GUI v1.1.3: fail closed when the OpenOCD backend is missing.
+  - Origin: a Discord user cloned the repo, added Android tooling, and built a
+    phone proof-of-concept with no bundled OpenOCD. v1.1.2 fell back to Linux
+    paths on Android, failed to find OpenOCD, then ran in simulation and
+    reported green `target halted`, `== Check connection OK ==`, and
+    `== SHU compatible OK ==` with no hardware attached at all. Screenshot
+    confirmed. That is why v1.1.3 fails closed: a UI port to an unbundled
+    platform must never be able to produce success evidence.
+  - Note the console did label those runs `(simulated)` and still showed green
+    verdicts. Labelling is not a sufficient safeguard; the verdict path is.
+  - Removed the prototype simulation fallback from `app_controller.dart`.
+    Previously, a missing OpenOCD made the app run as a demo dry-run and emit
+    fake `target halted` / PASS / OK output. That could produce a green verdict
+    with no hardware evidence, which violates the evidence-based verdict rule.
+  - Actions now fail with an OpenOCD missing / cannot-run message when no runner
+    exists. Unknown action ids fail instead of being simulated. Unsupported
+    platforms are explicit instead of silently falling back to Linux paths.
+  - Verified with `flutter analyze` and an installed-package smoke test that
+    renamed the bundled Windows OpenOCD folder.
+  - Bumped package, app, and installer to 1.1.3.
+  - Scope call: this is a hotfix and it is enough. The shipped GUIs bundle their
+    own OpenOCD, so the backend is found beside the exe and someone has to
+    actively mess with the bundle (or port to an unbundled platform) to hit this
+    at all. Do not build more machinery around it now.
+  - Possible later cleanup, not queued work: `OpenOcdPaths.find()` only checks
+    that the binary and scripts dir exist, never that the binary runs, and the
+    resulting `openOcdStatus` is consumed only as an LED colour in `main.dart`
+    while the full action UI boots regardless. A future maturity pass could
+    probe the backend at startup (executable, `--version` sane) and gate the
+    action surface instead of failing at press time. Revisit when the app is
+    more settled.
+  - Demo mode was considered and rejected. A simulated run is a convenience,
+    but its worst case is a user believing a controller was flashed when nothing
+    was connected. If UI-only iteration is ever needed, do it as a compile-time
+    dev harness excluded from release builds, never a runtime mode a user can
+    reach.
+- Progress UI is now settled; this closes the 2026-07-14 deferral.
+  - The progress checklist is dropped as a direction, not merely postponed. The
+    active flow is a single busy spinner plus hero eyebrow text.
+  - `_advanceRaceStage` was renamed to `_advanceOpenOcdStage` and is still called
+    from the real-line handler for all real OpenOCD modes, but it no longer
+    behaves as a stage parser. Every marker (`target halted`, `dumped`, `erased`,
+    `wrote`, `verified`) hits one branch that flips the UI into the run state on
+    the first hit and refreshes `_lastProgressAt` for the race watchdog. Later
+    markers change nothing on screen. It is a liveness detector now.
+  - Hero eyebrow text is per-action, not per-stage: `_runEyebrow()` switches on
+    the action id (`Backing up`, `Flashing`, ...), plus a few explicit
+    `_showOpenOcdProgress(eyebrow: ...)` calls in the orchestration.
+  - So there is no per-step progress left in the app. The typed progress
+    IDs/events idea from 2026-07-14 is not on the roadmap; building it would be
+    new work, not resuming half-done work. Revisit only if a concrete need
+    appears.
+  - Presentation delays after real testing, all presentation-only and never in
+    front of an OpenOCD call: `_minBusyVisible` 1000 ms, `_minAfterLastProgress`
+    2500 ms, combined with max rather than sum (worst case 2500 ms, not 3500),
+    and a 900 ms readable pause after the SHU patch message.
+  - Guiding principle from this pass: pacing the display of an already-confirmed
+    fact is presentation and is fine; showing a fact that real output has not
+    confirmed is faking and is not. The v1.1.3 fail-closed work and these delays
+    are two sides of that same rule.
+  - `AGENTS.md` was updated to match, since it still described the checklist as
+    current intended work and would have sent a fresh agent to rebuild the UI
+    that was just deliberately removed.
+- macOS status.
+  - Flutter macOS GUI: an unsigned build was tested. The only friction is the
+    Gatekeeper "open anyway" step. Earlier signing/notarization estimates were
+    too pessimistic; unsigned distribution looks viable. Still TBD, not
+    committed.
+  - macOS CLI is still at v1.6.6 while Windows and Linux are at v1.7.0. The mode
+    D Power-race Bash port remains outstanding.
+- Sequencing decision for the next stretch of work:
+  1. Bring the macOS CLI up to v1.7.0 (mode D Power-race Bash port, following
+     the Linux port as the reference).
+  2. Then add mode D / Power-race to the Flutter GUI.
+  3. Then cut a GUI release at whatever v1.1.x it lands on.

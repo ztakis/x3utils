@@ -957,7 +957,8 @@ class AppController extends ChangeNotifier {
       'OpenOCD stalled — power-cycle and try the next catch.',
   };
 
-  /// Drive the stage-list checkmarks from live OpenOCD progress markers.
+  /// Any live OpenOCD marker shows the busy surface and keeps the race watchdog
+  /// fed. Markers are not told apart; the eyebrow is per-action, not per-stage.
   void _advanceOpenOcdStage(String low) {
     if (low.contains('target halted') ||
         low.contains('caught; hold power') ||

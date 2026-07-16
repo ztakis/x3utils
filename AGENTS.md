@@ -85,14 +85,33 @@ The Flutter GUI is now the active Windows path. For GUI work:
 - Preserve guided C45 hold/count/release prompts when changing real OpenOCD
   line parsing.
 
-For current progress checklist work, the intended direction is:
+Progress presentation is settled. Do not reintroduce a per-step progress
+checklist:
 
-- generalize `_advanceRaceStage(line)` to an OpenOCD-stage parser used by all
-  real modes;
-- drive progress from markers such as `target halted`, `flash 'at32f415xx'
-  found`, `dumped`, `erased`, `wrote`, and `verified`;
-- manually mark app-side stages such as dump validation, compat patching, and
-  forced backup validation where useful.
+- `_advanceOpenOcdStage(line)` watches markers such as `target halted`,
+  `dumped`, `erased`, `wrote`, and `verified`, but does not distinguish between
+  them. Any marker flips the UI into the run state once and refreshes the race
+  watchdog's liveness timestamp. It is a liveness detector, not a stage parser.
+- Hero eyebrow text is per-action, not per-stage. It comes from `_runEyebrow()`
+  (`Backing up`, `Flashing`, ...) plus explicit
+  `_showOpenOcdProgress(eyebrow: ...)` calls in the orchestration.
+- The UI is a single busy spinner plus that eyebrow. Per-step checklist rows
+  were deliberately removed because they implied timing accuracy the tool does
+  not have. Typed per-step progress events are not planned; adding them would be
+  new work, not resumed work.
+- Presentation delays gate only the busy/result transition and message
+  readability: `_minBusyVisible` (1000 ms) and `_minAfterLastProgress`
+  (2500 ms), combined with max rather than sum, plus a 900 ms pause after the
+  SHU patch message. Never put a delay in front of an OpenOCD call.
+- Pacing the display of an already-confirmed fact is presentation and is fine.
+  Displaying a fact that has not been confirmed by real output is faking and is
+  not.
+- Keep raw OpenOCD output in the console as the debugging surface.
+- Keep verdicts stricter than progress UI. Eyebrow text is presentation; a green
+  result still requires the actual expected evidence.
+- Never simulate hardware output. A missing or unresolvable OpenOCD backend,
+  an unknown action id, or an unsupported platform must fail closed rather than
+  fall back to a dry run.
 
 ## Platform Parity
 
