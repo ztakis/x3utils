@@ -375,3 +375,17 @@ survive machine switches and chat history loss.
     because backend discovery happens at startup.
   - `AGENTS.md`, `docs/testing.md`, and the Flutter README now record the
     settled package layout, RDP platform distinction, tests, and cache note.
+
+## 2026-07-17
+
+- macOS CLI v1.7.0 mode D is hardware-validated. Flash times were the usual long
+  ones, consistent with the other platforms and not a regression. This closes the
+  "real hardware validation remains outstanding" item from 2026-07-16.
+- Deliberately not tagged. The published v1.7.0 tag points at 5ceb18e
+  (2026-07-15), which predates the port and still has x3utils_mac/VERSION at
+  1.6.6, so the macOS scripts are in no tag. The CLI ships scripts, so the
+  release asset is the source: attaching them to the existing v1.7.0 release
+  would publish code absent from the tag, and the tag would stop describing what
+  shipped. That differs from adding a late build artifact of already-tagged
+  source, which is normal. Moving a published tag is not an option. Fold macOS
+  into the next CLI tag instead.
