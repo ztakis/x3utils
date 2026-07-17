@@ -378,6 +378,10 @@ survive machine switches and chat history loss.
 
 ## 2026-07-17
 
+- Flutter GUI v1.1.3 Apple Silicon smoke check:
+  - The macOS GUI package was also quick-tested on Apple Silicon.
+  - Treat this as packaging/runtime sanity coverage, not full hardware
+    validation unless separately recorded.
 - macOS CLI v1.7.0 mode D is hardware-validated. Flash times were the usual long
   ones, consistent with the other platforms and not a regression. This closes the
   "real hardware validation remains outstanding" item from 2026-07-16.

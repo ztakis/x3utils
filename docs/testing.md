@@ -93,6 +93,7 @@ Record one row per meaningful test run.
 | 2026-07-16 | macOS Intel | CLI v1.7.0 Power-race port | pass | System Bash 3.2 syntax passed for all macOS scripts; `git diff --check` passed; arm64/x64 race configs are identical; x64 bundled OpenOCD parsed `target/artery/at32f4x_race.cfg` and shut down without `init`. The temporary live-catch monitor was reverted after hardware showed that SWD halt cannot prove stable external 3V3 power. The macOS read-only RDP check does not support `-l`; mode-D flash validation remains required. |
 | 2026-07-16 | macOS Intel | Flutter v1.1.3 package | pass | `tool/package_macos.sh` built a universal app, embedded `native/macos`, verified architecture slices and deep ad-hoc signature, parsed the packaged race cfg without `init`, and produced a ZIP. |
 | 2026-07-16 | macOS Intel | Flutter RDP temporary-tree regression | pass | `flutter test test/rdp_runner_test.dart` used fake OpenOCD to confirm macOS root-level `config.sh`, `--launcher`, and A/B/C mode selection. `flutter analyze` passed. |
+| 2026-07-17 | macOS Apple Silicon | Flutter v1.1.3 package smoke check | pass | Quick-tested the macOS GUI package on Apple Silicon for basic packaged-app/runtime sanity. Full hardware coverage remains recorded separately. |
 
 ### macOS mode-D RDP check note
 
