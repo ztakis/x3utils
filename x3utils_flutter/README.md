@@ -174,3 +174,21 @@ Flashing writes to a real vehicle controller. Write actions back up first and
 verify; a read-protected chip is detected and rescue uses the deterministic,
 WRP-safe option-byte rewrite (never the driver `unlock`). Still — use the right
 `.bin` for your model, and keep the SWD/C45 contact steady.
+
+## Credits
+
+The zip3 firmware import (**Choose .zip** → decrypt → flash slot 0) is a Dart
+port of two open-source [ScooterHacking](https://scooterhacking.org) projects,
+used under the MIT License:
+
+- **[NinebotTEA](https://github.com/scooterhacking/NinebotTEA)** — the TEA
+  cipher for Ninebot / Xiaomi scooter firmware. Ported to Dart in
+  [`lib/engine/ninebot_tea.dart`](lib/engine/ninebot_tea.dart).
+  © 2024 ScooterHacking · MIT.
+- **[fw-zip-package-v3](https://github.com/scooterhacking/fw-zip-package-v3)** —
+  the v3 firmware `.zip` package format and `pack.py`. Ported to Dart in
+  [`lib/engine/pack_zip3.dart`](lib/engine/pack_zip3.dart) (pack + strict
+  encrypted/MD5 unpack). By ScooterHacking · MIT.
+
+Thanks to the ScooterHacking community (<hi@scooterhacking.org>) for building and
+open-sourcing these tools.
