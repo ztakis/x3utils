@@ -8,6 +8,17 @@ import 'engine/openocd_paths.dart';
 import 'engine/openocd_runner.dart';
 import 'engine/rdp_runner.dart';
 import 'engine/firmware.dart';
+import 'engine/pack_zip3.dart';
+
+/// Outcome of loading a v3 .zip: rejected (ok=false), loaded clean (ok=true,
+/// warning=null), or loaded with a soft banner-mismatch [warning] (ok=true) —
+/// the three states the picker snackbar colours red / green / amber.
+class ZipLoadResult {
+  const ZipLoadResult({required this.ok, required this.message, this.warning});
+  final bool ok;
+  final String message;
+  final String? warning;
+}
 
 /// Drives the whole UI via a single StageState the hero binds to.
 class AppController extends ChangeNotifier {
@@ -136,6 +147,67 @@ class AppController extends ChangeNotifier {
       _firmwareAdvanced = path;
     }
     notifyListeners();
+  }
+
+  /// Load a v3 firmware .zip for the current (slot-0) flash: validate the
+  /// package, decrypt the encrypted payload, write the plaintext to a temp
+  /// .bin, validate it as a slot bin, and remember it. Returns a
+  /// [FirmwareCheck] (ok + message) for the UI to surface; on success the bin
+  /// is set as the loaded firmware. Does NOT flash — the normal Start flow does.
+  Future<ZipLoadResult> loadSlotFirmwareFromZip(String zipPath) async {
+    // The pick runs outside a start() run, so it has its own capture that
+    // flushes to logs/zip3_import/ (when Save log is on) — otherwise rejections
+    // and banner warnings would only flash by in the console, never persisted.
+    final importLog = <String>[];
+    void ilog(String s) {
+      final clean = s.replaceAll(_ansi, '');
+      console.add(clean);
+      importLog.add(clean);
+      notifyListeners();
+    }
+
+    ilog('== zip3 import: ${zipPath.split(RegExp(r'[\\/]')).last} · '
+        '${DateTime.now().toString().split('.').first} ==');
+    try {
+      final bytes = await File(zipPath).readAsBytes();
+      final pkg = PackV3.unpackV3(bytes); // throws FormatException if not zip3
+      ilog(
+        '== package: ${pkg.displayName} · ${pkg.model}/${pkg.type} · '
+        '${pkg.source} · ${pkg.firmware.length} bytes ==',
+      );
+      if (pkg.bannerWarning != null) {
+        ilog('== !! banner check: ${pkg.bannerWarning} ==');
+      }
+      final outPath = Firmware.newUnpackedBinPath(
+        prefix: backupPrefix,
+        name: pkg.displayName,
+      );
+      await File(outPath).writeAsBytes(pkg.firmware);
+      final v = Firmware.validateSlot(outPath);
+      if (!v.ok) {
+        ilog('== package firmware rejected: ${v.message} ==');
+        return ZipLoadResult(ok: false, message: v.message);
+      }
+      setFirmware(outPath);
+      ilog('== loaded slot-0 firmware from package → $outPath ==');
+      final loaded = 'Decrypted ${pkg.firmware.length} bytes from ${pkg.displayName}.';
+      return ZipLoadResult(ok: true, message: loaded, warning: pkg.bannerWarning);
+    } on FormatException catch (e) {
+      ilog('== package error: ${e.message} ==');
+      return ZipLoadResult(ok: false, message: e.message);
+    } catch (e) {
+      ilog('== package error: $e ==');
+      return ZipLoadResult(ok: false, message: 'Could not read package: $e');
+    } finally {
+      if (logToFile) {
+        try {
+          final p = Firmware.writeLog('zip3_import', importLog.join('\n'));
+          _log('== log saved → $p ==');
+        } catch (err) {
+          _log('== could not save import log: $err ==');
+        }
+      }
+    }
   }
 
   // STARTUP DEFAULTS (persisted, set only from Settings). Default to Mode A
@@ -375,7 +447,7 @@ class AppController extends ChangeNotifier {
       'linux' => 'Linux',
       _ => Platform.operatingSystem,
     };
-    return 'x3utils v$kAppVersion · $os · ${mode.title} · '
+    return 'x3utils v$kAppVersionLabel · $os · ${mode.title} · '
         '${DateTime.now().toString().split('.').first}';
   }
 

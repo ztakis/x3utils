@@ -110,6 +110,42 @@ class _HomeScreenState extends State<HomeScreen> {
     c.setFirmware(file.path);
   }
 
+  /// Slot-0 only: load a v3 firmware .zip — the controller validates the
+  /// package, decrypts the payload, and remembers the extracted slot bin.
+  Future<void> _pickFirmwareZip() async {
+    const group = XTypeGroup(label: 'v3 package', extensions: ['zip']);
+    final file = await openFile(acceptedTypeGroups: [group]);
+    if (file == null) return;
+    final res = await c.loadSlotFirmwareFromZip(file.path);
+    if (!mounted) return;
+    // Three states: reject → red, loaded-with-banner-mismatch → amber, ok → green.
+    final Color bg;
+    final Color fg;
+    final String text;
+    if (!res.ok) {
+      bg = AppColors.danger;
+      fg = Colors.white;
+      text = 'Package rejected: ${res.message}';
+    } else if (res.warning != null) {
+      bg = AppColors.hold; // amber — soft warning, still loaded
+      fg = AppColors.bg; // dark text for contrast on amber
+      text = '⚠ ${res.warning}\nLoaded anyway — verify before flashing.';
+    } else {
+      bg = AppColors.ok;
+      fg = Colors.white;
+      text = res.message;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(text, style: TextStyle(color: fg)),
+          backgroundColor: bg,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
   Future<bool?> _showConfirm(FlashAction a) {
     final hard = a.danger == DangerLevel.hard;
     final accent = hard ? AppColors.danger : AppColors.brand;
@@ -302,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _BackupSettingsSection(c: c),
                     const Divider(color: AppColors.line, height: 28),
                     Text(
-                      'x3utils  ·  v$kAppVersion',
+                      'x3utils  ·  v$kAppVersionLabel',
                       style: const TextStyle(
                         color: AppColors.dim,
                         fontSize: 12,
@@ -368,6 +404,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               c: c,
                               onStart: _onStart,
                               onPickFirmware: _pickFirmware,
+                              onPickZip: _pickFirmwareZip,
                             ),
                           ),
                         ],
@@ -500,7 +537,7 @@ class _TitleBar extends StatelessWidget {
               ),
             ),
             child: Text(
-              'v$kAppVersion',
+              'v$kAppVersionLabel',
               style: TextStyle(
                 fontFamily: kMono,
                 fontSize: 11,
@@ -580,7 +617,7 @@ class _TitleMenu extends StatelessWidget {
             showAboutDialog(
               context: context,
               applicationName: 'x3utils',
-              applicationVersion: 'v$kAppVersion',
+              applicationVersion: 'v$kAppVersionLabel',
               applicationLegalese:
                   'ST-LINK utilities for X3 scooters · AT32F415 · bundled OpenOCD',
             );
@@ -1012,10 +1049,12 @@ class _MainArea extends StatelessWidget {
     required this.c,
     required this.onStart,
     required this.onPickFirmware,
+    required this.onPickZip,
   });
   final AppController c;
   final Future<void> Function() onStart;
   final Future<void> Function() onPickFirmware;
+  final Future<void> Function() onPickZip;
 
   @override
   Widget build(BuildContext context) {
@@ -1070,6 +1109,7 @@ class _MainArea extends StatelessWidget {
             c: c,
             onStart: onStart,
             onPickFirmware: onPickFirmware,
+            onPickZip: onPickZip,
           ),
         ),
         _StatusBar(c: c),
@@ -1122,10 +1162,12 @@ class _HeroStage extends StatefulWidget {
     required this.c,
     required this.onStart,
     required this.onPickFirmware,
+    required this.onPickZip,
   });
   final AppController c;
   final Future<void> Function() onStart;
   final Future<void> Function() onPickFirmware;
+  final Future<void> Function() onPickZip;
   @override
   State<_HeroStage> createState() => _HeroStageState();
 }
@@ -1230,7 +1272,11 @@ class _HeroStageState extends State<_HeroStage>
                         if (c.stage == StageState.idle &&
                             c.action.needsFirmware) ...[
                           const SizedBox(height: 20),
-                          _FirmwareBar(c: c, onPick: widget.onPickFirmware),
+                          _FirmwareBar(
+                            c: c,
+                            onPick: widget.onPickFirmware,
+                            onPickZip: widget.onPickZip,
+                          ),
                         ],
                         const SizedBox(height: 26),
                         _StageButtons(c: c, onStart: widget.onStart),
@@ -1938,14 +1984,22 @@ class _ConsoleAction extends StatelessWidget {
 }
 
 class _FirmwareBar extends StatelessWidget {
-  const _FirmwareBar({required this.c, required this.onPick});
+  const _FirmwareBar({
+    required this.c,
+    required this.onPick,
+    required this.onPickZip,
+  });
   final AppController c;
   final Future<void> Function() onPick;
+  final Future<void> Function() onPickZip;
   @override
   Widget build(BuildContext context) {
     final path = c.firmwarePath;
     final name = path?.split(RegExp(r'[\\/]')).last;
     final has = name != null;
+    // Slot 0 can also load a v3 firmware .zip (decrypt → flash). With two
+    // sources the .bin button keeps its explicit label instead of "Change".
+    final zip = c.isSlotAction;
     return Container(
       constraints: const BoxConstraints(maxWidth: 460),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1978,13 +2032,24 @@ class _FirmwareBar extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           _PillButton(
-            label: has ? 'Change' : 'Choose .bin',
+            label: zip ? 'Choose .bin' : (has ? 'Change' : 'Choose .bin'),
             onTap: () => onPick(),
             bg: AppColors.line,
             fg: AppColors.txt,
             border: AppColors.line2,
             small: true,
           ),
+          if (zip) ...[
+            const SizedBox(width: 8),
+            _PillButton(
+              label: 'Choose .zip',
+              onTap: () => onPickZip(),
+              bg: AppColors.line,
+              fg: AppColors.txt,
+              border: AppColors.line2,
+              small: true,
+            ),
+          ],
         ],
       ),
     );

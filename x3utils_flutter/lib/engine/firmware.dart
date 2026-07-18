@@ -73,6 +73,17 @@ class Firmware {
     return p.join(dir, '${_pre(prefix)}dump_${_stamp()}.bin');
   }
 
+  /// Firmware decrypted from a zip3 package, kept under
+  /// `Documents/x3utils/unpacked_zip3` so the flash flow can read it by path
+  /// and the user can re-flash it later via Choose .bin. [name] seeds the
+  /// filename (sanitised); [prefix] follows the usual rule.
+  static String newUnpackedBinPath({String prefix = '', String name = 'firmware'}) {
+    final dir = _dir('unpacked_zip3');
+    final clean = name.trim().replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final label = clean.isEmpty ? 'firmware' : clean;
+    return p.join(dir, '${_pre(prefix)}${label}_${_stamp()}.bin');
+  }
+
   /// Raw + patched paths for the SHU-compat workflow — kept SEPARATE from
   /// regular backups, under Documents/x3utils/compat (mirrors flash_compat.bat).
   static (String raw, String patched) newCompatPaths({String prefix = ''}) {

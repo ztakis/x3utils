@@ -393,3 +393,59 @@ survive machine switches and chat history loss.
   shipped. That differs from adding a late build artifact of already-tagged
   source, which is normal. Moving a published tag is not an option. Fold macOS
   into the next CLI tag instead.
+
+## 2026-07-18
+
+- Flutter GUI: added zip3 firmware import (Flash slot 0 -> Choose .zip):
+  decrypt -> validate -> flash. All new work is Dart-only; no CLI or firmware
+  changes. GUI bumped to v1.2.0 BETA (was 1.1.3), not yet tagged/released.
+- New engine files (ports of the ScooterHacking tools, MIT, credited in
+  `x3utils_flutter/README.md`):
+  - `lib/engine/ninebot_tea.dart` - Dart port of NinebotTEA (TEA cipher).
+    Verified byte-identical to the Python reference over 15 vectors incl. the
+    128 KB image. Decrypt output equals `ninebottea decrypt` exactly, including
+    NinebotTEA's 0-7 trailing pad bytes; the bin is flashed as-is (same as the
+    ecosystem), so the pad is not a defect.
+  - `lib/engine/pack_zip3.dart` - port of fw-zip-package-v3 `pack.py`
+    (`makeZipV3`) plus the inverse `unpackV3`. zip3 is treated strictly as
+    encrypted + MD5'd: require `FIRM.bin.enc` and `md5.enc`, verify the md5
+    before decrypt. The plain-`FIRM.bin` path was dropped - no point for zip3.
+- Two-layer package validation:
+  - Model gate (`lib/engine/device_spec.dart`): accept ONLY models
+    {zt3, g3, gt3, f3} x types {MCU, VCU}; reject other models and any BLE/BMS.
+    Fail-closed, case-insensitive, runs before decrypt. Verified in-app: BMS and
+    BLE reject by type; g2 (gen 2) rejects by model. Kept in CODE, not a runtime
+    config, on purpose - it is a bricking-risk allow-list; per-model records so
+    device-side validation can grow off them later.
+  - Banner (payload) check: firmware carries a fixed 16-byte ASCII banner
+    `SCOOTER_<TYPE>_<CODE>` at bin offset 0x400. TYPE in {VCU,MCU}. MCU code is
+    always `0001` (confirms type, not model). VCU code is per-model:
+    zt3=xxU2, g3=xxG3, gt3=xGT3, f3=xxF3 (gt3<->xGT3 confirmed against a real
+    gt3/VCU info.json; codes are version-independent). `verifyBanner`
+    cross-checks info.json - type always, model for VCU - verified 28/28 against
+    8 example bins. SOFT by design: a mismatch is an amber "loaded anyway -
+    verify before flashing" warning, not a block. Decision: start soft (a
+    firmware revision could move/change the banner); may tighten to a hard block
+    once proven across the full firmware set.
+- Hardware/human validation: a real gt3/VCU package flashed to slot 0; the
+  flashed slot-0 region (0x08001000+) byte-matched the decrypted bin (MD5 equal)
+  and the bootloader [0,0x1000) was unchanged. Confirms decrypt -> slot-0 flash
+  is correct. v1.2.0 stays BETA until more hardware coverage is routine.
+- Storage / logging:
+  - Decrypted bins are kept persistently in `Documents/x3utils/unpacked_zip3/`
+    (timestamped) so they can be re-flashed later via Choose .bin.
+  - The zip import runs outside a `start()` run, so it flushes its own log to
+    `logs/zip3_import/` when Save log is on - rejections and banner warnings are
+    now persisted (previously console-only). `logToFile` stays opt-in (off by
+    default), which is why the logs folder can look empty.
+- Versioning:
+  - BETA is a separate `kAppStage` in `lib/theme.dart`, deliberately kept OUT of
+    the four numeric version strings (VERSION, pubspec, kAppVersion, installer
+    AppVer) so they stay byte-equal - `package_macos.sh` asserts that match and a
+    space would also break the mac plist.
+  - New `tool/version.dart` is the single sync authority for all 7 version spots
+    (check mode fails on drift; set mode writes them and bumps the build). Use it
+    instead of hand-editing.
+- Correction: the earlier "gf3" model was a typo; the real model is `gt3`
+  (banner `xGT3`), confirmed by a real info.json. Fixed in device_spec and the
+  rejection messages.

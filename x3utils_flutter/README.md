@@ -154,7 +154,19 @@ The Dart orchestration is shared; each OS supplies its native backend:
 
 Version lives in four places — **keep them in sync**: `VERSION`,
 `pubspec.yaml` (`version:`), and `kAppVersion` in `lib/theme.dart` (drives the
-UI). Current: **1.1.3**. Also in installer/x3utils.iss `AppVer`.
+UI). Current: **1.2.0**. Also in installer/x3utils.iss `AppVer`. The release
+channel is a separate `kAppStage` in `lib/theme.dart` (`BETA`, or `''` for
+stable), kept out of those four strings so they stay byte-equal.
+
+Don't edit those by hand — use the sync tool, which manages all 7 spots
+(the five x.y.z strings + the pubspec build number + `kAppStage`):
+
+```
+dart run tool/version.dart                 # check: report all, fail on drift
+dart run tool/version.dart 1.2.1           # set version everywhere (+build bump)
+dart run tool/version.dart 1.2.1 --stage BETA
+dart run tool/version.dart --stage ""      # keep version, clear the channel
+```
 
 ## Safety
 
@@ -162,3 +174,21 @@ Flashing writes to a real vehicle controller. Write actions back up first and
 verify; a read-protected chip is detected and rescue uses the deterministic,
 WRP-safe option-byte rewrite (never the driver `unlock`). Still — use the right
 `.bin` for your model, and keep the SWD/C45 contact steady.
+
+## Credits
+
+The zip3 firmware import (**Choose .zip** → decrypt → flash slot 0) is a Dart
+port of two open-source [ScooterHacking](https://scooterhacking.org) projects,
+used under the MIT License:
+
+- **[NinebotTEA](https://github.com/scooterhacking/NinebotTEA)** — the TEA
+  cipher for Ninebot / Xiaomi scooter firmware. Ported to Dart in
+  [`lib/engine/ninebot_tea.dart`](lib/engine/ninebot_tea.dart).
+  © 2024 ScooterHacking · MIT.
+- **[fw-zip-package-v3](https://github.com/scooterhacking/fw-zip-package-v3)** —
+  the v3 firmware `.zip` package format and `pack.py`. Ported to Dart in
+  [`lib/engine/pack_zip3.dart`](lib/engine/pack_zip3.dart) (pack + strict
+  encrypted/MD5 unpack). By ScooterHacking · MIT.
+
+Thanks to the ScooterHacking community (<hi@scooterhacking.org>) for building and
+open-sourcing these tools.
