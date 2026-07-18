@@ -154,7 +154,19 @@ The Dart orchestration is shared; each OS supplies its native backend:
 
 Version lives in four places — **keep them in sync**: `VERSION`,
 `pubspec.yaml` (`version:`), and `kAppVersion` in `lib/theme.dart` (drives the
-UI). Current: **1.1.3**. Also in installer/x3utils.iss `AppVer`.
+UI). Current: **1.2.0**. Also in installer/x3utils.iss `AppVer`. The release
+channel is a separate `kAppStage` in `lib/theme.dart` (`BETA`, or `''` for
+stable), kept out of those four strings so they stay byte-equal.
+
+Don't edit those by hand — use the sync tool, which manages all 7 spots
+(the five x.y.z strings + the pubspec build number + `kAppStage`):
+
+```
+dart run tool/version.dart                 # check: report all, fail on drift
+dart run tool/version.dart 1.2.1           # set version everywhere (+build bump)
+dart run tool/version.dart 1.2.1 --stage BETA
+dart run tool/version.dart --stage ""      # keep version, clear the channel
+```
 
 ## Safety
 

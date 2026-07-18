@@ -8,6 +8,7 @@ import 'engine/openocd_paths.dart';
 import 'engine/openocd_runner.dart';
 import 'engine/rdp_runner.dart';
 import 'engine/firmware.dart';
+import 'engine/pack_zip3.dart';
 
 /// Drives the whole UI via a single StageState the hero binds to.
 class AppController extends ChangeNotifier {
@@ -136,6 +137,43 @@ class AppController extends ChangeNotifier {
       _firmwareAdvanced = path;
     }
     notifyListeners();
+  }
+
+  /// Load a v3 firmware .zip for the current (slot-0) flash: validate the
+  /// package, decrypt the encrypted payload, write the plaintext to a temp
+  /// .bin, validate it as a slot bin, and remember it. Returns a
+  /// [FirmwareCheck] (ok + message) for the UI to surface; on success the bin
+  /// is set as the loaded firmware. Does NOT flash — the normal Start flow does.
+  Future<FirmwareCheck> loadSlotFirmwareFromZip(String zipPath) async {
+    try {
+      final bytes = await File(zipPath).readAsBytes();
+      final pkg = PackV3.unpackV3(bytes); // throws FormatException if not zip3
+      _log(
+        '== package: ${pkg.displayName} · ${pkg.source} · ${pkg.firmware.length} bytes ==',
+      );
+      final outPath = Firmware.newUnpackedBinPath(
+        prefix: backupPrefix,
+        name: pkg.displayName,
+      );
+      await File(outPath).writeAsBytes(pkg.firmware);
+      final v = Firmware.validateSlot(outPath);
+      if (!v.ok) {
+        _log('== package firmware rejected: ${v.message} ==');
+        return FirmwareCheck.fail(v.message);
+      }
+      setFirmware(outPath);
+      _log('== loaded slot-0 firmware from package → $outPath ==');
+      return FirmwareCheck(
+        true,
+        'Decrypted ${pkg.firmware.length} bytes from ${pkg.displayName}.',
+      );
+    } on FormatException catch (e) {
+      _log('== package error: ${e.message} ==');
+      return FirmwareCheck.fail(e.message);
+    } catch (e) {
+      _log('== package error: $e ==');
+      return FirmwareCheck.fail('Could not read package: $e');
+    }
   }
 
   // STARTUP DEFAULTS (persisted, set only from Settings). Default to Mode A
@@ -375,7 +413,7 @@ class AppController extends ChangeNotifier {
       'linux' => 'Linux',
       _ => Platform.operatingSystem,
     };
-    return 'x3utils v$kAppVersion · $os · ${mode.title} · '
+    return 'x3utils v$kAppVersionLabel · $os · ${mode.title} · '
         '${DateTime.now().toString().split('.').first}';
   }
 
