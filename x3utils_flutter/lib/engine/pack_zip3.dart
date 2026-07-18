@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 
+import 'device_spec.dart';
 import 'ninebot_tea.dart';
 
 /// Dart port of ScooterHacking's fw-zip-package-v3 `Python/pack.py`:
@@ -198,6 +199,16 @@ class PackV3 {
       throw FormatException('Unsupported schemaVersion: ${info['schemaVersion']}.');
     }
 
+    final fw = info['firmware'];
+
+    // Model/type allow-list (device_spec.dart) — fail fast before any decrypt.
+    final model = (fw is Map) ? fw['model']?.toString() : null;
+    final type = (fw is Map) ? fw['type']?.toString() : null;
+    final verdict = DeviceSpec.evaluateZip3(model, type);
+    if (!verdict.ok) {
+      throw FormatException(verdict.reason);
+    }
+
     // zip3 must carry the encrypted payload.
     final encFile = archive.findFile('FIRM.bin.enc');
     if (encFile == null) {
@@ -205,7 +216,6 @@ class PackV3 {
     }
 
     // zip3 must be MD5'd: require md5.enc and verify it before decrypting.
-    final fw = info['firmware'];
     final md5map = (fw is Map) ? fw['md5'] : null;
     final md5enc = (md5map is Map && md5map['enc'] is String) ? md5map['enc'] as String : null;
     if (md5enc == null) {
@@ -217,7 +227,17 @@ class PackV3 {
     }
 
     final firmware = NinebotTea(key: key).decrypt(encBytes); // TEA checksum inside
-    return UnpackedV3(firmware: firmware, source: 'FIRM.bin.enc (decrypted)', info: info);
+
+    // Soft payload-side cross-check: does the firmware's own banner agree with
+    // the declared model/type? A mismatch is a warning, not a hard reject.
+    final banner = DeviceSpec.verifyBanner(firmware, model ?? '', type ?? '');
+
+    return UnpackedV3(
+      firmware: firmware,
+      source: 'FIRM.bin.enc (decrypted)',
+      info: info,
+      bannerWarning: banner.consistent ? null : banner.message,
+    );
   }
 }
 
@@ -227,6 +247,7 @@ class UnpackedV3 {
     required this.firmware,
     required this.source,
     required this.info,
+    this.bannerWarning,
   });
 
   /// Decrypted firmware bytes, ready to write to flash.
@@ -238,9 +259,19 @@ class UnpackedV3 {
   /// Parsed `info.json`.
   final Map<String, dynamic> info;
 
+  /// Non-null when the firmware's own `SCOOTER_<TYPE>_<CODE>` banner disagrees
+  /// with the declared model/type — a soft warning, not a load failure.
+  final String? bannerWarning;
+
   String get displayName {
     final fw = info['firmware'];
     final n = (fw is Map) ? fw['displayName'] : null;
     return (n is String && n.isNotEmpty) ? n : 'firmware';
   }
+
+  /// `info.json` firmware.model (accepted by [DeviceSpec] during unpack).
+  String get model => (info['firmware'] as Map?)?['model']?.toString() ?? '';
+
+  /// `info.json` firmware.type (accepted by [DeviceSpec] during unpack).
+  String get type => (info['firmware'] as Map?)?['type']?.toString() ?? '';
 }

@@ -118,15 +118,29 @@ class _HomeScreenState extends State<HomeScreen> {
     if (file == null) return;
     final res = await c.loadSlotFirmwareFromZip(file.path);
     if (!mounted) return;
+    // Three states: reject → red, loaded-with-banner-mismatch → amber, ok → green.
+    final Color bg;
+    final Color fg;
+    final String text;
+    if (!res.ok) {
+      bg = AppColors.danger;
+      fg = Colors.white;
+      text = 'Package rejected: ${res.message}';
+    } else if (res.warning != null) {
+      bg = AppColors.hold; // amber — soft warning, still loaded
+      fg = AppColors.bg; // dark text for contrast on amber
+      text = '⚠ ${res.warning}\nLoaded anyway — verify before flashing.';
+    } else {
+      bg = AppColors.ok;
+      fg = Colors.white;
+      text = res.message;
+    }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(
-            res.ok ? res.message : 'Package rejected: ${res.message}',
-            style: const TextStyle(color: Colors.white),
-          ),
-          backgroundColor: res.ok ? AppColors.ok : AppColors.danger,
+          content: Text(text, style: TextStyle(color: fg)),
+          backgroundColor: bg,
           behavior: SnackBarBehavior.floating,
         ),
       );
