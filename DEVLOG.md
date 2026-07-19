@@ -505,5 +505,60 @@ survive machine switches and chat history loss.
   plaintext flash so this defends ACCIDENTS not forgery; CPU UID is unique but
   does not decode to model (unused); BLE exposes model+type authoritatively but
   is out of scope for an SWD tool.
-- Not yet built: the flash_only "big warning + countdown on OK" deliberate-
-  override dialog.
+- Built the flash_only deliberate-override dialog (closes the "not yet built"
+  item from earlier today). Placement decision: the gate is on ENTERING the
+  action from the left pane (`_showFlashOnlyWarning` in main.dart), not on the
+  CTA — a first CTA-press version was built and then moved after review. The
+  warning fires every time Flash Only is entered (leaving and returning
+  re-warns; re-clicking the already-selected tile does not), Cancel keeps the
+  previous selection, and its confirm button (`_CountdownPillButton`) counts
+  down 5 s before it becomes tappable. Once inside, the hero behaves as before:
+  the CTA keeps the original instant hard confirm, so multiple flashes in one
+  visit are not re-gated. Scope: flash_only ONLY — rdp_rescue keeps its instant
+  hard confirm. Both dialog texts now name BOTH skipped safeguards (no backup,
+  no target-match guard). Presentation-only friction in front of user consent,
+  not in front of an OpenOCD call. `dart format`, `flutter analyze`, and a
+  debug build pass; the maintainer ran the debug build and confirmed the
+  selection-gate flow is the intended behavior.
+- Serial guard "not working" — ROOT-CAUSED, then PARKED (no code change).
+  Bench report: serial-clash cases never blocked. Findings from real dumps:
+  - ABSENCE IS NOT MISMATCH: the guard only compares signals it could READ
+    (DEVLOG "nothing readable → allowed" applies per-signal, not just to the
+    all-blank case). This is forced by the one-loop design that serves both
+    128 KB full images and slot bins (slot bins structurally lack serial +
+    0x1400 banner, so no signal can be mandatory).
+  - The serial offsets are INCOMPLETE, layout is fw/model-dependent: G3 keeps
+    its real serial at 0x1F020/0x1F420 (as coded), but the zt3 bench unit kept
+    its REAL serial at 0x1C020 (unread by the guard) with only a near-default
+    `1K1E0000000001x` at 0x1F020. In v1.5.5 the 0x1C000 page holds CODE, so
+    0x1C020 as a source would need a strict 15-char shape check; scanning the
+    user window is out.
+  - The proximate cause on the bench: zt3_vcu_v1.5.5_rescue.bin (full image,
+    zt3 banner, blank serial regions, code at 0x1C000) was flashed and ERASED
+    every serial record. The guard passed it CORRECTLY — all readable signals
+    agreed (zt3→zt3) — after which no serial existed to clash. The degradation
+    is silent: the "check skipped" note only fires when NOTHING is readable.
+  - Identified gaps (PARKED, undecided): (1) identity-erasure hard-confirm
+    (target has serial, incoming full image blank), (2) serial-cloning notice
+    (the reverse), (3) full image with no readable banner → hard block,
+    (4) log which identity signals were gathered so a degraded check is
+    visible. Also: the "unit-verified 8/8" tests were a scratch harness, not
+    committed — they can't be re-run and they baked in the wrong offset
+    assumption.
+- flash_only slot-0 scope — DESIGNED (discussion only, NOT built). Decision:
+  a scope control INSIDE flash_only, NOT a new tile (clutter, no CLI
+  counterpart) and NOT a skip-backup toggle in flash_slot0 (would flip a safe
+  action dangerous via a mode switch, fighting the entry-gate model). Both
+  scopes share the safety class (no backup, no guard); slot 0 only narrows
+  blast radius (identity-safe) — it becomes the recommended corrective for
+  guard-blocked mis-flashed devices, replacing the full-image workaround.
+  Settled spec: one entry warning, once, same text both scopes; segmented
+  "Full image | Slot 0 only", default full; Choose .zip greyed until slot-0
+  scope (hint shown) since zip3 → slot bin; ANY scope flip clears the loaded
+  firmware (simple rule "for now"); scope recorded in the log line; firmware
+  bar goes TWO-LINE (filename alone on line 1, buttons on line 2) — also
+  fixes the existing filename squeeze on flash_slot0's single 460 px row.
+  Layout chosen from a clickable mockup (app palette, real bench filenames):
+  Variant A — scope control ABOVE the bar (reading order scope → file → CTA),
+  START FLASH CTA on the RIGHT. Mockup:
+  https://claude.ai/code/artifact/51c8ede6-12c1-4026-bc04-7eafc2f4b231

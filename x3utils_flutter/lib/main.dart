@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -216,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _confirmBody(FlashAction a) => switch (a.id) {
     'flash_only' =>
-      'No backup will be taken. If this write goes wrong there is nothing to restore from. Only do this if you already have a good dump.',
+      'No backup is taken and the target-match guard is skipped — nothing checks that this firmware belongs on this controller. If the write goes wrong there is nothing to restore from. Only continue if you already have a good dump and you are sure about the target.',
     'flash_slot0' =>
       'Only application slot 0 is erased and written. The bootloader and identity block stay untouched.',
     'flash_backup' =>
@@ -952,7 +953,15 @@ class _ActionTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
-              onTap: () => c.selectAction(action.id),
+              onTap: () async {
+                // Entering Flash Only is gated by the override warning every
+                // time; re-clicking the already-selected tile is not re-entry.
+                if (action.id == 'flash_only' && c.actionId != action.id) {
+                  final ok = await _showFlashOnlyWarning(context);
+                  if (ok != true) return;
+                }
+                c.selectAction(action.id);
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 11,
@@ -1633,6 +1642,135 @@ class _StageButtons extends StatelessWidget {
     fg: AppColors.txt,
     border: AppColors.line2,
   );
+}
+
+/// Selection gate for Flash Only: shown every time the action is entered from
+/// the left pane. Flash Only is the deliberate override — no backup and no
+/// target-match guard — so entry requires sitting through a short countdown.
+/// Returns true when the operator accepts; anything else keeps the previous
+/// selection.
+Future<bool?> _showFlashOnlyWarning(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: const Color(0xB3040A0F),
+    builder: (ctx) => Dialog(
+      backgroundColor: AppColors.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.line2),
+      ),
+      child: Container(
+        width: 400,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.warning_amber_rounded,
+                color: AppColors.danger,
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Flash Only — no safety nets',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.txt,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'This is the deliberate override. No backup is taken and the '
+              'target-match guard is skipped — nothing checks that your '
+              'firmware belongs on the connected controller. If a write goes '
+              'wrong there is nothing to restore from. Only continue if you '
+              'already have a good dump and you are sure about the target.',
+              style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _PillButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.pop(ctx, false),
+                  bg: AppColors.line,
+                  fg: AppColors.txt,
+                  border: AppColors.line2,
+                  small: true,
+                ),
+                const SizedBox(width: 10),
+                _CountdownPillButton(
+                  label: 'I understand — continue',
+                  seconds: 5,
+                  onTap: () => Navigator.pop(ctx, true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Hard-styled confirm button that stays disabled for [seconds], showing the
+/// remaining time in its label, then becomes tappable. Used by the Flash Only
+/// override dialog.
+class _CountdownPillButton extends StatefulWidget {
+  const _CountdownPillButton({
+    required this.label,
+    required this.seconds,
+    required this.onTap,
+  });
+  final String label;
+  final int seconds;
+  final VoidCallback onTap;
+
+  @override
+  State<_CountdownPillButton> createState() => _CountdownPillButtonState();
+}
+
+class _CountdownPillButtonState extends State<_CountdownPillButton> {
+  late int _left = widget.seconds;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      setState(() => _left--);
+      if (_left <= 0) t.cancel();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = _left <= 0;
+    return _PillButton(
+      label: ready ? widget.label : '${widget.label} (${_left}s)',
+      onTap: ready ? widget.onTap : null,
+      gradient: const [Color(0xFFFF6472), AppColors.danger],
+      fg: Colors.white,
+      small: true,
+    );
+  }
 }
 
 class _PillButton extends StatelessWidget {
