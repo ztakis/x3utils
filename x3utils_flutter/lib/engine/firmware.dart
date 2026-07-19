@@ -14,6 +14,15 @@ class FirmwareCheck {
 class Firmware {
   static const int expectedSize = 131072; // 128 KB
 
+  /// Acceptable size window for a slot-0 bin, measured on the **decrypted** bin
+  /// (what is actually written at 0x08001000). **PROVISIONAL placeholders** —
+  /// change these two numbers once the exact slot-0 region spec is confirmed.
+  /// Observed real firmware is ~57–61 KB; outside the window is a HARD reject
+  /// (too small = not a real slot image; too big = would overrun slot 0 into
+  /// slot 1 / identity and break the identity-safe guarantee).
+  static const int slot0MinBytes = 0xC800; // 50 KB (51200)  — TODO: confirm spec
+  static const int slot0MaxBytes = 0x10000; // 64 KB (65536) — TODO: confirm spec
+
   static FirmwareCheck validate(String path, {bool requireSize = true}) {
     if (path.trim().isEmpty) return FirmwareCheck.fail('No firmware file selected.');
     final f = File(path);
@@ -37,9 +46,10 @@ class Firmware {
     return FirmwareCheck.valid;
   }
 
-  /// Slot-0 bins are NOT full images: reject a 128 KB image (that's a full
-  /// flash, not a slot bin) and anything too big for the slot-0 region
-  /// (0x08001000 → flash end 0x08020000 = 0x1F000 bytes).
+  /// Slot-0 bins are NOT full images: reject a 128 KB image, then enforce the
+  /// provisional decrypted-size window [slot0MinBytes]..[slot0MaxBytes]. [len]
+  /// is the decrypted bin size (zip3: the post-decrypt temp .bin; Choose .bin:
+  /// the file itself).
   static FirmwareCheck validateSlot(String path) {
     final base = validate(path, requireSize: false);
     if (!base.ok) return base;
@@ -48,9 +58,12 @@ class Firmware {
       return FirmwareCheck.fail(
           'That’s a full 128 KB image — slot 0 needs a smaller slot bin.');
     }
-    const slotMax = 0x1F000; // 126976
-    if (len > slotMax) {
-      return FirmwareCheck.fail('Too big for slot 0 ($len bytes, max $slotMax).');
+    if (len < slot0MinBytes) {
+      return FirmwareCheck.fail(
+          'Too small for a slot-0 firmware ($len bytes, min $slot0MinBytes).');
+    }
+    if (len > slot0MaxBytes) {
+      return FirmwareCheck.fail('Too big for slot 0 ($len bytes, max $slot0MaxBytes).');
     }
     return FirmwareCheck.valid;
   }

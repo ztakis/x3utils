@@ -228,15 +228,19 @@ class PackV3 {
 
     final firmware = NinebotTea(key: key).decrypt(encBytes); // TEA checksum inside
 
-    // Soft payload-side cross-check: does the firmware's own banner agree with
-    // the declared model/type? A mismatch is a warning, not a hard reject.
+    // Payload-side gate: the firmware's own banner must match the declared
+    // model/type. A mismatch means a mislabeled package — hard-rejected, same as
+    // the model gate. Proven safe across the full jsb.by firmware set (every
+    // VCU/MCU image's banner matches its model; 0 mismatches over 99 files).
     final banner = DeviceSpec.verifyBanner(firmware, model ?? '', type ?? '');
+    if (!banner.consistent) {
+      throw FormatException(banner.message);
+    }
 
     return UnpackedV3(
       firmware: firmware,
       source: 'FIRM.bin.enc (decrypted)',
       info: info,
-      bannerWarning: banner.consistent ? null : banner.message,
     );
   }
 }
@@ -247,7 +251,6 @@ class UnpackedV3 {
     required this.firmware,
     required this.source,
     required this.info,
-    this.bannerWarning,
   });
 
   /// Decrypted firmware bytes, ready to write to flash.
@@ -258,10 +261,6 @@ class UnpackedV3 {
 
   /// Parsed `info.json`.
   final Map<String, dynamic> info;
-
-  /// Non-null when the firmware's own `SCOOTER_<TYPE>_<CODE>` banner disagrees
-  /// with the declared model/type — a soft warning, not a load failure.
-  final String? bannerWarning;
 
   String get displayName {
     final fw = info['firmware'];

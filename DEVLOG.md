@@ -422,11 +422,14 @@ survive machine switches and chat history loss.
     always `0001` (confirms type, not model). VCU code is per-model:
     zt3=xxU2, g3=xxG3, gt3=xGT3, f3=xxF3 (gt3<->xGT3 confirmed against a real
     gt3/VCU info.json; codes are version-independent). `verifyBanner`
-    cross-checks info.json - type always, model for VCU - verified 28/28 against
-    8 example bins. SOFT by design: a mismatch is an amber "loaded anyway -
-    verify before flashing" warning, not a block. Decision: start soft (a
-    firmware revision could move/change the banner); may tighten to a hard block
-    once proven across the full firmware set.
+    cross-checks info.json - type always, model for VCU. HARD reject: a mismatch
+    is rejected (red), same path as the model gate - a mislabeled package never
+    loads. Proven safe first: a pass over the full jsb.by firmware set (99 files,
+    bins + decrypted zips, all 4 models x VCU/MCU) found every banner matching
+    its model, 0 mismatches / 0 undecodable, so hard-blocking cannot reject a
+    legit image. (BLE/BMS use a different non-SCOOTER banner but never reach the
+    check - the model gate rejects those types first.) Superseded the initial
+    soft/amber warning after this proof.
 - Hardware/human validation: a real gt3/VCU package flashed to slot 0; the
   flashed slot-0 region (0x08001000+) byte-matched the decrypted bin (MD5 equal)
   and the bootloader [0,0x1000) was unchanged. Confirms decrypt -> slot-0 flash
@@ -449,3 +452,43 @@ survive machine switches and chat history loss.
 - Correction: the earlier "gf3" model was a typo; the real model is `gt3`
   (banner `xGT3`), confirmed by a real info.json. Fixed in device_spec and the
   rejection messages.
+
+## 2026-07-19
+
+- Pre-flash safety, second layer: slot-0 size window + a device-side target-ID
+  guard. Dart-only; the flashing brains (OpenOCD/Tcl) are unchanged.
+- Slot-0 size window (firmware.dart): the DECRYPTED slot bin must fall within
+  [slot0MinBytes, slot0MaxBytes] - PROVISIONAL 50 KB..64 KB placeholders, the
+  two numbers to tune once the exact slot-0 region spec is confirmed. Hard
+  reject outside. Replaces the old 0x1F000 (whole app-region) cap, which would
+  have let an oversize slot bin overrun slot 1 / identity and break the
+  identity-safe guarantee. Every observed real firmware is ~57-61 KB, well
+  inside the window.
+- Device-side target-ID guard (device_spec.checkTargetMatch + _runFlash): after
+  the mandatory backup, read the TARGET's current slot-0 banner from the fresh
+  dump at offset 0x1400 and compare it to the incoming firmware's banner (0x400
+  for a slot bin, 0x1400 for a full image). Confirmed mismatch -> abort BEFORE
+  the write, keep the backup. Blank/unreadable target -> allowed (we couldn't ID
+  it: blank chip / rescue / unknown fw), so first-flash still works. Scope:
+  backup+flash and flash_slot0 (they dump first). flash_only skips it (no
+  backup, by design - the deliberate operator override). SHU compat is a
+  separate path and untouched (it reflashes the chip's own patched fw, so a
+  mismatch is impossible).
+- Hardware-validated on a real target: model swap (zt3 target xxU2 <- g3 fw
+  xxG3) hard-stopped on BOTH backup+flash and flash_slot0; type swap (VCU target
+  <- MCU fw 0001) hard-stopped on flash_slot0. Each backed up first, wrote
+  nothing, kept the backup, set Last connect FAIL, and (Save log on) recorded
+  the "target mismatch" line in the action's own log (logs/flash_backup,
+  logs/flash_slot0). The 0x1400 offset math is confirmed against real dumps.
+- KNOWN LIMITATION - the banner is FIRMWARE identity, not HARDWARE identity. A
+  device someone already mis-flashed (e.g. an F3 running G3 VCU fw) reads as the
+  wrong model, so the guard would BLOCK the corrective right-model flash - it
+  cannot tell "wrong fw onto right device" from "right fw onto a broken device".
+  Today's workaround is the flash_only override (skips the check; operator takes
+  responsibility, though it is a full-image reflash). Proper fix (OPEN): if the
+  identity region or bootloader carries the true model/board (or a serial whose
+  format encodes it), ID the target from THAT immutable source instead of the
+  current firmware; the SupportedDevice records already have
+  identityRegion/identitySignature slots for it. Awaiting the identity format.
+- Not yet built: the flash_only "big warning + countdown on OK" deliberate-
+  override dialog.

@@ -59,6 +59,11 @@ const kMcuCode = '0001';
 /// (8 + 3 + 1 + 4) at this offset in the decrypted bin.
 const kBannerOffset = 0x400;
 const kBannerLength = 16;
+
+/// Same banner seen in a full 128 KB backup dump: slot 0 lives at 0x1000
+/// (flash 0x08001000), so its banner is at 0x1000 + [kBannerOffset].
+const kSlotBannerOffset = 0x1400;
+
 final _bannerRe = RegExp(r'^SCOOTER_(VCU|MCU)_(.{4})$');
 
 /// Outcome of checking a package's declared model/type against the allow-list.
@@ -161,6 +166,59 @@ class DeviceSpec {
     }
     return null;
   }
+
+  /// Device-side (pre-flash) guard: compare the TARGET's current slot-0 banner
+  /// (read from the fresh backup [dump] at [kSlotBannerOffset]) against the
+  /// [firmware] about to be written. Only backup+flash / flash_slot0 can call
+  /// this — they dump first.
+  ///
+  /// Blocks ONLY on a confirmed mismatch (both banners readable and different).
+  /// A blank/unreadable target banner means we couldn't ID the device (blank
+  /// chip, rescue, unknown firmware) → allowed, so first-flashes still work.
+  /// [incomingIsSlotBin] picks the incoming banner offset: slot bins carry it at
+  /// [kBannerOffset] (0x400), full 128 KB images at [kSlotBannerOffset] (0x1400).
+  static TargetMatch checkTargetMatch({
+    required List<int> dump,
+    required List<int> firmware,
+    required bool incomingIsSlotBin,
+  }) {
+    final target = _bannerAt(dump, kSlotBannerOffset);
+    if (target == null) {
+      return const TargetMatch(
+          note: "couldn't ID target (no banner in backup) — target check skipped");
+    }
+    final incoming =
+        _bannerAt(firmware, incomingIsSlotBin ? kBannerOffset : kSlotBannerOffset);
+    if (incoming == null) {
+      return const TargetMatch(
+          note: 'firmware has no banner — target check skipped');
+    }
+    if (target != incoming) {
+      return TargetMatch(
+        blocked: true,
+        message: 'target is running "$target" but the firmware is "$incoming" — '
+            'wrong model/type for this device.',
+      );
+    }
+    return const TargetMatch(); // match
+  }
+
+  /// A valid `SCOOTER_<TYPE>_<CODE>` banner at [off], or null if absent/garbage.
+  static String? _bannerAt(List<int> b, int off) {
+    if (b.length < off + kBannerLength) return null;
+    final s = String.fromCharCodes(b.sublist(off, off + kBannerLength));
+    return _bannerRe.hasMatch(s) ? s : null;
+  }
+}
+
+/// Result of [DeviceSpec.checkTargetMatch]. [blocked] is true only on a
+/// confirmed target/firmware mismatch; [note] carries the "couldn't ID / check
+/// skipped" reason when we allow through without a positive match.
+class TargetMatch {
+  const TargetMatch({this.blocked = false, this.message = '', this.note});
+  final bool blocked;
+  final String message; // block reason (when blocked)
+  final String? note; // informational reason the check was skipped
 }
 
 /// Result of [DeviceSpec.verifyBanner]: whether the firmware's own banner is
