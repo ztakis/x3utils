@@ -680,3 +680,77 @@ survive machine switches and chat history loss.
     pixels instead of the original 11-pixel muted treatment, after the
     hardware-test UI showed the information line was borderline invisible;
     loaded filenames remain left-aligned for long-name handling.
+- Mainstream guard DECIDED + IMPLEMENTED: BANNERS ENFORCE, SERIALS INFORM.
+  Serial-based blocking is deliberately RETIRED — do not rebuild it without a
+  new decision. The decision arc that got here: the parked serial guard kept
+  producing wrong answers on real hardware (zt3 real serial at 0x1C020 unread,
+  near-default at 0x1F020), enforcement design ballooned into a four-state ×
+  pairing matrix + per-model generic-string list, and the key domain fact
+  arrived: `1K1E0000000001` is the FACTORY serial of a replacement ZT3 (EU)
+  VCU — the Ninebot app owns provisioning (rewrites 0x1F020/0x1F420 with the
+  bound serial on part replacement; a CLEARED serial region forces the same
+  flow at first connect, which is why rescue bins clear user space). SWD
+  cannot be authoritative about serials, so the tool stopped pretending.
+  - Enforced (hard): `checkTargetMatch` blocks on firmware-BANNER model/type
+    disagreement only (the hardware-validated cases keep blocking). NEW
+    selection-time gate `checkIncomingBin`: Backup + Flash and Flash slot 0
+    reject a picked .bin with no readable SCOOTER banner at its expected
+    offset (0x1400 full / 0x400 slot) — not recognizable firmware; the
+    rejection text points at Flash Only, which stays permissive by design for
+    crafted/rescue images (e.g. zt3_vcu_v1.5.5_rescue.bin).
+  - Informational (never blocks): every Choose .bin selection now shows a
+    firmware-bar identity note via the flash_only "Package says" strip
+    pattern, generalized — banner model/type plus serial state. Serial
+    classification: real (shape-valid 14-char [0-9A-Za-z], prefix→model
+    decode still displayed), generic (exact known factory strings,
+    `kGenericSerials` — ZT3 EU `1K1E0000000001`, G3 `1CGC0000000001`; add as
+    observed), cleared (both copies uniformly 0x00/0xFF), none. AMBER treatment for generic and
+    cleared (generic shows the full string per decision) and for a
+    serial-vs-banner model contradiction; the compact Backup + Flash bar
+    gained the note line it never had. Run-time: target + firmware identity
+    log lines after the backup dump (degraded-signal visibility, closing the
+    old parked gap 4), plus a serial-change note (replaced / cleared /
+    written / reverted-to-generic) in the log and appended to the success
+    message. Restoring the device's own backup and slot writes stay silent.
+  - 0x1C020 is NOT read (display-only candidate for later); the earlier
+    "crafted bin → hard block" stance was consciously relaxed to warn-only
+    because a rescue-flashed, never-provisioned device has a GENUINE dump
+    with blank serials — warn-only has no false blocks.
+  - Committed deterministic tests replace the never-committed 2026-07 scratch
+    harness: test/target_identity_test.dart (26 tests — classification,
+    banner-only blocking incl. "serial disagreement no longer blocks",
+    selection gate, display facts, change notes) with the real offsets.
+  - Verification: `dart format`, `flutter analyze`, the Flutter tests, and a
+    Windows debug build pass. First hardware run (same day, Windows bench):
+    Backup + Flash of G3 VCU fw onto the zt3 target showed the informational
+    `Firmware says: G3 · VCU` strip on load, allowed continue, backed up,
+    then hard-stopped on the banner guard with the FAILED screen — exactly
+    the designed behavior. The run log also validated the new identity lines
+    (`target identity` / `firmware identity`) and the cleared-serial change
+    note.
+  - Bench round 2 CORRECTIONS from that log (maintainer-confirmed):
+    - The serial is 14 CHARS, not 15 — the bench read `1K1E0000000001R`
+      because the 15th byte is adjacent memory bleeding into the read (the
+      earlier `…x` in these notes was the same artifact). `kSerialLength` is
+      now 14 and a regression test pins the stray-byte case.
+    - Confirmed real/generic pairs: ZT3 org `1K1EA2510P1673` / generic
+      `1K1E0000000001`; G3 org `1CGCC9926C8115` / generic `1CGC0000000001`.
+      Both generics are in `kGenericSerials`, so the bench unit now
+      classifies as generic replacement instead of real.
+    - Tense fix: the serial-change note printed pre-write read "device
+      serial cleared (was …)" on a run the guard then BLOCKED — it claimed
+      an action that never happened. Now tense-free `device serial: A →
+      cleared (…)`, honest in both the pre-write log and the success
+      message (same "unconfirmed fact" principle as the progress-UI rule).
+    - After corrections: `flutter analyze` clean, 39 Flutter tests pass.
+  - Bench round 3 (same night) validated the SUCCESS path: Backup + Flash of
+    a genuine ZT3 dump onto the generic-serial bench unit showed the neutral
+    strip (`Firmware says: ZT3 · VCU · serial 1K1UA2510P9900 → ZT3`),
+    flashed & verified, and the DONE screen carried `Note: device serial:
+    1K1E0000000001 → 1K1UA2510P9900` — the replacement-part restore
+    scenario end-to-end, with the 14-char generic classification visible.
+    PARKED (maintainer, nitpick tier, do not start unprompted): a second
+    pass on result-message wording plus colored/highlighted key words in
+    result text. Still wanting bench eyes: the amber strip states
+    (generic/cleared incoming image) and the bannerless-bin selection
+    rejection.

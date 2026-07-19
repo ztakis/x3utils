@@ -85,14 +85,10 @@ class _HomeScreenState extends State<HomeScreen> {
     const group = XTypeGroup(label: 'firmware', extensions: ['bin']);
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
-    // Validate for the current kind so we never remember a wrong-sized bin.
-    final check = c.isSlotAction
-        ? Firmware.validateSlot(file.path)
-        : Firmware.validate(file.path, requireSize: true);
+    // The controller validates for the current kind (plus the mainstream
+    // banner gate) and remembers the bin + its identity note on success.
+    final check = c.selectFirmwareBin(file.path);
     if (!check.ok) {
-      // A rejected pick leaves no confirmed-good selection for this kind —
-      // clear it so Start doesn't stay lit on a stale/invalid file.
-      c.setFirmware(null);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -106,9 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-      return;
     }
-    c.setFirmware(file.path);
   }
 
   /// Slot-0 only: load a v3 firmware .zip — the controller validates the
@@ -2125,6 +2119,14 @@ class _FirmwareBar extends StatelessWidget {
     final flashOnly = c.actionId == 'flash_only';
     final slot0 = c.isSlotAction;
     final twoLine = flashOnly || c.actionId == 'flash_slot0';
+    // Identity/claim note under the filename ("Firmware says …" /
+    // "Package says …") — amber for attention states (generic/cleared serial).
+    final note = c.firmwareNote;
+    final noteWarn = note != null && c.firmwareNoteWarn;
+    final noteStyle = TextStyle(
+      fontSize: 12,
+      color: noteWarn ? AppColors.hold : AppColors.dim,
+    );
 
     if (!twoLine) {
       return Container(
@@ -2139,43 +2141,51 @@ class _FirmwareBar extends StatelessWidget {
                 : AppColors.line2,
           ),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              has ? Icons.memory_rounded : Icons.folder_open_rounded,
-              size: 18,
-              color: has ? AppColors.brand : AppColors.mut,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                name ?? 'No firmware chosen',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: has ? kMono : null,
-                  fontSize: 13,
-                  color: has ? AppColors.txt : AppColors.dim,
+            Row(
+              children: [
+                Icon(
+                  has ? Icons.memory_rounded : Icons.folder_open_rounded,
+                  size: 18,
+                  color: has ? AppColors.brand : AppColors.mut,
                 ),
-              ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    name ?? 'No firmware chosen',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: has ? kMono : null,
+                      fontSize: 13,
+                      color: has ? AppColors.txt : AppColors.dim,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _PillButton(
+                  label: has ? 'Change' : 'Choose .bin',
+                  onTap: () => onPick(),
+                  bg: AppColors.line,
+                  fg: AppColors.txt,
+                  border: AppColors.line2,
+                  small: true,
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            _PillButton(
-              label: has ? 'Change' : 'Choose .bin',
-              onTap: () => onPick(),
-              bg: AppColors.line,
-              fg: AppColors.txt,
-              border: AppColors.line2,
-              small: true,
-            ),
+            if (note != null) ...[
+              const SizedBox(height: 6),
+              Text(note, textAlign: TextAlign.center, style: noteStyle),
+            ],
           ],
         ),
       );
     }
 
-    final packageClaim = c.firmwarePackageClaim;
     final hint =
-        packageClaim ??
+        note ??
         (flashOnly
             ? slot0
                   ? 'Choose a slot-sized .bin or import a VCU/MCU ZIP3 package.'
@@ -2247,11 +2257,7 @@ class _FirmwareBar extends StatelessWidget {
           ),
           if (hint != null) ...[
             const SizedBox(height: 8),
-            Text(
-              hint,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, color: AppColors.dim),
-            ),
+            Text(hint, textAlign: TextAlign.center, style: noteStyle),
           ],
         ],
       ),

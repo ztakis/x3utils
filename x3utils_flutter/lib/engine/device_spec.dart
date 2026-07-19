@@ -5,13 +5,22 @@
 /// a controller, so it lives in code (not a runtime config that could be edited
 /// to bypass the gate) on purpose. Editing the list is a one-line change.
 ///
-/// Two layers of validation share these records:
-/// - **Model validation** (now): trust `info.json`'s declared `model` / `type`
+/// Two layers share these records:
+/// - **Model validation**: trust `info.json`'s declared `model` / `type`
 ///   against [kSupportedDevices] — see [DeviceSpec.evaluateZip3].
-/// - **Device validation** (future, "more precise"): read the connected chip's
-///   own identity and confirm it matches the package. That check will hang off
-///   the same [SupportedDevice] records (add fields, no restructure).
+/// - **Device-side guard**: BANNERS ENFORCE, SERIALS INFORM (decided
+///   2026-07-19). [DeviceSpec.checkTargetMatch] blocks only on firmware-banner
+///   disagreement (model/type). Serial facts — prefix→model decode, the
+///   generic replacement-part string, cleared identity regions — are surfaced
+///   via [DeviceSpec.describeBin] for the UI strip and run logs, and never
+///   block. Serial-based enforcement (pairing matrix, exact-match rules) was
+///   deliberately RETIRED: the BLE app owns serial provisioning (it rewrites
+///   the generic serial with the bound one at 0x1F020/0x1F420), layouts vary
+///   by firmware, and SWD cannot be authoritative about them. Do not rebuild
+///   serial blocking without a new decision.
 library;
+
+import 'firmware.dart' show FirmwareCheck;
 
 /// One supported controller family + the payload types we accept for it.
 class SupportedDevice {
@@ -66,13 +75,17 @@ const kSlotBannerOffset = 0x1400;
 
 final _bannerRe = RegExp(r'^SCOOTER_(VCU|MCU)_(.{4})$');
 
-/// The device serial in user space: ASCII whose 3-char PREFIX encodes the
-/// model. Stored twice ([kSerialOffset] + [kSerialBackupOffset]). It sits in
-/// the top-4 KB user region a slot flash preserves, so it survives a slot
-/// mis-flash — the robust model source (banners give the type). NOTE: it is
-/// writable via the BLE app, so this defends ACCIDENTS, not deliberate forgery.
+/// The device serial in user space: 14 ASCII chars whose 3-char PREFIX encodes
+/// the model (bench-corrected 2026-07-19 — earlier notes said 15, but the 15th
+/// byte was adjacent memory bleeding into the read). Stored twice
+/// ([kSerialOffset] + [kSerialBackupOffset]) — the pair the BLE app rewrites
+/// when it provisions a replacement part. It sits in the top-4 KB user region
+/// a slot flash preserves, so it survives a slot mis-flash. INFORMATIONAL
+/// ONLY: serials are BLE-app-owned and writable, so they decorate the UI/logs
+/// but never gate a flash.
 const kSerialOffset = 0x1F020;
 const kSerialBackupOffset = 0x1F420;
+const kSerialLength = 14;
 const kSerialPrefixToModel = <String, String>{
   '1K1': 'zt3',
   '1CG': 'g3',
@@ -80,14 +93,53 @@ const kSerialPrefixToModel = <String, String>{
   '03S': 'gt3',
 };
 
+/// Factory serials of replacement VCUs, exactly as shipped (the BLE app
+/// overwrites them with the bound serial on "did you replace a part?").
+/// Known strings only — add per model/region as they are observed on real
+/// parts; an unknown-but-valid serial is simply treated as real.
+/// Bench-confirmed real/generic pairs: ZT3 org 1K1EA2510P1673, G3 org
+/// 1CGCC9926C8115.
+const kGenericSerials = <String>{
+  '1K1E0000000001', // ZT3, Europe
+  '1CGC0000000001', // G3
+};
+
+final _serialRe = RegExp(r'^[0-9A-Za-z]{14}$');
+
+/// What a serial region turned out to hold.
+enum SerialState {
+  /// A shape-valid serial that is not a known factory-generic string.
+  real,
+
+  /// A known replacement-part factory serial ([kGenericSerials]).
+  generic,
+
+  /// Both serial copies are blank (all 0x00 or all 0xFF) — a cleared identity;
+  /// the BLE app re-provisions on next connect.
+  cleared,
+
+  /// Nothing readable (garbage bytes, or the image is too small).
+  none,
+}
+
+/// A serial read result: the [state], the raw [text] when readable, and the
+/// [model] its prefix decodes to (null for unknown prefixes).
+class SerialInfo {
+  const SerialInfo(this.state, [this.text, this.model]);
+  final SerialState state;
+  final String? text;
+  final String? model;
+
+  bool get readable =>
+      state == SerialState.real || state == SerialState.generic;
+}
+
 /// Outcome of checking a package's declared model/type against the allow-list.
 class Zip3Verdict {
   const Zip3Verdict.accept(SupportedDevice this.device)
-      : ok = true,
-        reason = '';
-  const Zip3Verdict.reject(this.reason)
-      : ok = false,
-        device = null;
+    : ok = true,
+      reason = '';
+  const Zip3Verdict.reject(this.reason) : ok = false, device = null;
 
   final bool ok;
   final String reason; // user-facing rejection message; '' when accepted
@@ -106,7 +158,8 @@ class DeviceSpec {
     final t = (type ?? '').trim().toUpperCase();
     if (m.isEmpty || t.isEmpty) {
       return const Zip3Verdict.reject(
-          'info.json is missing the firmware model or type.');
+        'info.json is missing the firmware model or type.',
+      );
     }
     SupportedDevice? dev;
     for (final d in kSupportedDevices) {
@@ -117,12 +170,14 @@ class DeviceSpec {
     }
     if (dev == null) {
       return Zip3Verdict.reject(
-          'Unsupported model "$model" — x3utils flashes ${modelList()} only.');
+        'Unsupported model "$model" — x3utils flashes ${modelList()} only.',
+      );
     }
     if (!dev.types.contains(t)) {
       return Zip3Verdict.reject(
-          'Unsupported type "$type" for $m — x3utils flashes VCU/MCU only '
-          '(not BLE/BMS).');
+        'Unsupported type "$type" for $m — x3utils flashes VCU/MCU only '
+        '(not BLE/BMS).',
+      );
     }
     return Zip3Verdict.accept(dev);
   }
@@ -138,17 +193,26 @@ class DeviceSpec {
   /// Soft by design: returns a [BannerVerdict] rather than throwing. Verifies
   /// the type for every package, and the model for VCU (MCU shares [kMcuCode]
   /// across models, so it can't confirm the model).
-  static BannerVerdict verifyBanner(List<int> firmware, String model, String type) {
+  static BannerVerdict verifyBanner(
+    List<int> firmware,
+    String model,
+    String type,
+  ) {
     if (firmware.length < kBannerOffset + kBannerLength) {
-      return const BannerVerdict.mismatch('',
-          'Firmware is too small to contain a banner at 0x400.');
+      return const BannerVerdict.mismatch(
+        '',
+        'Firmware is too small to contain a banner at 0x400.',
+      );
     }
     final banner = String.fromCharCodes(
-        firmware.sublist(kBannerOffset, kBannerOffset + kBannerLength));
+      firmware.sublist(kBannerOffset, kBannerOffset + kBannerLength),
+    );
     final m = _bannerRe.firstMatch(banner);
     if (m == null) {
       return BannerVerdict.mismatch(
-          banner, 'No SCOOTER_<TYPE>_<CODE> banner found at 0x400.');
+        banner,
+        'No SCOOTER_<TYPE>_<CODE> banner found at 0x400.',
+      );
     }
     final bannerType = m.group(1)!; // VCU | MCU
     final bannerCode = m.group(2)!;
@@ -156,20 +220,25 @@ class DeviceSpec {
     final mo = model.trim().toLowerCase();
 
     if (bannerType != t) {
-      return BannerVerdict.mismatch(banner,
-          'Firmware banner is $bannerType but the package claims $t.');
+      return BannerVerdict.mismatch(
+        banner,
+        'Firmware banner is $bannerType but the package claims $t.',
+      );
     }
     if (bannerType == 'VCU') {
       final expected = _codeFor(mo);
       if (expected != null && bannerCode != expected) {
         return BannerVerdict.mismatch(
-            banner,
-            'Firmware banner code "$bannerCode" does not match model $mo '
-            '(expected "$expected").');
+          banner,
+          'Firmware banner code "$bannerCode" does not match model $mo '
+          '(expected "$expected").',
+        );
       }
     } else if (bannerCode != kMcuCode) {
-      return BannerVerdict.mismatch(banner,
-          'MCU banner code "$bannerCode" is unexpected (expected "$kMcuCode").');
+      return BannerVerdict.mismatch(
+        banner,
+        'MCU banner code "$bannerCode" is unexpected (expected "$kMcuCode").',
+      );
     }
     return BannerVerdict.ok(banner);
   }
@@ -181,19 +250,17 @@ class DeviceSpec {
     return null;
   }
 
-  /// Device-side (pre-flash) guard, "match all" model: gather EVERY readable
-  /// identity signal — the target's slot-0 banner + user-space serial (from the
-  /// fresh backup [dump]), and the loaded [firmware]'s banner (+ serial for a
-  /// full image) — and require them all to agree. ANY disagreement is blocked,
-  /// including the target contradicting itself (serial says F3, slot 0 says G3),
-  /// so the operator resolves it. Nothing readable → couldn't ID → allowed
-  /// (first flash / rescue). Only backup+flash / flash_slot0 call this (they
-  /// dump first).
+  /// Device-side (pre-flash) guard — BANNERS ONLY. Compares the target's
+  /// slot-0 firmware banner (from the fresh backup [dump]) against the loaded
+  /// [firmware]'s banner and blocks on model or type disagreement. Nothing
+  /// readable → couldn't ID → allowed (first flash / rescue). Only
+  /// backup+flash / flash_slot0 call this (they dump first).
   ///
-  /// The serial is the robust model source — it survives a slot mis-flash — but
-  /// carries only the model; the type (VCU/MCU) comes from the banners.
-  /// [incomingIsSlotBin] picks the incoming banner offset (0x400 vs 0x1400) and
-  /// whether the firmware is large enough to hold a serial.
+  /// Serials deliberately do NOT participate (2026-07-19): they are
+  /// BLE-app-owned, layout varies by firmware, and enforcement kept producing
+  /// wrong answers on real devices. Serial facts are displayed/logged via
+  /// [describeBin] instead. [incomingIsSlotBin] picks the incoming banner
+  /// offset (0x400 vs 0x1400).
   static TargetMatch checkTargetMatch({
     required List<int> dump,
     required List<int> firmware,
@@ -211,26 +278,123 @@ class DeviceSpec {
     }
 
     addBanner('target firmware', _bannerAt(dump, kSlotBannerOffset));
-    final ts = _serialModel(dump);
-    if (ts != null) models.add(('target serial', ts));
-
-    addBanner('loaded firmware',
-        _bannerAt(firmware, incomingIsSlotBin ? kBannerOffset : kSlotBannerOffset));
-    if (!incomingIsSlotBin) {
-      final fs = _serialModel(firmware);
-      if (fs != null) models.add(('loaded serial', fs));
-    }
+    addBanner(
+      'loaded firmware',
+      _bannerAt(
+        firmware,
+        incomingIsSlotBin ? kBannerOffset : kSlotBannerOffset,
+      ),
+    );
 
     final modelClash = _firstClash(models);
-    if (modelClash != null) return TargetMatch(blocked: true, message: modelClash);
+    if (modelClash != null) {
+      return TargetMatch(blocked: true, message: modelClash);
+    }
     final typeClash = _firstClash(types);
-    if (typeClash != null) return TargetMatch(blocked: true, message: typeClash);
+    if (typeClash != null) {
+      return TargetMatch(blocked: true, message: typeClash);
+    }
 
     if (models.isEmpty && types.isEmpty) {
       return const TargetMatch(
-          note: "couldn't ID target or firmware — target check skipped");
+        note: "couldn't ID target or firmware — target check skipped",
+      );
     }
     return const TargetMatch(); // every readable signal agrees
+  }
+
+  /// Selection-time gate for a picked `.bin`. When [enforceBanner] (the
+  /// mainstream Backup+Flash / Flash slot 0 actions), a file with no readable
+  /// `SCOOTER_` banner at its expected offset is not recognizable firmware and
+  /// is rejected — Flash Only stays the path for unrecognized/crafted images.
+  static FirmwareCheck checkIncomingBin(
+    List<int> bytes, {
+    required bool slotBin,
+    required bool enforceBanner,
+  }) {
+    if (!enforceBanner) return FirmwareCheck.valid;
+    final off = slotBin ? kBannerOffset : kSlotBannerOffset;
+    if (_bannerAt(bytes, off) == null) {
+      return FirmwareCheck.fail(
+        'No SCOOTER firmware banner at 0x${off.toRadixString(16).toUpperCase()} '
+        '— not a recognizable firmware image. Flash Only can write '
+        'unrecognized images.',
+      );
+    }
+    return FirmwareCheck.valid;
+  }
+
+  /// Everything we can READ from a bin, for display and logs — enforces
+  /// nothing. Works on a loaded firmware file or a target backup dump
+  /// ([slotBin] false: banner at 0x1400 + serial pair; true: banner at 0x400,
+  /// no serial — slot bins structurally lack one).
+  static BinIdentity describeBin(List<int> bytes, {required bool slotBin}) {
+    final banner = _bannerAt(
+      bytes,
+      slotBin ? kBannerOffset : kSlotBannerOffset,
+    );
+    String? bannerModel;
+    String? bannerType;
+    if (banner != null) {
+      final m = _bannerRe.firstMatch(banner)!;
+      bannerType = m.group(1)!;
+      bannerModel = _modelFromVcuCode(m.group(2)!);
+    }
+    return BinIdentity(
+      banner: banner,
+      bannerModel: bannerModel,
+      bannerType: bannerType,
+      serial: slotBin ? null : readSerial(bytes),
+    );
+  }
+
+  /// Classify the serial pair at [kSerialOffset]/[kSerialBackupOffset]: a
+  /// shape-valid 15-char serial (primary first, then the backup copy) is
+  /// [SerialState.real] or [SerialState.generic]; both copies blank is
+  /// [SerialState.cleared]; anything else is [SerialState.none].
+  static SerialInfo readSerial(List<int> b) {
+    for (final off in const [kSerialOffset, kSerialBackupOffset]) {
+      final s = _serialTextAt(b, off);
+      if (s != null) {
+        return SerialInfo(
+          kGenericSerials.contains(s) ? SerialState.generic : SerialState.real,
+          s,
+          kSerialPrefixToModel[s.substring(0, 3)],
+        );
+      }
+    }
+    if (_regionBlank(b, kSerialOffset) &&
+        _regionBlank(b, kSerialBackupOffset)) {
+      return const SerialInfo(SerialState.cleared);
+    }
+    return const SerialInfo(SerialState.none);
+  }
+
+  /// A human note when this flash changes the device serial (full-image writes
+  /// only — [incoming] null means a slot write, which preserves user space).
+  /// Null when nothing identity-relevant changes. Tense-free "A → B" phrasing
+  /// on purpose: the same string is logged BEFORE the write (which the guard
+  /// may still abort) and shown in the success message after it — it must
+  /// never claim an action that has not happened.
+  static String? serialChangeNote({
+    required SerialInfo target,
+    required SerialInfo? incoming,
+  }) {
+    if (incoming == null) return null;
+    final from = target.readable ? target.text : '(blank)';
+    if (incoming.readable) {
+      if (target.readable && target.text == incoming.text) return null;
+      if (incoming.state == SerialState.generic) {
+        return 'device serial: $from → ${incoming.text} (generic factory '
+            'serial — the app re-provisions on next connect)';
+      }
+      return 'device serial: $from → ${incoming.text}';
+    }
+    if (incoming.state == SerialState.cleared && target.readable) {
+      return 'device serial: $from → cleared '
+          '(the app re-provisions on next connect)';
+    }
+    return null;
   }
 
   /// First pair of sources whose values disagree, as a user-facing message;
@@ -255,15 +419,20 @@ class DeviceSpec {
     return null;
   }
 
-  /// Model from the user-space serial prefix ([kSerialOffset], falling back to
-  /// the backup copy [kSerialBackupOffset]); null if neither holds a known one.
-  static String? _serialModel(List<int> b) =>
-      _serialPrefixModel(b, kSerialOffset) ??
-      _serialPrefixModel(b, kSerialBackupOffset);
+  /// The [kSerialLength] chars at [off] when they form a shape-valid serial,
+  /// else null.
+  static String? _serialTextAt(List<int> b, int off) {
+    if (b.length < off + kSerialLength) return null;
+    final s = String.fromCharCodes(b.sublist(off, off + kSerialLength));
+    return _serialRe.hasMatch(s) ? s : null;
+  }
 
-  static String? _serialPrefixModel(List<int> b, int off) {
-    if (b.length < off + 3) return null;
-    return kSerialPrefixToModel[String.fromCharCodes(b.sublist(off, off + 3))];
+  /// True when the serial region at [off] exists and is uniformly blank
+  /// (all 0x00 or all 0xFF — written-zeros vs erased flash).
+  static bool _regionBlank(List<int> b, int off) {
+    if (b.length < off + kSerialLength) return false;
+    final region = b.sublist(off, off + kSerialLength);
+    return region.every((v) => v == 0x00) || region.every((v) => v == 0xFF);
   }
 
   /// A valid `SCOOTER_<TYPE>_<CODE>` banner at [off], or null if absent/garbage.
@@ -284,12 +453,99 @@ class TargetMatch {
   final String? note; // informational reason the check was skipped
 }
 
+/// Readable identity facts from one bin (a loaded firmware file or a target
+/// backup dump) — display/log material only, never a verdict. Built by
+/// [DeviceSpec.describeBin].
+class BinIdentity {
+  const BinIdentity({
+    this.banner,
+    this.bannerModel,
+    this.bannerType,
+    this.serial,
+  });
+
+  final String? banner; // raw 16-char banner, null when absent/garbage
+  final String? bannerModel; // zt3/g3/... for VCU banners with a known code
+  final String? bannerType; // VCU | MCU
+  final SerialInfo? serial; // null for slot bins (structurally no serial)
+
+  /// The serial's decoded model contradicts the banner's (both known).
+  bool get serialModelClash =>
+      serial?.model != null &&
+      bannerModel != null &&
+      serial!.model != bannerModel;
+
+  /// Amber-worthy: a generic (replacement-part) or cleared serial, or a
+  /// serial-vs-banner model contradiction. Purely presentation severity.
+  bool get warn =>
+      serial?.state == SerialState.generic ||
+      serial?.state == SerialState.cleared ||
+      serialModelClash;
+
+  /// One line for the firmware-bar strip (caller adds the "Firmware says:"
+  /// label), or null when nothing identity-readable is worth showing.
+  String? get summary {
+    final parts = <String>[];
+    if (bannerType == 'VCU') {
+      parts.add(
+        bannerModel != null
+            ? '${bannerModel!.toUpperCase()} · VCU'
+            : 'VCU ($banner)',
+      );
+    } else if (bannerType == 'MCU') {
+      parts.add('MCU');
+    } else if (serial != null) {
+      parts.add('no firmware banner');
+    }
+    final s = serial;
+    if (s != null) {
+      switch (s.state) {
+        case SerialState.real:
+          parts.add(
+            'serial ${s.text}${s.model != null ? ' → ${s.model!.toUpperCase()}' : ''}',
+          );
+        case SerialState.generic:
+          parts.add('serial ${s.text} — generic / replacement part');
+        case SerialState.cleared:
+          parts.add(
+            'serial cleared — erases device identity; '
+            'the app re-provisions on next connect',
+          );
+        case SerialState.none:
+          parts.add('no readable serial');
+      }
+      if (serialModelClash) {
+        parts.add(
+          'serial model ${s.model!.toUpperCase()} disagrees with '
+          'the firmware banner',
+        );
+      }
+    }
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  /// Verbose one-liner for the run log.
+  String get logLine {
+    final b = banner == null ? 'banner: none' : 'banner: $banner';
+    final s = serial;
+    final ser = s == null
+        ? 'serial: n/a (slot bin)'
+        : switch (s.state) {
+            SerialState.real =>
+              'serial: ${s.text} (model ${s.model ?? 'unknown'})',
+            SerialState.generic =>
+              'serial: ${s.text} (generic replacement, model ${s.model ?? 'unknown'})',
+            SerialState.cleared => 'serial: cleared',
+            SerialState.none => 'serial: unreadable',
+          };
+    return '$b · $ser';
+  }
+}
+
 /// Result of [DeviceSpec.verifyBanner]: whether the firmware's own banner is
 /// consistent with the package label (soft — a mismatch is a warning).
 class BannerVerdict {
-  const BannerVerdict.ok(this.banner)
-      : consistent = true,
-        message = '';
+  const BannerVerdict.ok(this.banner) : consistent = true, message = '';
   const BannerVerdict.mismatch(this.banner, this.message) : consistent = false;
 
   final bool consistent;

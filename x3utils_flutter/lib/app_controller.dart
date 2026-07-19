@@ -125,7 +125,10 @@ class AppController extends ChangeNotifier {
   // switch — so nothing stale or wrong-sized ever carries over.
   String? _firmwareStandard; // flash_backup
   String? _firmwareAdvanced; // flash_only / flash_slot0 (transient)
-  String? _firmwarePackageClaim;
+  // One-line identity/claim note shown under the loaded filename (zip3
+  // "Package says …" or the bin's own "Firmware says …"); warn = amber.
+  String? _firmwareNote;
+  bool _firmwareNoteWarn = false;
   FlashOnlyScope flashOnlyScope = FlashOnlyScope.fullImage;
 
   bool get isFlashOnlySlot0 =>
@@ -135,23 +138,62 @@ class AppController extends ChangeNotifier {
 
   String? get firmwarePath =>
       actionId == 'flash_backup' ? _firmwareStandard : _firmwareAdvanced;
-  String? get firmwarePackageClaim => _firmwarePackageClaim;
+  String? get firmwareNote => _firmwareNote;
+  bool get firmwareNoteWarn => _firmwareNoteWarn;
 
-  void setFirmware(String? path, {String? packageClaim}) {
+  void setFirmware(String? path, {String? note, bool warn = false}) {
     if (actionId == 'flash_backup') {
       _firmwareStandard = path;
     } else {
       _firmwareAdvanced = path;
     }
-    _firmwarePackageClaim = path == null ? null : packageClaim;
+    _firmwareNote = path == null ? null : note;
+    _firmwareNoteWarn = path != null && warn;
     notifyListeners();
+  }
+
+  /// Validate + remember a picked `.bin` for the current action. Structural
+  /// checks first (size/path/content), then the mainstream-only banner gate —
+  /// Backup+Flash / Flash slot 0 refuse a bin with no readable SCOOTER banner
+  /// (Flash Only stays permissive: crafted/unrecognized images are its job).
+  /// On success the bin's readable identity (banner model/type + serial state)
+  /// becomes the firmware-bar note; generic/cleared serials show amber.
+  FirmwareCheck selectFirmwareBin(String path) {
+    final check = isSlotAction
+        ? Firmware.validateSlot(path)
+        : Firmware.validate(path, requireSize: true);
+    if (!check.ok) {
+      // A rejected pick leaves no confirmed-good selection for this kind —
+      // clear it so Start doesn't stay lit on a stale/invalid file.
+      setFirmware(null);
+      return check;
+    }
+    final bytes = File(path).readAsBytesSync();
+    final gate = DeviceSpec.checkIncomingBin(
+      bytes,
+      slotBin: isSlotAction,
+      enforceBanner: actionId != 'flash_only',
+    );
+    if (!gate.ok) {
+      setFirmware(null);
+      return gate;
+    }
+    final id = DeviceSpec.describeBin(bytes, slotBin: isSlotAction);
+    final summary = id.summary;
+    setFirmware(
+      path,
+      note: summary == null ? null : 'Firmware says: $summary',
+      warn: id.warn,
+    );
+    return FirmwareCheck.valid;
   }
 
   void setFlashOnlyScope(FlashOnlyScope scope) {
     if (running || actionId != 'flash_only' || flashOnlyScope == scope) return;
     flashOnlyScope = scope;
     _firmwareAdvanced = null;
-    _firmwarePackageClaim = null;
+    _firmwareNote = null;
+    _firmwareNoteWarn = false;
     _goIdle();
   }
 
@@ -208,7 +250,7 @@ class AppController extends ChangeNotifier {
       }
       final packageClaim =
           'Package says: ${pkg.model.toUpperCase()} · ${pkg.type.toUpperCase()}';
-      setFirmware(outPath, packageClaim: packageClaim);
+      setFirmware(outPath, note: packageClaim);
       ilog('== loaded slot-0 firmware from package → $outPath ==');
       return FirmwareCheck(
         true,
@@ -331,7 +373,8 @@ class AppController extends ChangeNotifier {
     actionId = id;
     if (id == 'flash_only') flashOnlyScope = FlashOnlyScope.fullImage;
     _firmwareAdvanced = null; // advanced actions don't remember loaded bins
-    _firmwarePackageClaim = null;
+    _firmwareNote = null;
+    _firmwareNoteWarn = false;
     _goIdle();
   }
 
@@ -1203,6 +1246,8 @@ class AppController extends ChangeNotifier {
     }
 
     String? backupPath;
+    String?
+    serialNote; // identity change fact for the log + result (never blocks)
 
     // Mandatory backup first (the scripts' safety floor) — abort flash if it fails.
     if (backup) {
@@ -1246,12 +1291,24 @@ class AppController extends ChangeNotifier {
       backupPath = outPath;
 
       // Device-side guard: does the target (from the backup we just took) match
-      // the firmware we're about to write? Confirmed mismatch → abort, keep the
+      // the firmware we're about to write? Banner mismatch → abort, keep the
       // backup. Blank/unreadable target → allowed (first-flash / rescue).
+      // Serials never decide — they are read, logged, and reported only.
       _setInstruction('Checking the target matches the firmware...');
+      final dumpBytes = File(outPath).readAsBytesSync();
+      final fwBytes = File(fw).readAsBytesSync();
+      final targetId = DeviceSpec.describeBin(dumpBytes, slotBin: false);
+      final fwId = DeviceSpec.describeBin(fwBytes, slotBin: slot0);
+      _log('== target identity: ${targetId.logLine} ==');
+      _log('== firmware identity: ${fwId.logLine} ==');
+      serialNote = DeviceSpec.serialChangeNote(
+        target: targetId.serial!,
+        incoming: fwId.serial,
+      );
+      if (serialNote != null) _log('== note: $serialNote ==');
       final tm = DeviceSpec.checkTargetMatch(
-        dump: File(outPath).readAsBytesSync(),
-        firmware: File(fw).readAsBytesSync(),
+        dump: dumpBytes,
+        firmware: fwBytes,
         incomingIsSlotBin: slot0,
       );
       if (tm.blocked) {
@@ -1294,13 +1351,14 @@ class AppController extends ChangeNotifier {
             : 'Flash verified. No backup was taken.',
       );
     }
-    final okMsg = backup && backupPath != null
+    var okMsg = backup && backupPath != null
         ? slot0
               ? 'Slot 0 flashed & verified. Backup saved to $backupPath'
               : 'Flashed & verified. Backup saved to $backupPath'
         : slot0
         ? 'Slot 0 flashed & verified. No backup was taken.'
         : action.okMsg;
+    if (serialNote != null) okMsg = '$okMsg. Note: $serialNote.';
     await _finishRealAfterHold(flashOk, okMsg, _flashFailMessage(r));
   }
 
