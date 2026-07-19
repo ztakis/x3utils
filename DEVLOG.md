@@ -485,10 +485,25 @@ survive machine switches and chat history loss.
   wrong model, so the guard would BLOCK the corrective right-model flash - it
   cannot tell "wrong fw onto right device" from "right fw onto a broken device".
   Today's workaround is the flash_only override (skips the check; operator takes
-  responsibility, though it is a full-image reflash). Proper fix (OPEN): if the
-  identity region or bootloader carries the true model/board (or a serial whose
-  format encodes it), ID the target from THAT immutable source instead of the
-  current firmware; the SupportedDevice records already have
-  identityRegion/identitySignature slots for it. Awaiting the identity format.
+  responsibility, though it is a full-image reflash).
+- Serial-based "match all" guard (IMPLEMENTED, unit-verified 8/8; hardware
+  validation of the serial-clash cases still pending - needs a mis-serialed
+  device on the bench). Rationale: the serial is WRITABLE via the BLE app and
+  G3/F3/F3pro VCU hardware is IDENTICAL, so a consistently tampered device (BLE
+  serial changed + matching fw - e.g. an F3 wearing a G3 serial and G3 fw) is
+  undetectable; that is the origin of the "dumbass" dumps. So the guard does not
+  try to out-clever tampering: it requires EVERY readable identity signal to
+  agree and blocks any disagreement, forcing the operator to resolve it.
+  Signals: target slot-0 banner + target serial (user space 0x1F020, backup copy
+  0x1F420, 15 ASCII chars, 3-char prefix -> model: 1K1=zt3, 1CG=g3, 1EF=f3/F3pro,
+  03S=gt3; the serial survives a slot flash), loaded banner (+ loaded serial for
+  a full image). All models must agree AND all types must agree (type comes from
+  banners only; the serial is model-only). Any clash -> block, INCLUDING a target
+  contradicting itself (serial f3 vs slot-0 g3 = the mis-flashed / half-tampered
+  state). Nothing readable -> couldn't ID -> allowed (first flash / rescue). To
+  correct a rejected mis-flashed device, use the flash_only override. Caveats:
+  plaintext flash so this defends ACCIDENTS not forgery; CPU UID is unique but
+  does not decode to model (unused); BLE exposes model+type authoritatively but
+  is out of scope for an SWD tool.
 - Not yet built: the flash_only "big warning + countdown on OK" deliberate-
   override dialog.

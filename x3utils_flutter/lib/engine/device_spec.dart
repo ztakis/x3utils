@@ -66,6 +66,20 @@ const kSlotBannerOffset = 0x1400;
 
 final _bannerRe = RegExp(r'^SCOOTER_(VCU|MCU)_(.{4})$');
 
+/// The device serial in user space: ASCII whose 3-char PREFIX encodes the
+/// model. Stored twice ([kSerialOffset] + [kSerialBackupOffset]). It sits in
+/// the top-4 KB user region a slot flash preserves, so it survives a slot
+/// mis-flash — the robust model source (banners give the type). NOTE: it is
+/// writable via the BLE app, so this defends ACCIDENTS, not deliberate forgery.
+const kSerialOffset = 0x1F020;
+const kSerialBackupOffset = 0x1F420;
+const kSerialPrefixToModel = <String, String>{
+  '1K1': 'zt3',
+  '1CG': 'g3',
+  '1EF': 'f3', // F3 / F3 pro
+  '03S': 'gt3',
+};
+
 /// Outcome of checking a package's declared model/type against the allow-list.
 class Zip3Verdict {
   const Zip3Verdict.accept(SupportedDevice this.device)
@@ -167,40 +181,89 @@ class DeviceSpec {
     return null;
   }
 
-  /// Device-side (pre-flash) guard: compare the TARGET's current slot-0 banner
-  /// (read from the fresh backup [dump] at [kSlotBannerOffset]) against the
-  /// [firmware] about to be written. Only backup+flash / flash_slot0 can call
-  /// this — they dump first.
+  /// Device-side (pre-flash) guard, "match all" model: gather EVERY readable
+  /// identity signal — the target's slot-0 banner + user-space serial (from the
+  /// fresh backup [dump]), and the loaded [firmware]'s banner (+ serial for a
+  /// full image) — and require them all to agree. ANY disagreement is blocked,
+  /// including the target contradicting itself (serial says F3, slot 0 says G3),
+  /// so the operator resolves it. Nothing readable → couldn't ID → allowed
+  /// (first flash / rescue). Only backup+flash / flash_slot0 call this (they
+  /// dump first).
   ///
-  /// Blocks ONLY on a confirmed mismatch (both banners readable and different).
-  /// A blank/unreadable target banner means we couldn't ID the device (blank
-  /// chip, rescue, unknown firmware) → allowed, so first-flashes still work.
-  /// [incomingIsSlotBin] picks the incoming banner offset: slot bins carry it at
-  /// [kBannerOffset] (0x400), full 128 KB images at [kSlotBannerOffset] (0x1400).
+  /// The serial is the robust model source — it survives a slot mis-flash — but
+  /// carries only the model; the type (VCU/MCU) comes from the banners.
+  /// [incomingIsSlotBin] picks the incoming banner offset (0x400 vs 0x1400) and
+  /// whether the firmware is large enough to hold a serial.
   static TargetMatch checkTargetMatch({
     required List<int> dump,
     required List<int> firmware,
     required bool incomingIsSlotBin,
   }) {
-    final target = _bannerAt(dump, kSlotBannerOffset);
-    if (target == null) {
+    final models = <(String, String)>[]; // (source, model)
+    final types = <(String, String)>[]; // (source, VCU/MCU)
+
+    void addBanner(String src, String? banner) {
+      if (banner == null) return;
+      final m = _bannerRe.firstMatch(banner)!;
+      types.add((src, m.group(1)!));
+      final model = _modelFromVcuCode(m.group(2)!);
+      if (model != null) models.add((src, model));
+    }
+
+    addBanner('target firmware', _bannerAt(dump, kSlotBannerOffset));
+    final ts = _serialModel(dump);
+    if (ts != null) models.add(('target serial', ts));
+
+    addBanner('loaded firmware',
+        _bannerAt(firmware, incomingIsSlotBin ? kBannerOffset : kSlotBannerOffset));
+    if (!incomingIsSlotBin) {
+      final fs = _serialModel(firmware);
+      if (fs != null) models.add(('loaded serial', fs));
+    }
+
+    final modelClash = _firstClash(models);
+    if (modelClash != null) return TargetMatch(blocked: true, message: modelClash);
+    final typeClash = _firstClash(types);
+    if (typeClash != null) return TargetMatch(blocked: true, message: typeClash);
+
+    if (models.isEmpty && types.isEmpty) {
       return const TargetMatch(
-          note: "couldn't ID target (no banner in backup) — target check skipped");
+          note: "couldn't ID target or firmware — target check skipped");
     }
-    final incoming =
-        _bannerAt(firmware, incomingIsSlotBin ? kBannerOffset : kSlotBannerOffset);
-    if (incoming == null) {
-      return const TargetMatch(
-          note: 'firmware has no banner — target check skipped');
+    return const TargetMatch(); // every readable signal agrees
+  }
+
+  /// First pair of sources whose values disagree, as a user-facing message;
+  /// null if all present values match.
+  static String? _firstClash(List<(String, String)> signals) {
+    for (var i = 1; i < signals.length; i++) {
+      if (signals[i].$2 != signals[0].$2) {
+        return '${signals[0].$1} says "${signals[0].$2}" but '
+            '${signals[i].$1} says "${signals[i].$2}" — resolve the mismatch '
+            'before flashing.';
+      }
     }
-    if (target != incoming) {
-      return TargetMatch(
-        blocked: true,
-        message: 'target is running "$target" but the firmware is "$incoming" — '
-            'wrong model/type for this device.',
-      );
+    return null;
+  }
+
+  /// The model whose VCU banner uses [code] (e.g. xxG3 → g3), or null for the
+  /// shared MCU code / unknown.
+  static String? _modelFromVcuCode(String code) {
+    for (final d in kSupportedDevices) {
+      if (d.vcuCode == code) return d.model;
     }
-    return const TargetMatch(); // match
+    return null;
+  }
+
+  /// Model from the user-space serial prefix ([kSerialOffset], falling back to
+  /// the backup copy [kSerialBackupOffset]); null if neither holds a known one.
+  static String? _serialModel(List<int> b) =>
+      _serialPrefixModel(b, kSerialOffset) ??
+      _serialPrefixModel(b, kSerialBackupOffset);
+
+  static String? _serialPrefixModel(List<int> b, int off) {
+    if (b.length < off + 3) return null;
+    return kSerialPrefixToModel[String.fromCharCodes(b.sublist(off, off + 3))];
   }
 
   /// A valid `SCOOTER_<TYPE>_<CODE>` banner at [off], or null if absent/garbage.
