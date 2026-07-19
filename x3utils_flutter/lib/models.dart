@@ -60,6 +60,9 @@ extension SectionX on Section {
 
 enum DangerLevel { none, soft, hard }
 
+/// Write scope inside the deliberately unguarded Flash Only action.
+enum FlashOnlyScope { fullImage, slot0 }
+
 extension DangerLevelX on DangerLevel {
   /// The tile dot encodes risk at a glance: safe / write / destructive.
   Color get dot => switch (this) {

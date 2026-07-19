@@ -1227,7 +1227,7 @@ class _HeroStageState extends State<_HeroStage>
             Center(
               child: SingleChildScrollView(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 520),
+                  constraints: const BoxConstraints(maxWidth: 600),
                   child: Padding(
                     padding: const EdgeInsets.all(28),
                     child: Column(
@@ -1660,7 +1660,7 @@ Future<bool?> _showFlashOnlyWarning(BuildContext context) {
         side: const BorderSide(color: AppColors.line2),
       ),
       child: Container(
-        width: 400,
+        width: 520,
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2122,12 +2122,68 @@ class _FirmwareBar extends StatelessWidget {
     final path = c.firmwarePath;
     final name = path?.split(RegExp(r'[\\/]')).last;
     final has = name != null;
-    // Slot 0 can also load a v3 firmware .zip (decrypt → flash). With two
-    // sources the .bin button keeps its explicit label instead of "Change".
-    final zip = c.isSlotAction;
+    final flashOnly = c.actionId == 'flash_only';
+    final slot0 = c.isSlotAction;
+    final twoLine = flashOnly || c.actionId == 'flash_slot0';
+
+    if (!twoLine) {
+      return Container(
+        constraints: const BoxConstraints(maxWidth: 460),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.panel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: has
+                ? AppColors.brand.withValues(alpha: 0.4)
+                : AppColors.line2,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              has ? Icons.memory_rounded : Icons.folder_open_rounded,
+              size: 18,
+              color: has ? AppColors.brand : AppColors.mut,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                name ?? 'No firmware chosen',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: has ? kMono : null,
+                  fontSize: 13,
+                  color: has ? AppColors.txt : AppColors.dim,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _PillButton(
+              label: has ? 'Change' : 'Choose .bin',
+              onTap: () => onPick(),
+              bg: AppColors.line,
+              fg: AppColors.txt,
+              border: AppColors.line2,
+              small: true,
+            ),
+          ],
+        ),
+      );
+    }
+
+    final packageClaim = c.firmwarePackageClaim;
+    final hint =
+        packageClaim ??
+        (flashOnly
+            ? slot0
+                  ? 'Choose a slot-sized .bin or import a VCU/MCU ZIP3 package.'
+                  : 'ZIP3 packages contain slot firmware — select Slot 0 only.'
+            : null);
     return Container(
-      constraints: const BoxConstraints(maxWidth: 460),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      constraints: const BoxConstraints(maxWidth: 540),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 11),
       decoration: BoxDecoration(
         color: AppColors.panel,
         borderRadius: BorderRadius.circular(12),
@@ -2135,47 +2191,132 @@ class _FirmwareBar extends StatelessWidget {
           color: has ? AppColors.brand.withValues(alpha: 0.4) : AppColors.line2,
         ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            has ? Icons.memory_rounded : Icons.folder_open_rounded,
-            size: 18,
-            color: has ? AppColors.brand : AppColors.mut,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              name ?? 'No firmware chosen',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: has ? kMono : null,
-                fontSize: 13,
-                color: has ? AppColors.txt : AppColors.dim,
+          Row(
+            children: [
+              Icon(
+                has ? Icons.memory_rounded : Icons.folder_open_rounded,
+                size: 18,
+                color: has ? AppColors.brand : AppColors.mut,
               ),
-            ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  name ?? 'No firmware chosen',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: has ? kMono : null,
+                    fontSize: 13,
+                    color: has ? AppColors.txt : AppColors.dim,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          _PillButton(
-            label: zip ? 'Choose .bin' : (has ? 'Change' : 'Choose .bin'),
-            onTap: () => onPick(),
-            bg: AppColors.line,
-            fg: AppColors.txt,
-            border: AppColors.line2,
-            small: true,
+          const SizedBox(height: 10),
+          const Divider(height: 1, color: AppColors.line),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (flashOnly)
+                Expanded(child: _FlashOnlyScopeControl(c: c))
+              else
+                const Spacer(),
+              const SizedBox(width: 12),
+              _PillButton(
+                label: 'Choose .bin',
+                onTap: () => onPick(),
+                bg: AppColors.line,
+                fg: AppColors.txt,
+                border: AppColors.line2,
+                small: true,
+              ),
+              const SizedBox(width: 8),
+              _PillButton(
+                label: 'Choose .zip',
+                onTap: slot0 ? () => onPickZip() : null,
+                bg: AppColors.line,
+                fg: AppColors.txt,
+                border: AppColors.line2,
+                small: true,
+              ),
+            ],
           ),
-          if (zip) ...[
-            const SizedBox(width: 8),
-            _PillButton(
-              label: 'Choose .zip',
-              onTap: () => onPickZip(),
-              bg: AppColors.line,
-              fg: AppColors.txt,
-              border: AppColors.line2,
-              small: true,
+          if (hint != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              hint,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: AppColors.dim),
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _FlashOnlyScopeControl extends StatelessWidget {
+  const _FlashOnlyScopeControl({required this.c});
+  final AppController c;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0x30000000),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.line2),
+      ),
+      child: Row(
+        children: [
+          _item('Full image', FlashOnlyScope.fullImage),
+          _item('Slot 0 only', FlashOnlyScope.slot0),
+        ],
+      ),
+    );
+  }
+
+  Widget _item(String label, FlashOnlyScope scope) {
+    final selected = c.flashOnlyScope == scope;
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: selected ? null : () => c.setFlashOnlyScope(scope),
+            borderRadius: BorderRadius.circular(999),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? AppColors.elev : Colors.transparent,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: selected ? AppColors.line2 : Colors.transparent,
+                ),
+              ),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? AppColors.txt : AppColors.dim,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

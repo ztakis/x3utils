@@ -33,7 +33,8 @@ class PackV3 {
     if (model.isEmpty) {
       throw ArgumentError('Model must be specified');
     }
-    if (model.length < modelLengthRange.$1 || model.length > modelLengthRange.$2) {
+    if (model.length < modelLengthRange.$1 ||
+        model.length > modelLengthRange.$2) {
       throw ArgumentError('Model must be between 1 and 10 characters long');
     }
     if (!RegExp(r'^[A-Za-z0-9]+$').hasMatch(model)) {
@@ -43,19 +44,25 @@ class PackV3 {
 
   static void validateBoards(List<String> boards) {
     if (boards.isEmpty) {
-      throw ArgumentError('You must specify at least one compatible board, in a list!');
+      throw ArgumentError(
+        'You must specify at least one compatible board, in a list!',
+      );
     }
   }
 
   static void validateEncryptionFlag(String enc) {
     if (!allowedEncFlags.contains(enc)) {
-      throw ArgumentError('Invalid encryption flag! Allowed flags: $allowedEncFlags');
+      throw ArgumentError(
+        'Invalid encryption flag! Allowed flags: $allowedEncFlags',
+      );
     }
   }
 
   static void validateTypeFlag(String typeFlag) {
     if (!allowedTypeFlags.contains(typeFlag)) {
-      throw ArgumentError('Invalid type flag! Allowed flags: $allowedTypeFlags');
+      throw ArgumentError(
+        'Invalid type flag! Allowed flags: $allowedTypeFlags',
+      );
     }
   }
 
@@ -116,10 +123,12 @@ class PackV3 {
 
     // 4-space indent to match json.dumps(..., indent=4); cosmetic (no MD5 taken
     // over info.json), but kept faithful.
-    archive.add(ArchiveFile.string(
-      'info.json',
-      const JsonEncoder.withIndent('    ').convert(infoJson),
-    ));
+    archive.add(
+      ArchiveFile.string(
+        'info.json',
+        const JsonEncoder.withIndent('    ').convert(infoJson),
+      ),
+    );
 
     if (params != null && params.isNotEmpty) {
       archive.add(ArchiveFile.string('params.txt', params));
@@ -177,7 +186,11 @@ class PackV3 {
   /// The decrypted bytes are returned as-is (identical to `ninebottea decrypt`),
   /// including NinebotTEA's canonical trailing pad. Throws [FormatException] for
   /// anything that fails the above.
-  static UnpackedV3 unpackV3(List<int> zipBytes, {List<int>? key}) {
+  static UnpackedV3 unpackV3(
+    List<int> zipBytes, {
+    List<int>? key,
+    bool enforceDeviceIdentity = true,
+  }) {
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(zipBytes);
@@ -196,45 +209,76 @@ class PackV3 {
       throw const FormatException('info.json is not valid JSON.');
     }
     if (info['schemaVersion'] != 1) {
-      throw FormatException('Unsupported schemaVersion: ${info['schemaVersion']}.');
+      throw FormatException(
+        'Unsupported schemaVersion: ${info['schemaVersion']}.',
+      );
     }
 
     final fw = info['firmware'];
+    if (fw is! Map) {
+      throw const FormatException('info.json has no firmware record.');
+    }
 
-    // Model/type allow-list (device_spec.dart) — fail fast before any decrypt.
-    final model = (fw is Map) ? fw['model']?.toString() : null;
-    final type = (fw is Map) ? fw['type']?.toString() : null;
-    final verdict = DeviceSpec.evaluateZip3(model, type);
-    if (!verdict.ok) {
-      throw FormatException(verdict.reason);
+    final model = fw['model']?.toString().trim();
+    if (model == null || model.isEmpty) {
+      throw const FormatException('info.json has no firmware.model.');
+    }
+    final type = fw['type']?.toString().trim().toUpperCase();
+    if (type != 'VCU' && type != 'MCU') {
+      throw FormatException(
+        'Unsupported firmware type "${type ?? 'missing'}" — '
+        'x3utils flashes VCU/MCU packages only (not BLE/BMS).',
+      );
+    }
+
+    // Guarded slot flashing retains the supported-model allow-list. Flash Only
+    // deliberately treats model metadata as information, while still rejecting
+    // BLE/BMS above and retaining all package-integrity checks below.
+    if (enforceDeviceIdentity) {
+      final verdict = DeviceSpec.evaluateZip3(model, type);
+      if (!verdict.ok) {
+        throw FormatException(verdict.reason);
+      }
     }
 
     // zip3 must carry the encrypted payload.
     final encFile = archive.findFile('FIRM.bin.enc');
     if (encFile == null) {
-      throw const FormatException('No FIRM.bin.enc — not an encrypted zip3 package.');
+      throw const FormatException(
+        'No FIRM.bin.enc — not an encrypted zip3 package.',
+      );
     }
 
     // zip3 must be MD5'd: require md5.enc and verify it before decrypting.
-    final md5map = (fw is Map) ? fw['md5'] : null;
-    final md5enc = (md5map is Map && md5map['enc'] is String) ? md5map['enc'] as String : null;
+    final md5map = fw['md5'];
+    final md5enc = (md5map is Map && md5map['enc'] is String)
+        ? md5map['enc'] as String
+        : null;
     if (md5enc == null) {
-      throw const FormatException('info.json has no md5.enc — package is not MD5-verified.');
+      throw const FormatException(
+        'info.json has no md5.enc — package is not MD5-verified.',
+      );
     }
     final encBytes = Uint8List.fromList(encFile.content);
     if (md5Hex(encBytes) != md5enc) {
-      throw const FormatException('FIRM.bin.enc failed its MD5 check — package is corrupt.');
+      throw const FormatException(
+        'FIRM.bin.enc failed its MD5 check — package is corrupt.',
+      );
     }
 
-    final firmware = NinebotTea(key: key).decrypt(encBytes); // TEA checksum inside
+    final firmware = NinebotTea(
+      key: key,
+    ).decrypt(encBytes); // TEA checksum inside
 
     // Payload-side gate: the firmware's own banner must match the declared
     // model/type. A mismatch means a mislabeled package — hard-rejected, same as
     // the model gate. Proven safe across the full jsb.by firmware set (every
     // VCU/MCU image's banner matches its model; 0 mismatches over 99 files).
-    final banner = DeviceSpec.verifyBanner(firmware, model ?? '', type ?? '');
-    if (!banner.consistent) {
-      throw FormatException(banner.message);
+    if (enforceDeviceIdentity) {
+      final banner = DeviceSpec.verifyBanner(firmware, model, type!);
+      if (!banner.consistent) {
+        throw FormatException(banner.message);
+      }
     }
 
     return UnpackedV3(

@@ -606,3 +606,77 @@ survive machine switches and chat history loss.
     buttons on row 2, centered ZIP hint, and the existing CTA centered below.
     Local layout prototype: `x3utils_flutter/design/flash-only-slot0-centered.html`.
     This prototype explores layout only and is not a workflow specification.
+- Current-round closeout — flash_only full/slot-0 source rules IMPLEMENTED.
+  This is the deliberately simple no-backup action for now; the richer
+  interactive Recovery action above remains a separate future project. This
+  draft supersedes the follow-up's proposed package-banner consistency rule
+  for flash_only only; guarded Backup + Flash / Flash slot 0 behavior stays
+  unchanged.
+  - UI/layout: one `Flash Only` action with `Full image | Slot 0 only`, default
+    full. Scope changes clear the selected firmware. ZIP choice is available
+    only for slot 0. Use the corrected centered Variant B layout: wider
+    two-line firmware bar, filename on row 1, single-line scope/file buttons on
+    row 2, centered ZIP hint, and the existing centered CTA. Record scope in
+    the run log.
+  - Full-image `.bin` hard checks: selected path exists; `.bin` extension;
+    existing OpenOCD path guards (`{}` and the Windows non-ASCII restriction);
+    exactly 131072 bytes; non-empty and not one repeated byte. No ZIP input for
+    full-image scope.
+  - Slot-0 `.bin` hard checks: the same existence/extension/path/content checks,
+    with final file size inside the newly set slot window
+    [51200, 65536] bytes rather than exactly 128 KB.
+  - Slot-0 zip3 hard checks, in order: file exists and has `.zip` extension;
+    reject files larger than `70 * 1024` bytes BEFORE `readAsBytes()` (a wrong
+    1 GB ZIP previously crashed the app); readable ZIP; valid `info.json` with
+    schemaVersion 1 and a firmware record; declared firmware type exists and is
+    VCU or MCU, case-insensitive (BLE, BMS, missing, or unknown types reject);
+    `FIRM.bin.enc` exists; `firmware.md5.enc` exists and matches; NinebotTEA
+    decrypt plus its plaintext checksum passes; persistent output filename is
+    ASCII-sanitized; output write succeeds; decrypted output passes the same
+    repeated-byte and [51200, 65536]-byte slot checks. The size check is on the
+    final decrypted bytes, including NinebotTEA's canonical trailing padding.
+    A rejected ZIP selection clears any previously selected firmware.
+  - Informational only in flash_only: display `info.json`'s model/type as
+    "Package says ...". Do NOT enforce the supported-model allow-list, compare
+    package metadata to the decrypted payload banner, require a recognized
+    payload banner, inspect target banner/serial, or run the target-match guard.
+    Consequently a structurally valid model-mislabeled package can pass, but a
+    package declaring BLE/BMS cannot. The existing entry warning remains the
+    operator-responsibility gate: no backup and no target guard.
+  - Archive survey used for the cap: 49 ZIPs under `I:\SCOOTER\fw.jsb.by`;
+    18 VCU packages were 56849..61948 bytes and 11 MCU packages were
+    59273..59692 bytes. Largest VCU/MCU package was 61948 bytes; `70 * 1024`
+    leaves 9732 bytes of headroom. Ten BMS packages were 57502..65251 bytes, so
+    the explicit type gate is necessary; ten BLE packages were
+    403616..1847282 bytes. Some valid VCU/MCU packages contain three archive
+    entries, so exact entry-count validation is intentionally not required.
+  - Implementation keeps guarded `flash_slot0` strict while giving flash_only
+    its informational model/banner policy. The selected scope is transient,
+    resets to Full image on each Flash Only entry, clears firmware on every
+    scope flip, dispatches through the existing full/slot OpenOCD argument
+    builders, and logs the chosen scope. ZIP claims remain visible in the bar
+    and import result. The Flash Only warning dialog was widened for its
+    existing single-line desktop buttons.
+  - Verification: `dart format`, `flutter analyze`, 12 Flutter tests, and a
+    Windows debug build pass. New tests cover the exact full/slot size edges,
+    70 KiB pre-read rejection, permissive model/banner handling, retained
+    guarded-slot enforcement, BLE/BMS rejection, MD5 enforcement, transient
+    scope clearing, and the desktop warning/scope flow. No OpenOCD command or
+    hardware flash was run at implementation time.
+  - Windows hardware validation (2026-07-19, v1.2.0 BETA, Default SWD) passed
+    all three normal Flash Only paths: a 131072-byte full-image `.bin` erased,
+    wrote, and verified; a slot-0 `.bin` wrote and verified at `0x08001000`;
+    and a VCU ZIP3 imported/decrypted, displayed its package claim, then wrote
+    and verified at `0x08001000`. The controller booted normally after the
+    tests. A second MCU ZIP3 also imported/decrypted and displayed `ZT3 · MCU`.
+  - Negative selection checks confirmed that a 507367-byte ZIP is rejected by
+    the 71680-byte pre-read cap and a package declaring BMS is rejected by the
+    VCU/MCU type gate, both before OpenOCD starts. Full-size `.bin` in slot-0
+    scope and slot-size `.bin` in full-image scope are also rejected. Those
+    `.bin` picker failures use the existing app-wide red status strip and do
+    not create log entries; this is retained behavior, not specific to Flash
+    Only. The centered ZIP helper and persistent `Package says ...` claim now
+    use the same brightness/contrast treatment as `No firmware chosen`, at 12
+    pixels instead of the original 11-pixel muted treatment, after the
+    hardware-test UI showed the information line was borderline invisible;
+    loaded filenames remain left-aligned for long-name handling.

@@ -125,19 +125,34 @@ class AppController extends ChangeNotifier {
   // switch — so nothing stale or wrong-sized ever carries over.
   String? _firmwareStandard; // flash_backup
   String? _firmwareAdvanced; // flash_only / flash_slot0 (transient)
+  String? _firmwarePackageClaim;
+  FlashOnlyScope flashOnlyScope = FlashOnlyScope.fullImage;
 
-  bool get isSlotAction => actionId == 'flash_slot0';
+  bool get isFlashOnlySlot0 =>
+      actionId == 'flash_only' && flashOnlyScope == FlashOnlyScope.slot0;
+
+  bool get isSlotAction => actionId == 'flash_slot0' || isFlashOnlySlot0;
 
   String? get firmwarePath =>
       actionId == 'flash_backup' ? _firmwareStandard : _firmwareAdvanced;
+  String? get firmwarePackageClaim => _firmwarePackageClaim;
 
-  void setFirmware(String? path) {
+  void setFirmware(String? path, {String? packageClaim}) {
     if (actionId == 'flash_backup') {
       _firmwareStandard = path;
     } else {
       _firmwareAdvanced = path;
     }
+    _firmwarePackageClaim = path == null ? null : packageClaim;
     notifyListeners();
+  }
+
+  void setFlashOnlyScope(FlashOnlyScope scope) {
+    if (running || actionId != 'flash_only' || flashOnlyScope == scope) return;
+    flashOnlyScope = scope;
+    _firmwareAdvanced = null;
+    _firmwarePackageClaim = null;
+    _goIdle();
   }
 
   /// Load a v3 firmware .zip for the current (slot-0) flash: validate the
@@ -157,13 +172,28 @@ class AppController extends ChangeNotifier {
       notifyListeners();
     }
 
-    ilog('== zip3 import: ${zipPath.split(RegExp(r'[\\/]')).last} · '
-        '${DateTime.now().toString().split('.').first} ==');
+    // A rejected pick must never leave a stale previously-valid firmware armed.
+    setFirmware(null);
+    ilog(
+      '== zip3 import: ${zipPath.split(RegExp(r'[\\/]')).last} · '
+      '${DateTime.now().toString().split('.').first} ==',
+    );
     try {
+      if (!isSlotAction) {
+        return FirmwareCheck.fail(
+          'ZIP3 packages are available for slot 0 only.',
+        );
+      }
+      final containerCheck = Firmware.validateZip3Container(zipPath);
+      if (!containerCheck.ok) {
+        ilog('== package rejected: ${containerCheck.message} ==');
+        return containerCheck;
+      }
       final bytes = await File(zipPath).readAsBytes();
-      final pkg = PackV3.unpackV3(bytes); // throws FormatException if not zip3
+      final guarded = actionId == 'flash_slot0';
+      final pkg = PackV3.unpackV3(bytes, enforceDeviceIdentity: guarded);
       ilog(
-        '== package: ${pkg.displayName} · ${pkg.model}/${pkg.type} · '
+        '== package says: ${pkg.displayName} · ${pkg.model}/${pkg.type} · '
         '${pkg.source} · ${pkg.firmware.length} bytes ==',
       );
       final outPath = Firmware.newUnpackedBinPath(
@@ -176,11 +206,14 @@ class AppController extends ChangeNotifier {
         ilog('== package firmware rejected: ${v.message} ==');
         return FirmwareCheck.fail(v.message);
       }
-      setFirmware(outPath);
+      final packageClaim =
+          'Package says: ${pkg.model.toUpperCase()} · ${pkg.type.toUpperCase()}';
+      setFirmware(outPath, packageClaim: packageClaim);
       ilog('== loaded slot-0 firmware from package → $outPath ==');
       return FirmwareCheck(
         true,
-        'Decrypted ${pkg.firmware.length} bytes from ${pkg.displayName}.',
+        'Decrypted ${pkg.firmware.length} bytes from ${pkg.displayName}. '
+        '$packageClaim.',
       );
     } on FormatException catch (e) {
       ilog('== package error: ${e.message} ==');
@@ -296,7 +329,9 @@ class AppController extends ChangeNotifier {
   void selectAction(String id) {
     if (running) return;
     actionId = id;
+    if (id == 'flash_only') flashOnlyScope = FlashOnlyScope.fullImage;
     _firmwareAdvanced = null; // advanced actions don't remember loaded bins
+    _firmwarePackageClaim = null;
     _goIdle();
   }
 
@@ -374,8 +409,16 @@ class AppController extends ChangeNotifier {
     running = false;
     stage = StageState.idle;
     eyebrow = 'Ready';
-    title = action.name;
-    sub = action.sub;
+    if (actionId == 'flash_only') {
+      final slot0 = flashOnlyScope == FlashOnlyScope.slot0;
+      title = slot0 ? 'Choose slot-0 firmware' : 'Choose a full image';
+      sub = slot0
+          ? 'Writes application slot 0 only. Bootloader and identity stay untouched.'
+          : 'Writes the complete 128 KB image with no backup or target guard.';
+    } else {
+      title = action.name;
+      sub = action.sub;
+    }
     showContinue = false;
     _progressShownAt = null;
     _lastProgressAt = null;
@@ -486,7 +529,7 @@ class AppController extends ChangeNotifier {
       case 'dump':
         await _runDump(runner, g);
       case 'flash_only':
-        await _runFlash(runner, g, backup: false, slot0: false);
+        await _runFlash(runner, g, backup: false, slot0: isFlashOnlySlot0);
       case 'flash_backup':
         await _runFlash(runner, g, backup: true, slot0: false);
       case 'flash_slot0':
@@ -1152,6 +1195,13 @@ class AppController extends ChangeNotifier {
       return;
     }
 
+    if (actionId == 'flash_only') {
+      _log(
+        '== flash_only scope=${slot0 ? 'slot0' : 'full'} '
+        '— no backup, no target guard ==',
+      );
+    }
+
     String? backupPath;
 
     // Mandatory backup first (the scripts' safety floor) — abort flash if it fails.
@@ -1248,6 +1298,8 @@ class AppController extends ChangeNotifier {
         ? slot0
               ? 'Slot 0 flashed & verified. Backup saved to $backupPath'
               : 'Flashed & verified. Backup saved to $backupPath'
+        : slot0
+        ? 'Slot 0 flashed & verified. No backup was taken.'
         : action.okMsg;
     await _finishRealAfterHold(flashOk, okMsg, _flashFailMessage(r));
   }

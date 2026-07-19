@@ -13,6 +13,7 @@ class FirmwareCheck {
 /// (validate_bin ... nosize in flash_slot0.bat).
 class Firmware {
   static const int expectedSize = 131072; // 128 KB
+  static const int maxZip3Bytes = 70 * 1024; // reject before readAsBytes()
 
   /// Acceptable size window for a slot-0 bin, measured on the **decrypted** bin
   /// (what is actually written at 0x08001000). **PROVISIONAL placeholders** —
@@ -20,28 +21,42 @@ class Firmware {
   /// Observed real firmware is ~57–61 KB; outside the window is a HARD reject
   /// (too small = not a real slot image; too big = would overrun slot 0 into
   /// slot 1 / identity and break the identity-safe guarantee).
-  static const int slot0MinBytes = 0xC800; // 50 KB (51200)  — TODO: confirm spec
-  static const int slot0MaxBytes = 0x10000; // 64 KB (65536) — TODO: confirm spec
+  static const int slot0MinBytes =
+      0xC800; // 50 KB (51200)  — TODO: confirm spec
+  static const int slot0MaxBytes =
+      0x10000; // 64 KB (65536) — TODO: confirm spec
 
   static FirmwareCheck validate(String path, {bool requireSize = true}) {
-    if (path.trim().isEmpty) return FirmwareCheck.fail('No firmware file selected.');
+    if (path.trim().isEmpty) {
+      return FirmwareCheck.fail('No firmware file selected.');
+    }
     final f = File(path);
-    if (!f.existsSync()) return FirmwareCheck.fail('Firmware file does not exist.');
+    if (!f.existsSync()) {
+      return FirmwareCheck.fail('Firmware file does not exist.');
+    }
     if (path.contains('{') || path.contains('}')) {
-      return FirmwareCheck.fail('Path contains an unsupported character: { or }.');
+      return FirmwareCheck.fail(
+        'Path contains an unsupported character: { or }.',
+      );
     }
     if (path.codeUnits.any((c) => c > 127)) {
-      return FirmwareCheck.fail('Path has non-ASCII characters — use English letters only.');
+      return FirmwareCheck.fail(
+        'Path has non-ASCII characters — use English letters only.',
+      );
     }
     if (p.extension(path).toLowerCase() != '.bin') {
       return FirmwareCheck.fail('Invalid file type. Only .bin is allowed.');
     }
     final len = f.lengthSync();
     if (requireSize && len != expectedSize) {
-      return FirmwareCheck.fail('Invalid size. Expected $expectedSize bytes, got $len.');
+      return FirmwareCheck.fail(
+        'Invalid size. Expected $expectedSize bytes, got $len.',
+      );
     }
     if (_singleRepeatedByte(f)) {
-      return FirmwareCheck.fail('Bin contains only zeros or a single repeated byte.');
+      return FirmwareCheck.fail(
+        'Bin contains only zeros or a single repeated byte.',
+      );
     }
     return FirmwareCheck.valid;
   }
@@ -56,14 +71,42 @@ class Firmware {
     final len = File(path).lengthSync();
     if (len == expectedSize) {
       return FirmwareCheck.fail(
-          'That’s a full 128 KB image — slot 0 needs a smaller slot bin.');
+        'That’s a full 128 KB image — slot 0 needs a smaller slot bin.',
+      );
     }
     if (len < slot0MinBytes) {
       return FirmwareCheck.fail(
-          'Too small for a slot-0 firmware ($len bytes, min $slot0MinBytes).');
+        'Too small for a slot-0 firmware ($len bytes, min $slot0MinBytes).',
+      );
     }
     if (len > slot0MaxBytes) {
-      return FirmwareCheck.fail('Too big for slot 0 ($len bytes, max $slot0MaxBytes).');
+      return FirmwareCheck.fail(
+        'Too big for slot 0 ($len bytes, max $slot0MaxBytes).',
+      );
+    }
+    return FirmwareCheck.valid;
+  }
+
+  /// Cheap ZIP3 container gate. This intentionally runs before loading the
+  /// archive into memory so an accidentally selected huge ZIP cannot crash the
+  /// app. The decrypted payload still receives the normal slot validation.
+  static FirmwareCheck validateZip3Container(String path) {
+    if (path.trim().isEmpty) {
+      return FirmwareCheck.fail('No ZIP3 package selected.');
+    }
+    final f = File(path);
+    if (!f.existsSync()) {
+      return FirmwareCheck.fail('ZIP3 package does not exist.');
+    }
+    if (p.extension(path).toLowerCase() != '.zip') {
+      return FirmwareCheck.fail('Invalid file type. Only .zip is allowed.');
+    }
+    final len = f.lengthSync();
+    if (len > maxZip3Bytes) {
+      return FirmwareCheck.fail(
+        'ZIP is too large ($len bytes). ZIP3 firmware packages must be '
+        '$maxZip3Bytes bytes or smaller.',
+      );
     }
     return FirmwareCheck.valid;
   }
@@ -90,7 +133,10 @@ class Firmware {
   /// `Documents/x3utils/unpacked_zip3` so the flash flow can read it by path
   /// and the user can re-flash it later via Choose .bin. [name] seeds the
   /// filename (sanitised); [prefix] follows the usual rule.
-  static String newUnpackedBinPath({String prefix = '', String name = 'firmware'}) {
+  static String newUnpackedBinPath({
+    String prefix = '',
+    String name = 'firmware',
+  }) {
     final dir = _dir('unpacked_zip3');
     final clean = name.trim().replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     final label = clean.isEmpty ? 'firmware' : clean;
@@ -127,7 +173,8 @@ class Firmware {
   /// hidden `~/.x3utils_backup` (Linux, x3utils_linux/dump.sh).
   static String secondCopyDir() {
     if (Platform.isWindows) {
-      final base = Platform.environment['LOCALAPPDATA'] ??
+      final base =
+          Platform.environment['LOCALAPPDATA'] ??
           Platform.environment['USERPROFILE'] ??
           Directory.current.path;
       return p.join(base, 'x3utils_backup');
@@ -157,8 +204,10 @@ class Firmware {
   // ── UI display labels (per-OS, so the settings panel never lies) ──────────
   // Windows keeps the bare `Documents\…` hint; unix shows a `~/`-prefixed path
   // with native separators. Kept in sync with _dir / secondCopyDir above.
-  static String get backupDirLabel => _homeLabel(p.join('Documents', 'x3utils', 'backup'));
-  static String get logsDirLabel => _homeLabel(p.join('Documents', 'x3utils', 'logs'));
+  static String get backupDirLabel =>
+      _homeLabel(p.join('Documents', 'x3utils', 'backup'));
+  static String get logsDirLabel =>
+      _homeLabel(p.join('Documents', 'x3utils', 'logs'));
   static String get secondCopyLabel {
     if (Platform.isWindows) return r'%LOCALAPPDATA%\x3utils_backup';
     if (Platform.isMacOS) return '~/Library/Application Support/x3utils_backup';
@@ -168,7 +217,8 @@ class Firmware {
   static String _homeLabel(String sub) => Platform.isWindows ? sub : '~/$sub';
 
   static String _dir(String sub) {
-    final home = Platform.environment['USERPROFILE'] ??
+    final home =
+        Platform.environment['USERPROFILE'] ??
         Platform.environment['HOME'] ??
         Directory.current.path;
     final dir = Directory(p.join(home, 'Documents', 'x3utils', sub));
@@ -188,17 +238,20 @@ class Firmware {
 /// signature at 0x1420 into the chip's own firmware, then flash it back.
 class CompatPatch {
   static const int offset = 0x1420;
-  static final List<int> signature =
-      _hex('FE801CB2D1EF41A6A41731F5A06824F0');
+  static final List<int> signature = _hex('FE801CB2D1EF41A6A41731F5A06824F0');
 
-  static List<int> _hex(String s) =>
-      [for (var i = 0; i < s.length; i += 2) int.parse(s.substring(i, i + 2), radix: 16)];
+  static List<int> _hex(String s) => [
+    for (var i = 0; i < s.length; i += 2)
+      int.parse(s.substring(i, i + 2), radix: 16),
+  ];
 
   /// Read [srcPath], write the signature at [offset], verify, save [dstPath].
   static FirmwareCheck apply(String srcPath, String dstPath) {
     final bytes = File(srcPath).readAsBytesSync();
     if (bytes.length < offset + signature.length) {
-      return FirmwareCheck.fail('Dump too small to patch (${bytes.length} bytes).');
+      return FirmwareCheck.fail(
+        'Dump too small to patch (${bytes.length} bytes).',
+      );
     }
     for (var i = 0; i < signature.length; i++) {
       bytes[offset + i] = signature[i];
