@@ -562,3 +562,47 @@ survive machine switches and chat history loss.
   Variant A — scope control ABOVE the bar (reading order scope → file → CTA),
   START FLASH CTA on the RIGHT. Mockup:
   https://claude.ai/code/artifact/51c8ede6-12c1-4026-bc04-7eafc2f4b231
+- flash_only slot-0 follow-up — REOPENED and PARKED (discussion only, NOT
+  approved for implementation). The earlier "settled" no-backup design above
+  must not be built as-is. Its motivating recovery case is a controller that
+  was intentionally or accidentally flashed with another model's firmware:
+  the installed banner (and possibly serial) then describes the WRONG model,
+  so the normal target-match guard blocks the legitimate corrective firmware.
+  The operator first needs known-good firmware to boot; separate BLE tools can
+  repair a wrong serial afterwards.
+  - Source validation should stay strict. A full bin must remain exactly 128 KB;
+    a slot bin stays inside its safe slot-size window; zip3 must remain a
+    readable encrypted package with valid MD5/decryption and internally
+    consistent metadata/payload banner. Corrupt or deliberately mislabeled
+    source packages are not required for this recovery and should not become
+    accepted merely because the action is an override.
+  - The useful override is TARGET identity enforcement, not incoming-firmware
+    validation. ST-LINK identifies the MCU but cannot authoritatively identify
+    the scooter model or whether the physical target should receive VCU versus
+    MCU firmware. CPU UID is unique per chip but has no known model mapping.
+    Installed flash evidence is still useful, but must be worded as e.g.
+    "Installed firmware claims G3 VCU", never "Target is G3 VCU".
+  - New direction to consider: make this an interactive recovery-flash flow.
+    Take and save the normal 128 KB pre-flash dump, validate that dump, gather
+    every readable installed banner/serial signal, and present them beside the
+    incoming firmware identity and an OPERATOR-DECLARED physical model/type.
+    Unlike Backup + Flash, contradictions would be explained for an informed
+    continue/abort decision instead of automatically blocking. Structural
+    source failures and an incoming MCU/VCU contradiction against the
+    operator's declaration may still need to hard-block. If continued, write
+    the selected full-image or slot-0 scope and record all evidence plus the
+    override decision in the action log.
+  - This changes the meaning of "Flash Only": it would actually back up first,
+    but would not enforce the normal target verdict. A clearer user-facing name
+    such as "Recovery flash" may be appropriate; the existing CLI flash_only
+    can remain genuinely backup-free. Unresolved: naming/action placement,
+    whether backup failure always aborts or offers a separately gated blind
+    recovery, exact hard-fail versus advisory rules, operator model/type UI,
+    confirmation copy, controller state model, and deterministic identity-case
+    tests. No decision yet.
+  - Mockup correction only: the earlier Variant A was misleadingly phone-like.
+    Prefer Variant B integrated into the existing centered desktop hero: a
+    wider two-line firmware bar, filename on row 1, single-line scope and file
+    buttons on row 2, centered ZIP hint, and the existing CTA centered below.
+    Local layout prototype: `x3utils_flutter/design/flash-only-slot0-centered.html`.
+    This prototype explores layout only and is not a workflow specification.
