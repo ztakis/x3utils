@@ -754,3 +754,62 @@ survive machine switches and chat history loss.
     result text. Still wanting bench eyes: the amber strip states
     (generic/cleared incoming image) and the bannerless-bin selection
     rejection.
+
+## 2026-07-20
+
+- BLE-OTA vs SWD-slot0 dump comparison (real bench, zt3 VCU 1.5.2 Compat).
+  Compared two full 128 KB dumps of the same device: `shu152` taken after a
+  BLE flash of the repo's v1.5.2 Compat zip, `stl152` after an x3utils
+  slot0-zip flash of the local mirror `I:\SCOOTER\fw.jsb.by\zt3\VCU\1.5.2
+  (Compat).zip`. Result: byte-identical across all 131072 bytes EXCEPT a
+  single contiguous 20-byte block at 0x0F36C-0x0F37F, present (real data) in
+  the BLE dump, blank 0xFF in the slot0 dump.
+- Provenance conclusion: the FIRMWARE is the same. The decrypted mirror
+  payload (`FIRM_1.5.2 (Compat).bin`, 58220 bytes) is byte-identical to the
+  slot0 region [0x1000, 0x0F36C) of BOTH dumps, and the mirror's
+  FIRM.bin.enc MD5 (fa13fea0...) matches its own info.json. So "repo zip ==
+  local mirror" is CONFIRMED at the payload level; the two dumps differ only
+  by flash METHOD, not firmware.
+- The 20-byte trailer is NOT firmware: the payload is exactly 58220 bytes and
+  ends at 0x0F36C, so the trailer sits PAST the image in the erased slot tail.
+  Written by the BLE OTA path; SWD slot0-flash (raw decrypted payload only)
+  does not write it. 20 bytes = SHA-1-sized, but it is NOT a plain SHA-1 of
+  the payload or the .enc (checked) — looks like BLE OTA integrity/bookkeeping
+  metadata. Field use: a lone 20-byte block at the slot tail is a fingerprint
+  of BLE-OTA provenance vs a clean SWD slot0 flash.
+- Boot outcome: the slot0-flashed device (missing the trailer) BOOTS and runs
+  normally. Confirms the Compat bootloader does not gate boot on that trailer;
+  the trailer is OTA-side bookkeeping, harmless to omit.
+- "Make zip3" packer: PARKED (do not build unprompted). It was a nice-to-have
+  ONLY if painless. It isn't: the encryption/packaging half is already covered by
+  the standalone `ninebottea` CLI, so the packer's only real value-add is trimming
+  the slot0 payload to its exact length -- and that trim is the unsolved hard part
+  (see next bullet). A feature whose sole delta is the unsolved step isn't worth it.
+  Revisit ONLY if a reliable trim algorithm turns up (per-model is acceptable);
+  then rethink the implementation. Frozen design if it ever proceeds: Advanced,
+  offline, slot0 bin in -> VCU/MCU zip3 out for BLE "Load from file"; one code fix
+  = makeZipV3.allowedTypeFlags stale {DRV,BMS,BLE} -> x3 {VCU,MCU} (mirror info.json
+  says type "VCU"). makeZipV3 is already ported in
+  x3utils_flutter/lib/engine/pack_zip3.dart. Operating model behind it: BLE+zip3 =
+  routine loop, ST-Link/x3utils = backup-once + recovery only.
+- Dump -> zip3 extraction: INVESTIGATED and DROPPED (not deferred), now with
+  hard evidence. Anchor found: slot1 vector table sits at dump 0x10000, so slot0
+  region = [0x1000,0x10000); user/identity at 0x1F000 (measured via full-vs-
+  _cleared diff on g3_dash dumps). But exact firmware-END is NOT recoverable from
+  a dump: a BLE-OTA flash leaves slot0 past the live payload full of
+  non-deterministic OTA junk fill (repeating 8-byte blocks e.g.
+  `80 A5 71 58 4C 18 DD EC`, `02 60 25 53 D9 05 FF 60`), and a stale tail can
+  MIMIC a real end-signature (g3's `...3D C1` residue sat at 0xFF80 across four
+  different versions whose true ends were far earlier; e.g. 1.5.6-100 really ends
+  at 0xF084 = its 57476-byte mirror length, junk after). Backward-scan, trailing
+  0x00/0xFF trim, and per-model tail signatures all fail. So the packer takes a
+  CLEAN source bin only; the whole-region [0x1000,0x10000) cut is the sole
+  deterministic dump fallback (boots, non-canonical, carries junk).
+- Reference corpus: `I:\SCOOTER\__Dumps\g3_dash\` = BLE-from-repo full dumps of
+  g3 VCU 1.5.15 / 1.5.6-100 / 1.6.1 / 1.6.2, each with a user-space-cleared twin
+  (identity zeroed at 0x1F000). slot0 heads of 1.5.15 (61316 B) and 1.5.6-100
+  (57476 B) are byte-EXACT to the mirror = stock; 1.6.1/1.6.2 are newer than the
+  mirror snapshot. Length invariant across the whole mirror: decrypted fw length
+  is always ≡ 4 (mod 8) (enc is 8-aligned, plain = enc - 4) — cheap cut-validity
+  gate. zt3 VCU 1.5.2 tail signature `5A D6 7E B1 13 12 7A 00` is a zt3-VCU build
+  constant, NOT universal (g3/f3/gt3 and all MCU differ), so no cross-model trim.
