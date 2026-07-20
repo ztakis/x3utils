@@ -823,13 +823,30 @@ survive machine switches and chat history loss.
   4 real dumps, both models AND both types: g3 VCU 1.5.6-100 (57476), g3 VCU 1.5.15
   (61316), zt3 VCU 1.5.2 shu152 (58220), zt3 MCU 1.4.3 (58868). Model/type-independent.
   CAVEATS before trusting in a shipping tool: (1) needs confirmation on genuinely
-  UNTOUCHED fresh-flash full dumps -- one corpus dump (21-33-11) had ZP present but
-  length=0 (touched/cleared, or not-yet-committed? unresolved); (2) f3/gt3 unchecked;
-  (3) MANDATORY fail-closed guard, proven necessary by the len=0 case (naive read
-  gives -4): accept only if magic=="ZP" AND len!=0 AND (len-4)%8==4 AND (len-4) in the
-  slot0 window, else refuse and require a clean source bin. NB the ZP page sits in the
-  user/identity zone that the `_cleared` twins zero -> extract from a NON-cleared dump.
-  If pristine dumps confirm it, this UN-PARKS the "Make zip3" dump->slot0 path.
+  UNTOUCHED fresh-flash full dumps; (2) f3/gt3 unchecked; (3) MANDATORY fail-closed
+  guard, proven necessary by a len=0 case (naive read gives -4): accept only if
+  magic=="ZP" AND len!=0 AND (len-4)%8==4 AND (len-4) in the slot0 window, else refuse
+  and require a clean source bin. NB the ZP page sits in the user/identity zone that
+  the `_cleared` twins zero -> extract from a NON-cleared dump.
+- UPDATE (2026-07-20, later): PRISTINE-DUMP GATE CLEARED for g3 VCU. Four dumps
+  taken immediately after a BLE/SHU flash from repo -- shu_1.4.8, shu_1.5.6_100,
+  shu_1.5.13, shu_1.5.15 in x3utils/backup/ -- ALL have a valid ZP record (non-zero,
+  mod8=4) and their ZP-derived payload is BYTE-EXACT to the mirror. So the ZP length
+  is reliably committed on clean captures. The earlier 21-33-11 len=0 is therefore a
+  TOUCHED/non-standard dump, NOT a normal failure mode -> guard rejects it correctly.
+  Running tally: 8 byte-exact (4 certified-pristine), both models + both types. The
+  ONLY open gate is f3/gt3 (predicted to match). This effectively un-parks the
+  dump->slot0 path for the "Make zip3" packer pending an f3/gt3 spot-check.
+- Post-payload trailer sizing (2026-07-20): measured on the 4 pristine g3 VCU
+  shu_* dumps via the exact ZP boundary, the trailer is 12 bytes (96-bit),
+  consistent across all four, THEN the periodic OTA fill (or 0xFF). So the earlier
+  "20-byte" read was a 12-byte trailer + one 8-byte fill period. It is too short to
+  be a full MD5 (16) or SHA1 (20). A dev tipped it was an md5/sha1, but the trailer
+  matches NONE of md5(plain)/md5(enc)/sha1(plain)/sha1(enc) (nor their first-12),
+  and none of those digests appear anywhere in the 128 KB dump. The 12 bytes are
+  content-derived (vary per firmware); identity UNRESOLVED (truncated/keyed hash,
+  CRC-96, or signature) -> needs the dev's exact input+algorithm. FW-internals,
+  deferred, and irrelevant to the packer (ZP trims the payload before it).
 - Reference corpus: `I:\SCOOTER\__Dumps\g3_dash\` = BLE-from-repo full dumps of
   g3 VCU 1.5.15 / 1.5.6-100 / 1.6.1 / 1.6.2, each with a user-space-cleared twin
   (identity zeroed at 0x1F000). slot0 heads of 1.5.15 (61316 B) and 1.5.6-100
