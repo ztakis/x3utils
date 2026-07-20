@@ -847,6 +847,12 @@ survive machine switches and chat history loss.
   content-derived (vary per firmware); identity UNRESOLVED (truncated/keyed hash,
   CRC-96, or signature) -> needs the dev's exact input+algorithm. FW-internals,
   deferred, and irrelevant to the packer (ZP trims the payload before it).
+  The payload+12B unit appears TWICE per dump -- slot0_end (0x1000+len) and
+  slot1_end (0x10000+len), one slot (0xF000) apart -- and slot0==slot1 byte-exact
+  on a fresh flash. So the trailer is appended to the payload and copied down as one
+  unit (not computed post-flash per slot); the repo `.enc` decrypts to payload-only,
+  so SHU/OTA appends the 12 bytes. Corollary: extraction can be cross-checked slot0
+  vs slot1.
 - Reference corpus: `I:\SCOOTER\__Dumps\g3_dash\` = BLE-from-repo full dumps of
   g3 VCU 1.5.15 / 1.5.6-100 / 1.6.1 / 1.6.2, each with a user-space-cleared twin
   (identity zeroed at 0x1F000). slot0 heads of 1.5.15 (61316 B) and 1.5.6-100
