@@ -805,6 +805,31 @@ survive machine switches and chat history loss.
   0x00/0xFF trim, and per-model tail signatures all fail. So the packer takes a
   CLEAN source bin only; the whole-region [0x1000,0x10000) cut is the sole
   deterministic dump fallback (boots, non-canonical, carries junk).
+- Post-payload junk has a CONSISTENT cross-model shape: payload -> fixed 12-byte
+  trailer -> repeating 8-byte junk block (fill constant varies per dump) ->
+  erased 00/FF. Tempting as a trim rule (payload_end = junk_start - 12), but junk-
+  based scanning does NOT generalize (DEAD ENDS, do not retry): (a) BACKWARD scan
+  for the last periodic run hits STALE tail from a prior longer flash -> g3
+  1.5.6-100 returns 61316 not its true 57476; (b) FORWARD scan for the first
+  periodic run false-positives on a period-8 run INSIDE the firmware at 0x1066;
+  (c) when junk is only one 8-byte period before 0xFF the run is too short to detect.
+- *** BREAKTHROUGH (supersedes the "exact end is unrecoverable" verdict above) ***
+  The device STORES its own firmware length. Near the top of flash there is an
+  "update config" page with an ASCII "ZP" magic (0x5A 0x50). At record+8 a LE u32
+  holds the ENCRYPTED length (8-aligned); the exact plain payload = that - 4.
+  So dump -> exact payload is DETERMINISTIC, no trimming/heuristics:
+    read u32 @ ZP+8 ; payload_len = u32 - 4 ; firmware = dump[0x1000 : 0x1000+len].
+  Found at flash 0x1F800 on every dump checked. Validated BYTE-EXACT vs mirror on
+  4 real dumps, both models AND both types: g3 VCU 1.5.6-100 (57476), g3 VCU 1.5.15
+  (61316), zt3 VCU 1.5.2 shu152 (58220), zt3 MCU 1.4.3 (58868). Model/type-independent.
+  CAVEATS before trusting in a shipping tool: (1) needs confirmation on genuinely
+  UNTOUCHED fresh-flash full dumps -- one corpus dump (21-33-11) had ZP present but
+  length=0 (touched/cleared, or not-yet-committed? unresolved); (2) f3/gt3 unchecked;
+  (3) MANDATORY fail-closed guard, proven necessary by the len=0 case (naive read
+  gives -4): accept only if magic=="ZP" AND len!=0 AND (len-4)%8==4 AND (len-4) in the
+  slot0 window, else refuse and require a clean source bin. NB the ZP page sits in the
+  user/identity zone that the `_cleared` twins zero -> extract from a NON-cleared dump.
+  If pristine dumps confirm it, this UN-PARKS the "Make zip3" dump->slot0 path.
 - Reference corpus: `I:\SCOOTER\__Dumps\g3_dash\` = BLE-from-repo full dumps of
   g3 VCU 1.5.15 / 1.5.6-100 / 1.6.1 / 1.6.2, each with a user-space-cleared twin
   (identity zeroed at 0x1F000). slot0 heads of 1.5.15 (61316 B) and 1.5.6-100
