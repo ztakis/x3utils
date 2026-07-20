@@ -834,14 +834,22 @@ survive machine switches and chat history loss.
   mod8=4) and their ZP-derived payload is BYTE-EXACT to the mirror. So the ZP length
   is reliably committed on clean captures. The earlier 21-33-11 len=0 is therefore a
   TOUCHED/non-standard dump, NOT a normal failure mode -> guard rejects it correctly.
-  Running tally: 8 byte-exact (4 certified-pristine), both models + both types. The
-  ONLY open gate is f3/gt3 (predicted to match). This effectively un-parks the
-  dump->slot0 path for the "Make zip3" packer pending an f3/gt3 spot-check.
-- Post-payload trailer sizing (2026-07-20): measured on the 4 pristine g3 VCU
-  shu_* dumps via the exact ZP boundary, the trailer is 12 bytes (96-bit),
-  consistent across all four, THEN the periodic OTA fill (or 0xFF). So the earlier
-  "20-byte" read was a 12-byte trailer + one 8-byte fill period. It is too short to
-  be a full MD5 (16) or SHA1 (20). A dev tipped it was an md5/sha1, but the trailer
+  Running tally: 8 byte-exact (4 certified-pristine), both models + both types.
+  f3/gt3 gate: NO hardware to test (user has no f3/gt3 units) -> unverifiable, but
+  NOT a hard blocker: the fail-closed guard refuses an unknown/absent ZP and the
+  (len-4)%8==4 check rejects a different-semantics record instead of mis-cutting;
+  f3/gt3 mirror payloads are ≡4 (mod 8) too, consistent with the mechanism. zt3+MCU
+  can be re-run clean-room on request (already pass, not yet pristine-certified).
+  This effectively un-parks the dump->slot0 path for the "Make zip3" packer, with
+  f3/gt3 covered by the guard rather than by an (impossible) empirical test.
+- Post-payload trailer sizing (2026-07-20): measured via the exact ZP boundary, the
+  trailer is DEVICE-FAMILY-DEPENDENT, NOT universal: 12 bytes on g3 VCU (x4), zt3 VCU
+  1.5.5 (x3) AND zt3 MCU 1.4.3 -- but ZT3Pro is only 4 bytes (8d fd 15 17). f3/gt3
+  untested. Do NOT hardcode 12. (The earlier "20-byte" read was a 12-byte trailer +
+  one 8-byte fill period.) Whatever the size, it is too short to be a full MD5 (16) or
+  SHA1 (20), and it is IRRELEVANT to extraction -- the packer trims at the ZP-derived
+  payload boundary (byte-exact on every model incl. ZT3Pro), so the trailer sits past
+  it. Only a trim-by-counting-the-trailer approach would care about the size. A dev tipped it was an md5/sha1, but the trailer
   matches NONE of md5(plain)/md5(enc)/sha1(plain)/sha1(enc) (nor their first-12),
   and none of those digests appear anywhere in the 128 KB dump. The 12 bytes are
   content-derived (vary per firmware); identity UNRESOLVED (truncated/keyed hash,
