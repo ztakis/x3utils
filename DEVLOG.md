@@ -853,6 +853,12 @@ survive machine switches and chat history loss.
   unit (not computed post-flash per slot); the repo `.enc` decrypts to payload-only,
   so SHU/OTA appends the 12 bytes. Corollary: extraction can be cross-checked slot0
   vs slot1.
+  RESOLVED which layer the dev's "md5" meant: it's BLE-TRANSPORT, not flash. The SHU
+  BLE flasher (firmware_flasher.dart) sends md5(firmwareData) AFTER the length
+  (includeMd5AfterLength, gated on highDensity/negotiatedWindow flashing) + appends a
+  random byte. The md5 never reaches flash -> the negative flash-trailer test was
+  correct, no contradiction. On-flash 12B trailer stays a separate unidentified
+  device-side field; unconfirmed lead = the per-dump random fill may be appendRandomByte.
 - Reference corpus: `I:\SCOOTER\__Dumps\g3_dash\` = BLE-from-repo full dumps of
   g3 VCU 1.5.15 / 1.5.6-100 / 1.6.1 / 1.6.2, each with a user-space-cleared twin
   (identity zeroed at 0x1F000). slot0 heads of 1.5.15 (61316 B) and 1.5.6-100
