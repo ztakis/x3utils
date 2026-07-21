@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:x3utils_flutter/engine/firmware.dart';
 import 'package:x3utils_flutter/engine/pack_zip3.dart';
 import 'package:x3utils_flutter/engine/zp_extract.dart';
 
@@ -21,11 +22,19 @@ const _mcu = 'SCOOTER_MCU_0001';
 /// A valid slot-0 payload length inside the window and ≡4 (mod 8).
 const _len = 51204;
 
+/// The default SHU firmware key at 0x1420 (matches CompatPatch.signature) — its
+/// presence marks a repo/SHU-compatible dump, the only kind Make zip3 accepts.
+final _defaultKey = <int>[
+  0xFE, 0x80, 0x1C, 0xB2, 0xD1, 0xEF, 0x41, 0xA6, //
+  0xA4, 0x17, 0x31, 0xF5, 0xA0, 0x68, 0x24, 0xF0,
+];
+
 Uint8List _dump({
   String? banner = _g3Vcu,
   int payloadLen = _len,
   int? encLenOverride,
   bool omitZp = false,
+  List<int>? keyAt1420, // 16 bytes at 0x1420; default = the SHU key (repo fw)
 }) {
   final b = Uint8List(131072);
   // Vary the payload body so it is never a single repeated byte.
@@ -35,6 +44,8 @@ Uint8List _dump({
   if (banner != null) {
     b.setRange(0x1400, 0x1400 + banner.length, banner.codeUnits);
   }
+  // The firmware key region — repo firmware by default so the gate lets it pass.
+  b.setRange(0x1420, 0x1420 + 16, keyAt1420 ?? _defaultKey);
   if (!omitZp) {
     b[0x1F800] = 0x5A; // 'Z'
     b[0x1F801] = 0x50; // 'P'
@@ -261,6 +272,66 @@ void main() {
         enforceModel: true,
       );
       expect(_fw(r.zipBytes)['compatible'], ['zt3_VCU_AT32']);
+    });
+
+    group('SHU key gate (repo-only)', () {
+      test('default SHU key at 0x1420 packs', () {
+        final r = PackV3.buildZip3FromDump(
+          _dump(keyAt1420: _defaultKey),
+          type: 'VCU',
+          model: 'g3',
+          enforceModel: true,
+        );
+        expect(r.payloadLength, _len);
+      });
+
+      test('blank (0xFF) 0x1420 — newer repo default — packs', () {
+        final r = PackV3.buildZip3FromDump(
+          _dump(keyAt1420: List.filled(16, 0xFF)),
+          type: 'VCU',
+          model: 'g3',
+          enforceModel: true,
+        );
+        expect(r.payloadLength, _len);
+      });
+
+      test('OEM production key at 0x1420 is refused', () {
+        expect(
+          () => PackV3.buildZip3FromDump(
+            _dump(keyAt1420: List.filled(16, 0xAB)),
+            type: 'VCU',
+            model: 'g3',
+            enforceModel: true,
+          ),
+          throwsFormatException,
+        );
+      });
+    });
+  });
+
+  group('CompatPatch.keyState', () {
+    test('the default SHU key', () {
+      expect(
+        CompatPatch.keyState(_dump(keyAt1420: _defaultKey)),
+        FwKeyState.defaultKey,
+      );
+    });
+    test('all 0xFF is blank', () {
+      expect(
+        CompatPatch.keyState(_dump(keyAt1420: List.filled(16, 0xFF))),
+        FwKeyState.blank,
+      );
+    });
+    test('anything else is oem', () {
+      expect(
+        CompatPatch.keyState(_dump(keyAt1420: List.filled(16, 0x00))),
+        FwKeyState.oem,
+      );
+    });
+    test('bleFlashable: key and blank yes, oem no', () {
+      expect(FwKeyState.defaultKey.bleFlashable, true);
+      expect(FwKeyState.blank.bleFlashable, true);
+      expect(FwKeyState.oem.bleFlashable, false);
     });
   });
 }

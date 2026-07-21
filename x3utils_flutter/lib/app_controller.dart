@@ -131,6 +131,50 @@ class AppController extends ChangeNotifier {
   bool _firmwareNoteWarn = false;
   FlashOnlyScope flashOnlyScope = FlashOnlyScope.fullImage;
 
+  // ── Make zip3 (offline packer) form state ──────────────────────────────────
+  // Operator-declared identity, ninebottea-style. detect() PRESELECTS from the
+  // loaded dump's banner (type always; VCU model from its code), but the
+  // operator's dropdown choices are what buildZip3FromDump actually uses. MCU
+  // has no model identity, so its model dropdown starts empty and the operator
+  // picks it. All transient — reset on every action switch.
+  static const List<String> zip3Types = ['VCU', 'MCU'];
+  static const List<String> zip3Models = ['zt3', 'g3', 'gt3', 'f3'];
+  String? zip3Type; // 'VCU' | 'MCU' (null = operator hasn't chosen)
+  String?
+  zip3Model; // 'zt3' | 'g3' | 'gt3' | 'f3' (null = operator hasn't chosen)
+  bool zip3EnforceModel = true; // info.json enforceModel checkbox
+  String zip3Name = ''; // editable displayName; blank → defaultZip3Name
+
+  void setZip3Type(String? t) {
+    if (running) return;
+    zip3Type = t;
+    notifyListeners();
+  }
+
+  void setZip3Model(String? m) {
+    if (running) return;
+    zip3Model = m;
+    notifyListeners();
+  }
+
+  void setZip3EnforceModel(bool v) {
+    if (running) return;
+    zip3EnforceModel = v;
+    notifyListeners();
+  }
+
+  // No notify: the name field is owned by the form's TextEditingController, so
+  // rebuilding on each keystroke would fight the cursor. External resets (dump
+  // reload / action switch) DO notify, and the form re-syncs from zip3Name then.
+  void setZip3Name(String v) => zip3Name = v;
+
+  void _resetZip3Form() {
+    zip3Type = null;
+    zip3Model = null;
+    zip3EnforceModel = true;
+    zip3Name = '';
+  }
+
   bool get isFlashOnlySlot0 =>
       actionId == 'flash_only' && flashOnlyScope == FlashOnlyScope.slot0;
 
@@ -140,6 +184,17 @@ class AppController extends ChangeNotifier {
       actionId == 'flash_backup' ? _firmwareStandard : _firmwareAdvanced;
   String? get firmwareNote => _firmwareNote;
   bool get firmwareNoteWarn => _firmwareNoteWarn;
+
+  /// Whether the primary CTA is ready to fire for the current action. Firmware
+  /// actions need a loaded file; Make zip3 additionally needs both dropdowns
+  /// chosen (an MCU dump can't preselect its model).
+  bool get canStart {
+    if (action.needsFirmware && firmwarePath == null) return false;
+    if (actionId == 'make_zip3' && (zip3Type == null || zip3Model == null)) {
+      return false;
+    }
+    return true;
+  }
 
   void setFirmware(String? path, {String? note, bool warn = false}) {
     if (actionId == 'flash_backup') {
@@ -159,6 +214,9 @@ class AppController extends ChangeNotifier {
   /// On success the bin's readable identity (banner model/type + serial state)
   /// becomes the firmware-bar note; generic/cleared serials show amber.
   FirmwareCheck selectFirmwareBin(String path) {
+    final makeZip3 = actionId == 'make_zip3';
+    // Make zip3 takes a full 128 KB dump (like the mainstream full-image path),
+    // never a slot bin.
     final check = isSlotAction
         ? Firmware.validateSlot(path)
         : Firmware.validate(path, requireSize: true);
@@ -169,14 +227,26 @@ class AppController extends ChangeNotifier {
       return check;
     }
     final bytes = File(path).readAsBytesSync();
+    // Flash Only and Make zip3 stay permissive: Flash Only writes crafted
+    // images, and Make zip3 lets the operator declare identity for a dump whose
+    // banner may be blank (rescue / never-provisioned).
     final gate = DeviceSpec.checkIncomingBin(
       bytes,
       slotBin: isSlotAction,
-      enforceBanner: actionId != 'flash_only',
+      enforceBanner: actionId != 'flash_only' && !makeZip3,
     );
     if (!gate.ok) {
       setFirmware(null);
       return gate;
+    }
+    if (makeZip3) {
+      // Preselect the dropdowns from the dump's banner (a suggestion only —
+      // type reliably, VCU model from its code; MCU/unknown leaves the model
+      // empty for the operator). A fresh dump gets a fresh default name.
+      final d = PackV3.detect(bytes);
+      zip3Type = d.type;
+      zip3Model = d.model;
+      zip3Name = '';
     }
     final id = DeviceSpec.describeBin(bytes, slotBin: isSlotAction);
     final summary = id.summary;
@@ -372,6 +442,7 @@ class AppController extends ChangeNotifier {
     if (running) return;
     actionId = id;
     if (id == 'flash_only') flashOnlyScope = FlashOnlyScope.fullImage;
+    _resetZip3Form(); // the packer form is transient, per action entry
     _firmwareAdvanced = null; // advanced actions don't remember loaded bins
     _firmwareNote = null;
     _firmwareNoteWarn = false;
@@ -543,6 +614,12 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _dispatch() async {
+    // Make zip3 is offline — a pure file→file repack that never talks to the
+    // controller, so it runs before (and independent of) the OpenOCD runner.
+    if (actionId == 'make_zip3') {
+      await _runMakeZip3();
+      return;
+    }
     final runner = _runner;
     if (runner == null) {
       _failCannotRun(
@@ -1438,5 +1515,81 @@ class AppController extends ChangeNotifier {
       'SHU-compatible firmware flashed & verified. Original saved to $raw',
       _flashFailMessage(f),
     );
+  }
+
+  /// Offline "Make zip3": read a full 128 KB backup dump, recover the exact
+  /// slot-0 payload via the device's own ZP length record, and repack it as a
+  /// BLE-loadable v3 package with the operator-declared identity. No hardware —
+  /// a file→file transform, so it just validates, packs, writes, and reports.
+  Future<void> _runMakeZip3() async {
+    final src = firmwarePath;
+    if (src == null) {
+      _set(
+        StageState.fail,
+        'No dump',
+        'Choose a 128 KB dump first',
+        'Pick a full backup .bin, then make the package.',
+      );
+      return;
+    }
+    final type = zip3Type;
+    final model = zip3Model;
+    if (type == null || model == null) {
+      _set(
+        StageState.fail,
+        'Pick identity',
+        'Choose the type and model',
+        'Set the firmware Type and Model the package should declare.',
+      );
+      return;
+    }
+    // Re-validate the dump at run time (the picker already did, but the file
+    // could have changed on disk).
+    final v = Firmware.validate(src, requireSize: true);
+    if (!v.ok) {
+      _set(StageState.fail, 'Dump invalid', 'Dump invalid', v.message);
+      return;
+    }
+
+    final name = zip3Name.trim().isEmpty
+        ? Firmware.defaultZip3Name(model: model, type: type)
+        : zip3Name.trim();
+    _log(
+      '== make zip3: $model/$type · enforceModel=$zip3EnforceModel · '
+      'name="$name" ==',
+    );
+    try {
+      final bytes = File(src).readAsBytesSync();
+      final result = PackV3.buildZip3FromDump(
+        bytes,
+        type: type,
+        model: model,
+        enforceModel: zip3EnforceModel,
+        displayName: name,
+      );
+      final outPath = Firmware.packedZip3Path(
+        result.displayName,
+        prefix: backupPrefix,
+      );
+      File(outPath).writeAsBytesSync(result.zipBytes);
+      _log(
+        '== packed ${result.model}/${result.type} · '
+        '${result.payloadLength} B payload → $outPath ==',
+      );
+      _finishReal(
+        true,
+        'zip3 written → $outPath (${result.model.toUpperCase()} · '
+            '${result.type} · ${result.payloadLength} bytes)',
+        '',
+        reseat: false,
+      );
+    } on FormatException catch (e) {
+      // The ZP guard fails closed on a dump whose exact length can't be read.
+      _log('== make zip3 failed: ${e.message} ==');
+      _finishReal(false, '', e.message, reseat: false);
+    } catch (e) {
+      _log('== make zip3 error: $e ==');
+      _finishReal(false, '', 'Could not write the package: $e', reseat: false);
+    }
   }
 }

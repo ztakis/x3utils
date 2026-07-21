@@ -915,3 +915,50 @@ survive machine switches and chat history loss.
     — the output is a genuine BLE-loadable package, not just a valid-looking one.
 - Next: the GUI "Make zip3" action (dropdowns, enforce checkbox, editable
   displayName, offline flow). Then weigh a version note (GUI is v1.2.0 BETA).
+- Make zip3 — GUI ACTION built + wired (Dart/Flutter only; the engine is
+  unchanged except the SHU-key gate below). Offline Advanced action placed after
+  Flash slot 0.
+  - Reuses the firmware picker for ONE full 128 KB dump; the connection mode is
+    ignored. A `PACKAGE IDENTITY` form holds Type (VCU/MCU) + Model
+    ({zt3,g3,gt3,f3}) dropdowns preselected from the dump banner via
+    `PackV3.detect` (type always; VCU model from its code; MCU model starts empty
+    — the operator picks it), an Enforce-model checkbox (default on), and an
+    editable displayName (blank -> `defaultZip3Name` `<model>_<TYPE>_<ts>`).
+    Output lands in `Documents/x3utils/packed_zip3`.
+  - `canStart` gates the CTA: a dump loaded AND both dropdowns chosen.
+    `_runMakeZip3` runs before the OpenOCD runner guard (offline); a
+    `FormatException` surfaces as the FAILED result; logs go to
+    `logs/make_zip3` when Save log is on.
+  - The generic bolt hero placeholder is hidden in Make zip3's idle state (space
+    reclaimed — it isn't a flash action). Busy/OK/fail badges are unaffected.
+  - Entry intro on the rail tile: an untimed "what is this for" modal (like the
+    Flash Only gate but NO countdown; package icon, not the bolt). It explains
+    the offline repackage flow, the repo-only requirement + the
+    necessary-not-sufficient caveat (amber), and the operator-declared identity.
+- SHU-key gate (repo-only) — Make zip3 refuses OEM/stock dumps.
+  - The 16 bytes at flash 0x1420 are the SHU/default firmware key (==
+    `NinebotTea.defaultKey` == `CompatPatch.signature`, the bytes flash_compat
+    writes). `CompatPatch.keyState(dump)` classifies them: default key =
+    repo/Compat fw; all-`0xFF` = the NEWER repo default (so repo fw does NOT
+    always carry the signature — do not assume it does); anything else =
+    OEM/stock production key. `buildZip3FromDump` stops fail-closed when
+    `!bleFlashable` (i.e. OEM).
+  - IMPORTANT: the gate is NECESSARY, NOT SUFFICIENT. A present key only rules
+    out the obvious OEM case; it does NOT guarantee SHU BLE will accept the
+    package — confirm by actually loading the file.
+  - Making an OEM dump SHU-flashable by rewriting the 0x1420 key is UNRESOLVED
+    (suspected enough for older firmware, NOT newer), so it is not automated;
+    OEM is simply refused. The stop in `buildZip3FromDump` is where any future
+    patch step would slot in.
+  - Operating model behind the tool (a nice-to-have, not core): flash from repo
+    (SHU) -> ST-Link full backup -> mod the bin -> Make zip3 -> BLE "Load from
+    file" -> keep a local repo of zip3s. ST-Link/x3utils stays backup-once +
+    recovery.
+- Verification: `dart format`, `flutter analyze` clean; 67 Flutter tests (was
+  59) — +7 key-gate tests (`keyState` three-way, `bleFlashable`, and pack
+  accepts key/blank + refuses OEM) and +1 widget test (Make zip3 intro + form).
+  Windows debug build compiles. End-to-end GUI validation on real g3 VCU 1.5.13
+  and 1.5.15 SHU dumps: banner detect preselected VCU/G3, the ZP record cut the
+  exact payload (56820 B for 1.5.13), packages wrote to `packed_zip3` and reload
+  via Choose .bin. BLE "Load from file" acceptance is the remaining real-world
+  proof — the offline path cannot self-verify it. Version unchanged: v1.2.0 BETA.

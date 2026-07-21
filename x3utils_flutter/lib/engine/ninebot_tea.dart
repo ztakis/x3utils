@@ -105,8 +105,12 @@ class NinebotTea {
     var sum = 0;
     for (var i = 0; i < _numRounds; i++) {
       sum = (sum + _delta) & _mask;
-      y = (y + ((((z << 4) + key[0]) ^ (z + sum) ^ ((z >> 5) + key[1])))) & _mask;
-      z = (z + ((((y << 4) + key[2]) ^ (y + sum) ^ ((y >> 5) + key[3])))) & _mask;
+      y =
+          (y + ((((z << 4) + key[0]) ^ (z + sum) ^ ((z >> 5) + key[1])))) &
+          _mask;
+      z =
+          (z + ((((y << 4) + key[2]) ^ (y + sum) ^ ((y >> 5) + key[3])))) &
+          _mask;
     }
     return (y, z);
   }
@@ -116,8 +120,12 @@ class NinebotTea {
     // because every use is reduced mod 2^32 by the trailing `& _mask`.
     var sum = (_delta * _numRounds) & _mask;
     for (var i = 0; i < _numRounds; i++) {
-      z = (z - ((((y << 4) + key[2]) ^ (y + sum) ^ ((y >> 5) + key[3])))) & _mask;
-      y = (y - ((((z << 4) + key[0]) ^ (z + sum) ^ ((z >> 5) + key[1])))) & _mask;
+      z =
+          (z - ((((y << 4) + key[2]) ^ (y + sum) ^ ((y >> 5) + key[3])))) &
+          _mask;
+      y =
+          (y - ((((z << 4) + key[0]) ^ (z + sum) ^ ((z >> 5) + key[1])))) &
+          _mask;
       sum = (sum - _delta) & _mask;
     }
     return (y, z);
@@ -141,7 +149,9 @@ class NinebotTea {
 
   Uint8List _verifyAndUnpad(List<int> data) {
     if (data.length < 4) {
-      throw const FormatException('Data too short to contain a valid checksum.');
+      throw const FormatException(
+        'Data too short to contain a valid checksum.',
+      );
     }
     final provided = _readWord(data, data.length - 4);
     final body = Uint8List.fromList(data.sublist(0, data.length - 4));
@@ -164,8 +174,9 @@ class NinebotTea {
 
   // ── Key schedule ───────────────────────────────────────────────────────────
 
-  static List<int> _wordsFromKey(List<int> key) =>
-      [for (var i = 0; i < 16; i += 4) _readWord(key, i)];
+  static List<int> _wordsFromKey(List<int> key) => [
+    for (var i = 0; i < 16; i += 4) _readWord(key, i),
+  ];
 
   /// After each 1 KB, every key byte becomes `(byte + itsIndex) & 0xFF`.
   static List<int> _updateKey(List<int> key) {
@@ -197,8 +208,8 @@ class NinebotTea {
   }
 
   static Uint8List _word32le(int w) => Uint8List.fromList([
-        w & 0xFF, (w >> 8) & 0xFF, (w >> 16) & 0xFF, (w >> 24) & 0xFF, //
-      ]);
+    w & 0xFF, (w >> 8) & 0xFF, (w >> 16) & 0xFF, (w >> 24) & 0xFF, //
+  ]);
 
   // ── Convenience helpers (mirror ninebottea/__main__.py) ────────────────────
 
@@ -206,7 +217,9 @@ class NinebotTea {
   static Uint8List keyFromHex(String hex) {
     final clean = hex.trim().replaceAll(' ', '');
     if (clean.length != 32) {
-      throw ArgumentError('Key must be 16 bytes (32 hex chars), got ${clean.length} chars.');
+      throw ArgumentError(
+        'Key must be 16 bytes (32 hex chars), got ${clean.length} chars.',
+      );
     }
     final out = Uint8List(16);
     for (var i = 0; i < 16; i++) {

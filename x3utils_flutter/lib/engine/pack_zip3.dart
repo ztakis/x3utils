@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 
 import 'device_spec.dart';
+import 'firmware.dart';
 import 'ninebot_tea.dart';
 import 'zp_extract.dart';
 
@@ -197,6 +198,23 @@ class PackV3 {
     final verdict = DeviceSpec.evaluateZip3(m, t);
     if (!verdict.ok) {
       throw FormatException(verdict.reason);
+    }
+
+    // SHU BLE flashing decrypts with the default key, so a source dump missing
+    // that key at 0x1420 (repo/Compat firmware has it; the newer repo default
+    // leaves it blank 0xFF) is definitely OEM/stock and would fail a BLE flash
+    // — refuse it. NOTE: passing this is NECESSARY, NOT SUFFICIENT — a present
+    // key does not guarantee SHU BLE will accept the package; the gate only
+    // rejects the obvious OEM case. Whether an OEM dump could be made
+    // SHU-flashable by rewriting this key is unresolved (suspected enough for
+    // older firmware, not newer), so it's refused for now; this stop is where
+    // any patch step would slot in.
+    if (!CompatPatch.keyState(dumpBytes).bleFlashable) {
+      throw const FormatException(
+        'This dump is OEM/stock firmware — it does not carry the default SHU '
+        'key at 0x1420, so a package made from it would fail a BLE flash. Only '
+        'firmware flashed from the repo (SHU-compatible) can be repackaged.',
+      );
     }
 
     // Exact slot-0 payload from the device's own committed length.

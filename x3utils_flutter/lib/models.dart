@@ -194,6 +194,18 @@ const kActions = <FlashAction>[
     needsFirmware: true,
   ),
   FlashAction(
+    id: 'make_zip3',
+    section: Section.advanced,
+    name: 'Make zip3',
+    script: 'pack · offline',
+    sub:
+        'Repackage a 128 KB backup dump into a BLE-loadable zip3 package. Offline — reads a file, writes a file, never touches the controller.',
+    chips: [InfoChipData('offline', ChipKind.ok)],
+    cta: 'Make zip3',
+    okMsg: 'zip3 package written.',
+    needsFirmware: true,
+  ),
+  FlashAction(
     id: 'rdp_check',
     section: Section.advanced,
     name: 'Check protection',

@@ -85,4 +85,6 @@ const kAppVersion = '1.2.0';
 // package_macos.sh asserts that three-way match.
 const kAppStage = 'BETA';
 // What the UI renders after the leading "v".
-final kAppVersionLabel = kAppStage.isEmpty ? kAppVersion : '$kAppVersion $kAppStage';
+final kAppVersionLabel = kAppStage.isEmpty
+    ? kAppVersion
+    : '$kAppVersion $kAppStage';

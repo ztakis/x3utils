@@ -147,15 +147,20 @@ class Firmware {
   /// `<model>_<TYPE>_<ts>` (e.g. `g3_MCU_2026-07-21_10-40-30`). A dump carries
   /// no version string, so the operator accepts or edits this; it becomes both
   /// the `info.json` displayName and the output filename.
-  static String defaultZip3Name({required String model, required String type}) =>
-      '${model}_${type}_${_stamp()}';
+  static String defaultZip3Name({
+    required String model,
+    required String type,
+  }) => '${model}_${type}_${_stamp()}';
 
   /// Output path for a "Make zip3" package under
   /// `Documents/x3utils/packed_zip3`, named after the (possibly edited)
   /// [displayName], sanitised, with a `.zip` extension.
   static String packedZip3Path(String displayName, {String prefix = ''}) {
     final dir = _dir('packed_zip3');
-    final clean = displayName.trim().replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final clean = displayName.trim().replaceAll(
+      RegExp(r'[^A-Za-z0-9._-]'),
+      '_',
+    );
     final base = clean.isEmpty ? 'firmware' : clean;
     return p.join(dir, '${_pre(prefix)}$base.zip');
   }
@@ -251,6 +256,29 @@ class Firmware {
       .replaceAll('T', '_');
 }
 
+/// State of the 16-byte firmware key at [CompatPatch.offset] (0x1420) — the
+/// region the SHU compat patch writes. SHU BLE flashing decrypts with the
+/// default (SHU) key, so a dump can only be repackaged into a BLE-loadable zip3
+/// if it carries that key here, or leaves it blank (`0xFF`, the newer repo
+/// default). OEM/stock firmware holds a different production key and would fail
+/// a BLE flash. This gate is NECESSARY, NOT SUFFICIENT: a present key only rules
+/// out the obvious OEM case — it does not guarantee SHU BLE will accept the
+/// package. Whether an OEM dump could be made SHU-flashable just by rewriting
+/// this key is unresolved (suspected enough for older firmware, not newer), so
+/// Make zip3 refuses OEM dumps rather than guess.
+enum FwKeyState {
+  /// The default SHU key — repo/Compat firmware.
+  defaultKey,
+
+  /// All `0xFF` — the newer repo default.
+  blank,
+
+  /// A different production key — OEM/stock, not BLE-flashable as-is.
+  oem;
+
+  bool get bleFlashable => this != FwKeyState.oem;
+}
+
 /// The SHU-compatible patch (flash_compat step 2): inject a fixed 16-byte
 /// signature at 0x1420 into the chip's own firmware, then flash it back.
 class CompatPatch {
@@ -261,6 +289,24 @@ class CompatPatch {
     for (var i = 0; i < s.length; i += 2)
       int.parse(s.substring(i, i + 2), radix: 16),
   ];
+
+  /// Classify the 16-byte firmware key at [offset] in a full 128 KB [image]
+  /// (a backup dump). Used to gate "Make zip3": only [FwKeyState.bleFlashable]
+  /// dumps — repo/Compat (default key) or newer repo default (blank) — can be
+  /// repackaged; OEM firmware is refused. See flash_compat's 0x1420 patch.
+  static FwKeyState keyState(List<int> image) {
+    if (image.length < offset + signature.length) return FwKeyState.oem;
+    var isKey = true;
+    var isBlank = true;
+    for (var i = 0; i < signature.length; i++) {
+      final b = image[offset + i];
+      if (b != signature[i]) isKey = false;
+      if (b != 0xFF) isBlank = false;
+    }
+    if (isKey) return FwKeyState.defaultKey;
+    if (isBlank) return FwKeyState.blank;
+    return FwKeyState.oem;
+  }
 
   /// Read [srcPath], write the signature at [offset], verify, save [dstPath].
   static FirmwareCheck apply(String srcPath, String dstPath) {

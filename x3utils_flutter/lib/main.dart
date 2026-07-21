@@ -61,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onEnter() {
     switch (c.stage) {
       case StageState.idle:
-        if (!(c.action.needsFirmware && c.firmwarePath == null)) _onStart();
+        if (c.canStart) _onStart();
         break;
       case StageState.hold:
       case StageState.release:
@@ -953,6 +953,12 @@ class _ActionTile extends StatelessWidget {
                 if (action.id == 'flash_only' && c.actionId != action.id) {
                   final ok = await _showFlashOnlyWarning(context);
                   if (ok != true) return;
+                } else if (action.id == 'make_zip3' &&
+                    c.actionId != action.id) {
+                  // An untimed "what is this for" intro so the operator-declared
+                  // identity is understood before entering the action.
+                  final ok = await _showMakeZip3Notice(context);
+                  if (ok != true) return;
                 }
                 c.selectAction(action.id);
               },
@@ -1257,8 +1263,14 @@ class _HeroStageState extends State<_HeroStage>
                             color: c.messageTone.color,
                           ),
                         ),
-                        const SizedBox(height: 22),
-                        _Visual(c: c, accent: accent, pulse: _pulse),
+                        // Make zip3's idle hero is the picker + identity form,
+                        // so the generic bolt placeholder is redundant there.
+                        // Busy/OK/fail still show their badges.
+                        if (!(c.actionId == 'make_zip3' &&
+                            c.stage == StageState.idle)) ...[
+                          const SizedBox(height: 22),
+                          _Visual(c: c, accent: accent, pulse: _pulse),
+                        ],
                         if (c.stage == StageState.idle &&
                             c.action.needsFirmware) ...[
                           const SizedBox(height: 20),
@@ -1267,6 +1279,11 @@ class _HeroStageState extends State<_HeroStage>
                             onPick: widget.onPickFirmware,
                             onPickZip: widget.onPickZip,
                           ),
+                        ],
+                        if (c.stage == StageState.idle &&
+                            c.actionId == 'make_zip3') ...[
+                          const SizedBox(height: 14),
+                          _MakeZip3Form(c: c),
                         ],
                         const SizedBox(height: 26),
                         _StageButtons(c: c, onStart: widget.onStart),
@@ -1546,11 +1563,10 @@ class _StageButtons extends StatelessWidget {
     final children = <Widget>[];
     switch (c.stage) {
       case StageState.idle:
-        final needsFirmware = c.action.needsFirmware && c.firmwarePath == null;
         children.add(
           _PillButton(
             label: c.action.cta,
-            onTap: needsFirmware ? null : onStart,
+            onTap: c.canStart ? onStart : null,
             gradient: c.action.danger == DangerLevel.hard
                 ? const [Color(0xFFFF6472), AppColors.danger]
                 : [AppColors.brand, AppColors.brand2],
@@ -1635,6 +1651,106 @@ class _StageButtons extends StatelessWidget {
     bg: AppColors.line,
     fg: AppColors.txt,
     border: AppColors.line2,
+  );
+}
+
+/// Entry intro for Make zip3: an untimed "what is this for" modal shown when
+/// the action is opened from the rail. The action is offline and
+/// non-destructive, so this only EXPLAINS what it does and that the package
+/// identity is operator-declared — nothing here verifies the declared
+/// Type/Model against real hardware. Returns true to enter the action.
+Future<bool?> _showMakeZip3Notice(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: const Color(0xB3040A0F),
+    builder: (ctx) => Dialog(
+      backgroundColor: AppColors.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.line2),
+      ),
+      child: Container(
+        width: 420,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: AppColors.brand.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.inventory_2_outlined,
+                color: AppColors.brand,
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'What Make zip3 is for',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.txt,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'It repackages a 128 KB backup dump into a zip3 you can BLE-flash '
+              'from the app’s “Load from file”. Fully offline — it reads the '
+              'dump and writes a .zip, and never touches a controller.',
+              style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Repo firmware only. The dump must come from firmware flashed '
+              'from the repo (SHU-compatible); an OEM/stock dump is refused. '
+              'And a successful pack is not a promise — SHU BLE can still '
+              'reject the file, so confirm it by loading it.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: AppColors.hold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'The package is labelled with the Type and Model you pick here; '
+              'nothing checks that against real hardware. Declare the wrong '
+              'identity and you get a correctly-built but mislabelled package. '
+              'Confirm VCU/MCU and the model before you pack.',
+              style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _PillButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.pop(ctx, false),
+                  bg: AppColors.line,
+                  fg: AppColors.txt,
+                  border: AppColors.line2,
+                  small: true,
+                ),
+                const SizedBox(width: 10),
+                _PillButton(
+                  label: 'Continue',
+                  onTap: () => Navigator.pop(ctx, true),
+                  gradient: [AppColors.brand, AppColors.brand2],
+                  fg: const Color(0xFF04120F),
+                  small: true,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }
 
@@ -2322,6 +2438,230 @@ class _FlashOnlyScopeControl extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The offline "Make zip3" form: operator-declared Type/Model (preselected from
+/// the loaded dump's banner), an enforce-model checkbox, and an editable package
+/// name. Reads a full backup dump and writes a BLE-loadable v3 package.
+class _MakeZip3Form extends StatefulWidget {
+  const _MakeZip3Form({required this.c});
+  final AppController c;
+  @override
+  State<_MakeZip3Form> createState() => _MakeZip3FormState();
+}
+
+class _MakeZip3FormState extends State<_MakeZip3Form> {
+  final TextEditingController _nameCtl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameCtl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.c;
+    // Re-sync the local field when the controller reset the name externally
+    // (a fresh dump / action switch). Typing doesn't notify, so this never
+    // fights the cursor while the operator edits.
+    if (c.zip3Name != _nameCtl.text) {
+      _nameCtl.text = c.zip3Name;
+      _nameCtl.selection = TextSelection.collapsed(
+        offset: _nameCtl.text.length,
+      );
+    }
+    final hasDump = c.firmwarePath != null;
+    final canName = c.zip3Type != null && c.zip3Model != null;
+    final defaultName = canName
+        ? Firmware.defaultZip3Name(model: c.zip3Model!, type: c.zip3Type!)
+        : 'model_TYPE_timestamp';
+
+    return Opacity(
+      opacity: hasDump ? 1 : 0.5,
+      child: IgnorePointer(
+        ignoring: !hasDump,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 460),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+          decoration: BoxDecoration(
+            color: AppColors.panel,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.line2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'PACKAGE IDENTITY',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.6,
+                  color: AppColors.mut,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _dropdown(
+                      hint: 'Type',
+                      value: c.zip3Type,
+                      items: AppController.zip3Types,
+                      onChanged: c.setZip3Type,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _dropdown(
+                      hint: 'Model',
+                      value: c.zip3Model,
+                      items: AppController.zip3Models,
+                      onChanged: c.setZip3Model,
+                      labelOf: (m) => m.toUpperCase(),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _EnforceModelToggle(c: c),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _nameCtl,
+                onChanged: c.setZip3Name,
+                style: const TextStyle(
+                  fontFamily: kMono,
+                  fontSize: 13,
+                  color: AppColors.txt,
+                ),
+                cursorColor: AppColors.brand,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: 'Package name',
+                  labelStyle: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.dim,
+                  ),
+                  hintText: defaultName,
+                  hintStyle: const TextStyle(
+                    fontFamily: kMono,
+                    fontSize: 13,
+                    color: AppColors.mut,
+                  ),
+                  helperText:
+                      'Blank → the default above. Saved to Documents/x3utils/packed_zip3.',
+                  helperStyle: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.mut,
+                  ),
+                  helperMaxLines: 2,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 11,
+                  ),
+                  filled: true,
+                  fillColor: AppColors.panel2,
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: AppColors.line2),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: AppColors.brand),
+                  ),
+                ),
+              ),
+              if (hasDump && !canName) ...[
+                const SizedBox(height: 8),
+                Text(
+                  c.zip3Type == 'MCU'
+                      ? 'An MCU dump has no model identity — pick the model.'
+                      : 'Pick the firmware type and model to build.',
+                  style: const TextStyle(fontSize: 12, color: AppColors.hold),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dropdown({
+    required String hint,
+    required String? value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+    String Function(String)? labelOf,
+  }) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.panel2,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.line2),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          hint: Text(
+            hint,
+            style: const TextStyle(color: AppColors.mut, fontSize: 13),
+          ),
+          dropdownColor: AppColors.panel2,
+          style: const TextStyle(color: AppColors.txt, fontSize: 13),
+          icon: const Icon(Icons.expand_more_rounded, color: AppColors.dim),
+          items: [
+            for (final it in items)
+              DropdownMenuItem(value: it, child: Text(labelOf?.call(it) ?? it)),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+/// The "Enforce model" checkbox for Make zip3 — mirrors info.json's
+/// `enforceModel`; default on so a package only loads on its declared model.
+class _EnforceModelToggle extends StatelessWidget {
+  const _EnforceModelToggle({required this.c});
+  final AppController c;
+  @override
+  Widget build(BuildContext context) {
+    final on = c.zip3EnforceModel;
+    return InkWell(
+      onTap: () => c.setZip3EnforceModel(!on),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Icon(
+              on
+                  ? Icons.check_box_rounded
+                  : Icons.check_box_outline_blank_rounded,
+              size: 18,
+              color: on ? AppColors.brand : AppColors.mut,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Enforce model — the package only loads on its declared model',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: on ? AppColors.txt : AppColors.dim,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
