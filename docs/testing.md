@@ -36,6 +36,11 @@ Record one row per meaningful test run.
 | 2026-07-13 | Linux Mint home primary | AT32F415 testbed | Clone ST-LINK | D | RDP check / FAP enable / FAP clear / rescue unlock | pass | `rdp_check.sh -l` detected unlocked, protected, and unlocked-again states. FAP writers/rescue may miss the first race and then succeed on manual retry. |
 | 2026-07-21 | Linux Mint home primary | AT32F415 testbed | ST-LINK test setup | A/B/C/D | CLI v1.8.0 Check Connection | pass | A and C halted and probed normally; B kept the guided hold/count/release prompts live; D reported a missing adapter, retried, then caught and confirmed the flash bank on attempt 218. A/B/C reported the stable board fingerprint PC `0x08000120`, MSP `0x20000550`. |
 | 2026-07-21 | Linux Mint home primary | AT32F415 testbed | ST-LINK | A | CLI v1.8.0 integrated launcher | pass | Full dump, protection check, SHU-compatible flash, backup + loaded-file flash, Advanced flash-only, and Advanced slot0 all passed. Advanced rescue launched with `-l`, displayed the plain-mode and mass-erase warnings, and was intentionally aborted at the `UNLOCK` confirmation; no destructive rescue action ran. |
+| 2026-07-21 | macOS Intel | AT32F415 testbed | ST-LINK test setup | A/B/C/D | CLI v1.8.0 Check Connection | pass | A halted and probed normally; B preserved the guided hold/count/release prompts; C recovered from transient examination errors, halted, and probed; D caught and confirmed the `artery` flash bank on attempt 197. A/B/C reported PC `0x08000120`, MSP `0x20000550`. |
+| 2026-07-21 | macOS Intel | AT32F415 testbed | ST-LINK | A | CLI v1.8.0 integrated launcher | pass | Backup + loaded-file flash (`zt3_vcu_rescue.bin`), SHU-compatible dump/patch/flash, Advanced flash-only, and Advanced slot0 all wrote and verified successfully. Protection check read FAP `0xA5`/complement `0x5A` and readable flash, reporting NOT PROTECTED. Rescue displayed the plain-mode and mass-erase warnings and was intentionally aborted before `UNLOCK`; no mass erase ran. |
+| 2026-07-21 | macOS Intel | AT32F415 testbed | ST-LINK | D | CLI v1.8.0 protection check | pass | xPack Power-race caught on attempt 403, detected the `artery` flash bank, read FAP `0xA5`/complement `0x5A` and readable vectors, then reported NOT PROTECTED. The first port incorrectly waited for Linux OEM's literal `target halted`; macOS now stops on complete RDP evidence. |
+| 2026-07-21 | macOS Intel | AT32F415 testbed | ST-LINK | D | CLI v1.8.0 rescue unlock / post-POR check | pass | `rescue_unlock.sh -l -y` caught on attempt 18, completed the option rewrite, read back `ffff5aa5`, and emitted the completion marker. After power-cycle, `rdp_check.sh -l` caught on attempt 2, confirmed FAP `0xA5`/complement `0x5A`, and found readable blank `0xFF` main flash—the warned mass erase occurred. |
+| 2026-07-21 | macOS Intel | AT32F415 testbed | ST-LINK | A | CLI v1.8.0 post-rescue recovery | pass | Backup + Flash safely aborted because the mass-erased backup was correctly rejected as single-byte `0xFF` content. Advanced Flash Only then erased, wrote, and verified the full 131072-byte `zt3_vcu_rescue.bin`, restoring normal firmware. |
 | 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | D | full dump | pass | Three successful validated 131072-byte dumps: attempts 75, 312, and 110. During experimentation, SWD could halt on attempts 31, 6, and 105 without the dump completing, consistent with marginal/parasitic powering. The live-catch experiment was reverted; mode D remains best-effort and reports success only after the complete action. |
 | 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | A | Flutter packaged Check connection | pass | Packaged v1.1.3 app detected the target and reported PASS using embedded universal OpenOCD. |
 | 2026-07-16 | macOS Intel | AT32F415 testbed | Clone ST-LINK | D | Flutter packaged Check connection | pass | Power-race caught on attempt 78, detected the `artery` flash bank at `0x08000000`, exited 0, and produced an evidence-backed PASS. |
@@ -93,6 +98,7 @@ Record one row per meaningful test run.
 | Date | OS | Scope | Result | Notes |
 | --- | --- | --- | --- | --- |
 | 2026-07-21 | Linux Mint home primary | CLI v1.8.0 Linux port | pass | All Linux shell scripts passed `bash -n`; ShellCheck reported no error-severity findings; `git diff --check` passed; launcher main/Advanced navigation smoke test passed without hardware access. Remaining ShellCheck output is shared-source analysis and existing style guidance. |
+| 2026-07-21 | macOS Intel | CLI v1.8.0 macOS port | pass | All macOS shell scripts passed `bash -n`; `git diff --check`, launcher main/Advanced navigation, executable-permission checks, A/B/C/D RDP resolver construction, and arm64/x64 target-asset checks passed. Bundled xPack OpenOCD launched and reported its version. ShellCheck was unavailable on this machine. |
 | 2026-07-16 | macOS Intel | CLI v1.7.0 Power-race port | pass | System Bash 3.2 syntax passed for all macOS scripts; `git diff --check` passed; arm64/x64 race configs are identical; x64 bundled OpenOCD parsed `target/artery/at32f4x_race.cfg` and shut down without `init`. The temporary live-catch monitor was reverted after hardware showed that SWD halt cannot prove stable external 3V3 power. The macOS read-only RDP check does not support `-l`; mode-D flash validation remains required. |
 | 2026-07-16 | macOS Intel | Flutter v1.1.3 package | pass | `tool/package_macos.sh` built a universal app, embedded `native/macos`, verified architecture slices and deep ad-hoc signature, parsed the packaged race cfg without `init`, and produced a ZIP. |
 | 2026-07-16 | macOS Intel | Flutter RDP temporary-tree regression | pass | `flutter test test/rdp_runner_test.dart` used fake OpenOCD to confirm macOS root-level `config.sh`, `--launcher`, and A/B/C mode selection. `flutter analyze` passed. |
@@ -100,12 +106,18 @@ Record one row per meaningful test run.
 
 ### macOS mode-D RDP check note
 
-- `rdp_check.sh -l` is disabled on macOS. Stock xPack OpenOCD does not provide
-  a reliable catch signal for this loop at either `-d0` or `-d2`.
-- Run `rdp_check.sh` without `-l` to use its guided rescue connection.
-- This restriction is for the standalone CLI. Flutter blocks Power-race RDP
-  before script launch, so its macOS RDP check safely uses `--launcher` for
-  modes A, B, and C.
+- The standalone macOS CLI accepts `rdp_check.sh -l` in launcher modes A/B/C/D.
+  Mode D uses fresh xPack OpenOCD processes and keeps the final verdict gated
+  on actual FAP/main-flash evidence; it does not treat a halt alone as a green
+  protection verdict. Hardware caught on attempt 403 and reported NOT PROTECTED
+  from valid option-byte and main-flash evidence.
+- Mode-D `rescue_unlock.sh -l` uses the same fresh-process hammer strategy after
+  the explicit `UNLOCK` confirmation. It requires option-area readback plus an
+  end-of-sequence marker before reporting success. Hardware completed on attempt
+  18; the post-POR check completed on attempt 2 and confirmed unlocked option
+  bytes plus the expected blank main flash after mass erase.
+- Flutter separately blocks Power-race RDP before script launch, so its macOS
+  RDP check continues to use `--launcher` only for modes A, B, and C.
 
 ## Regression Notes
 
@@ -161,3 +173,16 @@ Use this section for failures that should be remembered.
 - Fix or workaround: Treat as macOS icon cache. Trashing the old app and
   installing fresh resolved it. Do not rename `AppIcon` or bump versions solely
   as a cache workaround.
+
+### 2026-07-21
+
+- Issue: macOS CLI Mode-D `rdp_check.sh -l` kept respawning after complete FAP
+  and main-flash reads.
+- Platform: macOS Intel CLI v1.8.0 with bundled xPack OpenOCD.
+- Reproduction: Select launcher Mode D and run Advanced Check Protection.
+- Fix or workaround: Linux OEM OpenOCD prints `target halted`, but xPack at
+  `-d0` does not. Grade the attempt from action-specific flash-bank, FAP, and
+  main-flash evidence. Hardware retest passed on attempt 403. Mode-D rescue now
+  also respawns and requires rewrite/readback completion evidence; destructive
+  hardware validation completed on attempt 18, with the post-POR unlocked/blank
+  state confirmed on attempt 2.

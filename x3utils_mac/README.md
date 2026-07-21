@@ -156,9 +156,71 @@ After installation:
 
 Run macOS scripts from Terminal. If something fails, keep the terminal open and copy the exact error text.
 
+## Launcher Menus (v1.8.0)
+
+The main menu is:
+
+1. Check Connection
+2. Backup Full Memory (128 KB)
+3. Flash SHU Compatible
+4. Backup + Flash Loaded File
+5. Load / Change Target `.bin` File
+6. Advanced
+7. Exit
+
+Option 4 uses the file loaded with Option 5. The SHU-compatible and Advanced
+flash actions keep their own prompts and do not reuse that loaded file.
+
+The selected connection mode is saved in `config.sh`:
+
+- A — Default / blinker buttons
+- B — C45 / clone ST-LINK, with the guided hold/count/release flow
+- C — C45 / genuine ST-LINK using nRST
+- D — Power-race using fresh xPack OpenOCD processes to catch power-on
+
+Mode B also exposes `T` to change the guided countdown timeout.
+
+### Advanced Menu
+
+1. Flash Only — No Backup
+2. Flash Slot 0
+3. Check Protection
+4. Unlock / Rescue — Mass Erase
+5. Back
+
+Flash Only is deliberately dangerous because it skips the forced backup. It is
+also the correct recovery path after rescue has left a confirmed blank chip;
+the normal backup-required flash path rejects an all-`0xFF` dump.
+
+Check Protection is read-only. Unlock / Rescue rewrites protection options and
+can mass-erase main flash. It requires the explicit `UNLOCK` confirmation.
+Both CLI actions honor launcher modes A/B/C/D. Flutter has its own separate
+Mode-D protection block; that GUI restriction does not apply to this CLI.
+
+### macOS Power-Race Timing
+
+Mode D is a best-effort power-on catch. macOS uses upstream xPack OpenOCD,
+which starts more slowly than the OEM OpenOCD builds used on Windows/Linux.
+Each dot is printed after one complete missed attempt, so pauses and uneven dot
+timing are normal.
+
+Protection Check keeps retrying until one attempt contains the flash-bank, FAP,
+and main-flash evidence needed for a verdict. After `UNLOCK` is confirmed,
+Rescue similarly uses fresh attempts and reports success only after option-area
+readback and rewrite-completion evidence.
+
 ## Direct Script Usage
 
 Most users should use `launcher.sh`, but the lower-level scripts can be run directly.
+
+### Check Connection Directly
+
+```bash
+./connection_test.sh
+```
+
+This uses the connection mode currently saved in `config.sh`. It connects,
+halts, and probes the flash bank without dumping or writing firmware.
 
 ### Dump Directly
 
@@ -186,6 +248,19 @@ If no path is supplied, `flash.sh` asks for one.
 
 This uses `python3` for the patch step and the connection mode currently saved in `config.sh`.
 
+### Advanced Scripts Directly
+
+```bash
+./special/flash_only.sh
+./special/flash_slot0.sh
+./special/rdp/rdp_check.sh -l
+./special/rdp/rescue_unlock.sh -l
+```
+
+The flash scripts prompt for their own file. `-l` tells the RDP tools to honor
+the launcher mode saved in `config.sh`; without `-l`, they use the standalone
+guided rescue connection. Rescue is destructive and still requires `UNLOCK`.
+
 ## Important Detail For Direct Scripts
 
 The launcher saves the selected connection mode by editing:
@@ -194,7 +269,8 @@ The launcher saves the selected connection mode by editing:
 config.sh
 ```
 
-If you run `dump.sh`, `flash.sh`, or `flash_compat.sh` directly, they use the last connection mode selected in the launcher.
+If you run `connection_test.sh`, `dump.sh`, `flash.sh`, or `flash_compat.sh`
+directly, they use the last connection mode selected in the launcher.
 
 If you are not sure:
 
@@ -212,6 +288,10 @@ Prepares macOS dependencies and executable permissions.
 `launcher.sh`
 
 Main terminal menu.
+
+`connection_test.sh`
+
+Runs a read-only ST-LINK and target connection check using the saved mode.
 
 `dump.sh`
 
@@ -246,7 +326,8 @@ the macOS-specific upstream Artery target configs, including mode D's
 
 `special/`
 
-Experimental / advanced scripts. Read `special/notes.txt` before using anything there.
+Advanced Flash Only, Slot 0, and protection/rescue scripts. Read
+`special/notes.txt` before using anything there.
 
 ## Common macOS Problems
 
@@ -337,6 +418,19 @@ Run:
 ```bash
 chmod u+w config.sh
 ```
+
+Mode-D dots pause or move unevenly
+
+This is normal with xPack OpenOCD. Each dot represents a finished attempt, not
+a timed animation. Apply power as prompted and let the fresh-process loop keep
+trying.
+
+`Bin file contains only a single repeated byte value` after rescue
+
+A successful protection rescue can leave main flash blank (`0xFF`). The normal
+Backup + Flash path rejects that dump by design. Use Advanced → Flash Only to
+restore a known-good full 128 KB image, then return to normal backup-required
+operations.
 
 Terminal output is hard to read after failure
 

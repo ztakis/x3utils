@@ -1005,3 +1005,40 @@ survive machine switches and chat history loss.
   - All Linux scripts passed `bash -n`; ShellCheck had no error-level findings;
     `git diff --check` and non-hardware launcher navigation passed. Linux CLI is
     now v1.8.0. macOS remains v1.7.0 pending its port and hardware checks.
+
+- macOS CLI v1.8.0 launcher port completed and hardware-tested.
+  - Added the read-only `connection_test.sh` using the bundled architecture-
+    selected xPack OpenOCD and macOS `target/artery/at32f4x*.cfg` paths. Modes
+    A/B/C keep live output; Mode D respawns OpenOCD and requires the expected
+    `flash 'artery' found` evidence.
+  - The launcher now uses the settled seven-action order and Advanced submenu.
+    Standalone Flash Only and Slot 0 retain their own prompts; protection and
+    rescue receive `-l` and honor launcher modes A/B/C/D. The CLI supports Mode
+    D RDP while Flutter retains its separate pre-launch Mode-D block.
+  - Check Connection passed on hardware in A/B/C/D. Mode B preserved guided
+    hold/count/release prompts; C recovered from transient examination errors;
+    D confirmed the flash bank on attempt 197.
+  - Mode-D protection check exposed one xPack/OEM output difference: xPack at
+    `-d0` completes the flash/FAP/vector reads without Linux OEM's literal
+    `target halted` marker. The macOS loop now stops on complete action-specific
+    evidence; hardware retest caught on attempt 403 and correctly reported NOT
+    PROTECTED. Mode-D rescue uses the same fresh-process hammer strategy after
+    `UNLOCK`, gated by option-area readback and an end-of-sequence marker.
+    Destructive hardware validation caught on attempt 18 and read back
+    `ffff5aa5`; after power-cycle, the RDP check caught on attempt 2 and confirmed
+    FAP=0xA5 with readable blank flash, proving the warned mass erase occurred.
+    The normal backup-required flash path then safely refused the all-`0xFF`
+    blank dump; Advanced Flash Only wrote and verified all 131072 bytes of
+    `zt3_vcu_rescue.bin`, restoring the board.
+  - Integrated Mode-A launcher testing passed for backup + loaded-file flash,
+    SHU-compatible dump/patch/flash, Advanced flash-only, Advanced slot0, and
+    protection check. Rescue warnings were verified and the action was aborted
+    before `UNLOCK`; no mass erase ran. All writes showed real verify evidence.
+  - All macOS shell scripts passed `bash -n`; `git diff --check`, launcher
+    navigation, permissions, RDP resolver construction, and arm64/x64 target
+    asset checks passed. ShellCheck was unavailable. macOS CLI is now v1.8.0;
+    Flutter remains independently versioned at v1.2.0 BETA.
+  - Updated the Linux and macOS platform READMEs for the v1.8.0 main/Advanced
+    menus, direct-script entry points, A/B/C/D RDP launcher behavior, rescue
+    warnings, and blank-chip recovery. The macOS guide also records xPack's
+    slower uneven Mode-D cadence and the evidence required for check/rescue.
