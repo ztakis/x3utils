@@ -133,12 +133,14 @@ while true; do
     fi
 
     echo
-    echo -e " [ ${CL_C}Actions - Enter 1-5 to execute${CL_NC} ]"
-    echo "  [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)"
-    echo "  [2] Run Full Memory Dump (128 KB)"
-    echo "  [3] Flash Loaded File to Chip"
-    echo "  [4] Load / Change Target .bin File"
-    echo "  [5] Exit"
+    echo -e " [ ${CL_C}Actions - Enter 1-7 to execute${CL_NC} ]"
+    echo "  [1] Check Connection"
+    echo "  [2] Backup Full Memory (128 KB)"
+    echo "  [3] Flash SHU Compatible (ZT3, G3, F3/F3Pro)"
+    echo "  [4] Backup + Flash Loaded File"
+    echo "  [5] Load / Change Target .bin File"
+    echo "  [6] Advanced"
+    echo "  [7] Exit"
     echo
     echo -e " [ ${CL_C}Connection Options - Enter A, B, C, or D to change${CL_NC} ]"
     if [[ "$current_radio" == "A" ]]; then
@@ -198,16 +200,15 @@ while true; do
 
         1)
             echo
-            echo "Launching Flash SHU compatible (ZT3/G3/F3/F3Pro)..."
+            echo "Launching Connection Check..."
             echo
-            if [[ -f "$SCRIPT_DIR/flash_compat.sh" ]]; then
-                bash "$SCRIPT_DIR/flash_compat.sh"
+            if [[ -f "$SCRIPT_DIR/connection_test.sh" ]]; then
+                bash "$SCRIPT_DIR/connection_test.sh"
                 if [[ $? -ne 0 ]]; then
-                    echo -e "[${CL_R}FAIL${CL_NC}] Flash script reported an error!"
                     read -rp "Press ENTER to continue..."
                 fi
             else
-                echo -e "[${CL_R}FAIL${CL_NC}] Could not find flash_compat.sh."
+                echo -e "[${CL_R}FAIL${CL_NC}] Could not find connection_test.sh."
                 read -rp "Press ENTER to continue..."
             fi
             ;;
@@ -229,10 +230,26 @@ while true; do
             ;;
 
         3)
+            echo
+            echo "Launching Flash SHU compatible (ZT3/G3/F3/F3Pro)..."
+            echo
+            if [[ -f "$SCRIPT_DIR/flash_compat.sh" ]]; then
+                bash "$SCRIPT_DIR/flash_compat.sh"
+                if [[ $? -ne 0 ]]; then
+                    echo -e "[${CL_R}FAIL${CL_NC}] Flash script reported an error!"
+                    read -rp "Press ENTER to continue..."
+                fi
+            else
+                echo -e "[${CL_R}FAIL${CL_NC}] Could not find flash_compat.sh."
+                read -rp "Press ENTER to continue..."
+            fi
+            ;;
+
+        4)
             if [[ -z "$dragged_file" ]]; then
                 echo
                 echo -e "[${CL_R}FAIL${CL_NC}] You cannot flash without loading a file first."
-                echo "       Please select Option [4] to load a file."
+                echo "       Please select Option [5] to load a file."
                 echo
                 read -rp "Press ENTER to continue..."
                 continue
@@ -252,7 +269,7 @@ while true; do
             fi
             ;;
 
-        4)
+        5)
             echo
             echo "$D"
             echo "          Please enter the path to your .bin file"
@@ -283,7 +300,89 @@ while true; do
             display_name="$BIN_FILE_NAME"
             ;;
 
-        5)
+        6)
+            while true; do
+                clear
+                echo
+                echo "$D"
+                echo "                   Advanced Actions"
+                echo "$D"
+                echo
+                echo "  [1] Flash Only - No Backup"
+                echo "  [2] Flash Slot 0"
+                echo "  [3] Check Protection"
+                echo "  [4] Unlock / Rescue - Mass Erase"
+                echo "  [5] Back"
+                echo
+                read -rp "> Enter option: " advanced_choice
+
+                case "$advanced_choice" in
+                    1)
+                        echo
+                        echo "Launching Flash Only..."
+                        echo
+                        if [[ -f "$SCRIPT_DIR/special/flash_only.sh" ]]; then
+                            bash "$SCRIPT_DIR/special/flash_only.sh"
+                            if [[ $? -ne 0 ]]; then
+                                read -rp "Press ENTER to continue..."
+                            fi
+                        else
+                            echo -e "[${CL_R}FAIL${CL_NC}] Could not find special/flash_only.sh."
+                            read -rp "Press ENTER to continue..."
+                        fi
+                        ;;
+                    2)
+                        echo
+                        echo "Launching Flash Slot 0..."
+                        echo
+                        if [[ -f "$SCRIPT_DIR/special/flash_slot0.sh" ]]; then
+                            bash "$SCRIPT_DIR/special/flash_slot0.sh"
+                            if [[ $? -ne 0 ]]; then
+                                read -rp "Press ENTER to continue..."
+                            fi
+                        else
+                            echo -e "[${CL_R}FAIL${CL_NC}] Could not find special/flash_slot0.sh."
+                            read -rp "Press ENTER to continue..."
+                        fi
+                        ;;
+                    3)
+                        echo
+                        echo "Launching Protection Check..."
+                        echo
+                        if [[ -f "$SCRIPT_DIR/special/rdp/rdp_check.sh" ]]; then
+                            bash "$SCRIPT_DIR/special/rdp/rdp_check.sh" -l
+                        else
+                            echo -e "[${CL_R}FAIL${CL_NC}] Could not find special/rdp/rdp_check.sh."
+                        fi
+                        echo
+                        read -rp "Press ENTER to continue..."
+                        ;;
+                    4)
+                        echo
+                        echo "Launching Unlock / Rescue..."
+                        echo
+                        if [[ -f "$SCRIPT_DIR/special/rdp/rescue_unlock.sh" ]]; then
+                            bash "$SCRIPT_DIR/special/rdp/rescue_unlock.sh" -l
+                        else
+                            echo -e "[${CL_R}FAIL${CL_NC}] Could not find special/rdp/rescue_unlock.sh."
+                        fi
+                        echo
+                        read -rp "Press ENTER to continue..."
+                        ;;
+                    5)
+                        break
+                        ;;
+                    *)
+                        echo
+                        echo -e "[${CL_R}FAIL${CL_NC}] Invalid selection."
+                        echo "       Please choose 1-5."
+                        sleep 1
+                        ;;
+                esac
+            done
+            ;;
+
+        7)
             clear
             echo
             echo "Exiting utility. Bye!"
@@ -294,7 +393,7 @@ while true; do
         *)
             echo
             echo -e "[${CL_R}FAIL${CL_NC}] Invalid selection."
-            echo "       Please choose 1-5, A-C$(  [[ "$current_radio" == "B" ]] && echo ", or T")."
+            echo "       Please choose 1-7, A-D$(  [[ "$current_radio" == "B" ]] && echo ", or T")."
             sleep 1
             ;;
 

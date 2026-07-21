@@ -982,3 +982,26 @@ survive machine switches and chat history loss.
     is versioned independently as the primary feature path.
   - Next port order: Linux first, then macOS. See temporary root handoff
     `CLI_V180_PORT_HANDOFF.md`; delete it after both ports are complete.
+
+- Linux CLI v1.8.0 launcher port completed and hardware-tested.
+  - Added the read-only `connection_test.sh` with live A/B/C output and a fresh
+    OpenOCD process per Power-race attempt. Mode D requires flash-bank evidence,
+    not only a halted core or exit status 0.
+  - The launcher now mirrors the Windows v1.8.0 action order and exposes the
+    Advanced Flash Only, Slot 0, protection check, and rescue entry points.
+    Standalone flash tools keep their own file prompts; protection tools receive
+    `-l` so they honor the selected launcher mode.
+  - Check Connection passed on real hardware in modes A/B/C/D. Mode B preserved
+    the guided hold/count/release prompts. Mode D exercised the missing-adapter
+    prompt, then caught and confirmed the flash bank on attempt 218. A/B/C
+    reported PC `0x08000120`, MSP `0x20000550` on the test board.
+  - Integrated launcher regression in mode A passed for full dump, protection
+    check, SHU-compatible flash, backup + loaded-file flash, flash-only, and
+    slot0. Rescue launcher wiring and warnings were verified, then the operator
+    aborted at the `UNLOCK` confirmation; no mass erase was performed.
+  - Guided Tcl success banners now report the confirmed fact
+    `Connected.  Target halted.` instead of predicting the next dump/flash
+    action.
+  - All Linux scripts passed `bash -n`; ShellCheck had no error-level findings;
+    `git diff --check` and non-hardware launcher navigation passed. Linux CLI is
+    now v1.8.0. macOS remains v1.7.0 pending its port and hardware checks.

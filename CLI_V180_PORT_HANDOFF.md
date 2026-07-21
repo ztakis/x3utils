@@ -107,6 +107,21 @@ special/rdp/rescue_unlock.sh -l
 - Run `bash -n` across the normal, special, and RDP shell scripts, then test
   A/B/C/D on hardware before changing `x3utils_linux/VERSION` to `1.8.0`.
 
+## Linux completion status (2026-07-21)
+
+- The Linux launcher and connection-check port is complete.
+- Read-only Check Connection passed on hardware in A/B/C/D. Mode D exercised
+  the missing-adapter retry and then confirmed the flash bank on attempt 218.
+- The integrated Mode-A launcher regression passed for dump, protection check,
+  SHU-compatible flash, backup + loaded-file flash, Advanced flash-only, and
+  Advanced slot0.
+- Advanced rescue wiring and its warnings were verified, then intentionally
+  aborted at the `UNLOCK` confirmation; no mass erase was performed.
+- Bash syntax, ShellCheck error-severity, diff checks, and non-hardware launcher
+  navigation passed.
+- `x3utils_linux/VERSION` is now `1.8.0`. Use the Linux scripts as the immediate
+  shell reference for the macOS port.
+
 ## macOS port cautions
 
 - Port only after Linux behavior settles; use the Linux result as the immediate
@@ -123,7 +138,7 @@ special/rdp/rescue_unlock.sh -l
 ## Current version and Git state at handoff
 
 - `x3utils_win/VERSION`: 1.8.0, modified in the working tree.
-- `x3utils_linux/VERSION`: 1.7.0.
+- `x3utils_linux/VERSION`: 1.8.0 after the completed Linux port.
 - `x3utils_mac/VERSION`: 1.7.0.
 - `x3utils_flutter/VERSION`: 1.2.0.
 - `x3utils_win/connection_test.bat` was committed separately on 2026-07-18.

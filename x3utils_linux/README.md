@@ -115,6 +115,15 @@ chmod +x *.sh
 
 Most users should use `launcher.sh`, but the lower-level scripts can be run directly.
 
+### Check Connection Directly
+
+```bash
+./connection_test.sh
+```
+
+This uses the connection mode currently saved in `config.sh`. It connects,
+halts, and probes the flash bank without dumping or writing firmware.
+
 ### Dump Directly
 
 ```bash
@@ -149,7 +158,8 @@ The launcher saves the selected connection mode by editing:
 config.sh
 ```
 
-If you run `dump.sh`, `flash.sh`, or `flash_compat.sh` directly, they use the last connection mode selected in the launcher.
+If you run `connection_test.sh`, `dump.sh`, `flash.sh`, or `flash_compat.sh`
+directly, they use the last connection mode selected in the launcher.
 
 If you are not sure:
 
@@ -163,6 +173,10 @@ If you are not sure:
 `launcher.sh`
 
 Main terminal menu. Recommended for most users.
+
+`connection_test.sh`
+
+Runs a read-only ST-LINK and target connection check using the saved mode.
 
 `dump.sh`
 
