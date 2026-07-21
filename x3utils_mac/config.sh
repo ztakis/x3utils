@@ -35,7 +35,7 @@ OPENOCD_BIN="$OPENOCD_ROOT/bin/openocd"
 SCRIPTS_DIR="$OPENOCD_ROOT/openocd/scripts"
 
 INTERFACE="interface/stlink.cfg"
-TARGET="target/artery/at32f4x.cfg"
+TARGET="target/artery/at32f4x_c45.cfg"
 
 # Connection mode D (power-race): true = scripts use the respawn power-race
 # connect. Set by the launcher radio; A/B/C reset it false.
