@@ -165,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 hard ? 'Heads up — this is destructive' : 'Confirm ${a.name}',
                 style: const TextStyle(
                   fontSize: 18,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   color: AppColors.txt,
                 ),
               ),
@@ -258,7 +258,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           'Settings',
                           style: TextStyle(
                             fontSize: 18,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                             color: AppColors.txt,
                           ),
                         ),
@@ -504,7 +504,7 @@ class _TitleBar extends StatelessWidget {
             'x3utils',
             style: TextStyle(
               fontSize: 16,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               color: AppColors.txt,
             ),
           ),
@@ -953,6 +953,10 @@ class _ActionTile extends StatelessWidget {
                 if (action.id == 'flash_only' && c.actionId != action.id) {
                   final ok = await _showFlashOnlyWarning(context);
                   if (ok != true) return;
+                } else if (action.id == 'rdp_rescue' &&
+                    c.actionId != action.id) {
+                  final ok = await _showRescueWarning(context);
+                  if (ok != true) return;
                 } else if (action.id == 'make_zip3' &&
                     c.actionId != action.id) {
                   // An untimed "what is this for" intro so the operator-declared
@@ -1071,7 +1075,7 @@ class _MainArea extends StatelessWidget {
                       a.name,
                       style: const TextStyle(
                         fontSize: 21,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.txt,
                       ),
                     ),
@@ -1237,7 +1241,7 @@ class _HeroStageState extends State<_HeroStage>
                           c.eyebrow.toUpperCase(),
                           style: TextStyle(
                             fontSize: 12,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: 2.8,
                             color: accent,
                           ),
@@ -1248,7 +1252,7 @@ class _HeroStageState extends State<_HeroStage>
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 30,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                             height: 1.08,
                             color: AppColors.txt,
                           ),
@@ -1694,7 +1698,7 @@ Future<bool?> _showMakeZip3Notice(BuildContext context) {
               'What Make zip3 is for',
               style: TextStyle(
                 fontSize: 18,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
                 color: AppColors.txt,
               ),
             ),
@@ -1795,7 +1799,7 @@ Future<bool?> _showFlashOnlyWarning(BuildContext context) {
               'Flash Only — no safety nets',
               style: TextStyle(
                 fontSize: 18,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
                 color: AppColors.txt,
               ),
             ),
@@ -1806,6 +1810,89 @@ Future<bool?> _showFlashOnlyWarning(BuildContext context) {
               'firmware belongs on the connected controller. If a write goes '
               'wrong there is nothing to restore from. Only continue if you '
               'already have a good dump and you are sure about the target.',
+              style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _PillButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.pop(ctx, false),
+                  bg: AppColors.line,
+                  fg: AppColors.txt,
+                  border: AppColors.line2,
+                  small: true,
+                ),
+                const SizedBox(width: 10),
+                _CountdownPillButton(
+                  label: 'I understand — continue',
+                  seconds: 5,
+                  onTap: () => Navigator.pop(ctx, true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Selection gate for Unlock / rescue: shown every time the action is entered
+/// from the left pane. Rescue rewrites the option bytes to clear read
+/// protection, which mass-erases the flash — an irreversible wipe of whatever
+/// is on the controller — so entry requires sitting through a short countdown.
+/// Returns true when the operator accepts; anything else keeps the previous
+/// selection.
+Future<bool?> _showRescueWarning(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: const Color(0xB3040A0F),
+    builder: (ctx) => Dialog(
+      backgroundColor: AppColors.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.line2),
+      ),
+      child: Container(
+        width: 520,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.warning_amber_rounded,
+                color: AppColors.danger,
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Unlock / rescue — this erases the flash',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.txt,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Rescue rewrites the option bytes to clear read protection, and '
+              'that mass-erases the flash. Everything on the connected '
+              'controller — firmware and identity — is wiped, and there is '
+              'nothing to restore from unless you already have a good dump. '
+              'Only continue on a board you are prepared to re-flash from '
+              'scratch. After it runs, power-cycle and use Check protection to '
+              'confirm.',
               style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
             ),
             const SizedBox(height: 20),
@@ -2501,7 +2588,7 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
                 'PACKAGE IDENTITY',
                 style: TextStyle(
                   fontSize: 10,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   letterSpacing: 1.6,
                   color: AppColors.mut,
                 ),
