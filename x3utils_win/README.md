@@ -77,7 +77,47 @@ Useful signs that the driver side is probably okay:
 
 - Device Manager reacts when the ST-LINK is plugged in;
 - OpenOCD starts instead of immediately failing to find an adapter;
-- option `2` gets as far as trying to connect to the target.
+- option `1` gets as far as trying to connect to the target.
+
+## Launcher Menus (v1.8.0)
+
+The main menu is:
+
+1. Check Connection
+2. Backup Full Memory (128 KB)
+3. Flash SHU Compatible
+4. Backup + Flash Loaded File
+5. Load / Change Target `.bin` File
+6. Advanced
+7. Exit
+
+Option 4 uses the file loaded with Option 5. The SHU-compatible and Advanced
+flash actions keep their own prompts and do not reuse that loaded file.
+
+The selected connection mode is saved in `config.cmd`:
+
+- A — Default / blinker buttons
+- B — C45 / clone ST-LINK, with the guided hold/count/release flow
+- C — C45 / genuine ST-LINK using nRST
+- D — Power-race using fresh OpenOCD processes to catch power-on
+
+Mode B also exposes `T` to change the guided countdown timeout.
+
+### Advanced Menu
+
+1. Flash Only — No Backup
+2. Flash Slot 0
+3. Check Protection
+4. Unlock / Rescue — Mass Erase
+5. Back
+
+Flash Only is deliberately dangerous because it skips the forced backup. It is
+also the correct recovery path after rescue has left a confirmed blank chip;
+the normal backup-required flash path rejects an all-`0xFF` dump.
+
+Check Protection is read-only. Unlock / Rescue rewrites protection options and
+can mass-erase main flash. It requires the explicit `UNLOCK` confirmation.
+Both actions honor launcher modes A/B/C/D.
 
 ## Folder And Path Tips
 
@@ -102,6 +142,17 @@ The Windows validator rejects some paths because OpenOCD command quoting is sens
 ## Direct Script Usage
 
 Most users should use `launcher.bat`, but the lower-level scripts can be run directly.
+
+### Check Connection Directly
+
+From `x3utils_win`:
+
+```powershell
+.\connection_test.bat
+```
+
+This uses the connection mode currently saved in `config.cmd`. It connects,
+halts, and probes the flash bank without dumping or writing firmware.
 
 ### Dump Directly
 
@@ -139,6 +190,20 @@ From `x3utils_win`:
 
 This uses the connection mode currently saved in `config.cmd`.
 
+### Advanced Scripts Directly
+
+```powershell
+.\special\flash_only.bat
+.\special\flash_slot0.bat
+powershell -NoProfile -ExecutionPolicy Bypass -File .\special\rdp\rdp.ps1 -Check -Launcher
+powershell -NoProfile -ExecutionPolicy Bypass -File .\special\rdp\rdp.ps1 -Rescue -Launcher
+```
+
+The flash scripts prompt for their own file. `-Launcher` tells the RDP toolkit
+to honor the launcher mode saved in `config.cmd`; without it, the toolkit uses
+its standalone guided rescue connection. Rescue is destructive and still
+requires `UNLOCK`.
+
 ## Important Detail For Direct Scripts
 
 The launcher saves the selected connection mode by editing:
@@ -147,12 +212,14 @@ The launcher saves the selected connection mode by editing:
 config.cmd
 ```
 
-If you run `dump.bat`, `flash.bat`, or `flash_compat.bat` directly, they use the last connection mode selected in the launcher.
+If you run `connection_test.bat`, `dump.bat`, `flash.bat`, or
+`flash_compat.bat` directly, they use the last connection mode selected in the
+launcher.
 
 So if you are not sure:
 
 1. run `launcher.bat`;
-2. select `A`, `B`, or `C`;
+2. select `A`, `B`, `C`, or `D`;
 3. exit or continue from the launcher;
 4. then run the direct script.
 
@@ -161,6 +228,10 @@ So if you are not sure:
 `launcher.bat`
 
 Main menu. Recommended for most users.
+
+`connection_test.bat`
+
+Runs a read-only ST-LINK and target connection check using the saved mode.
 
 `dump.bat`
 
@@ -178,6 +249,10 @@ Dumps, patches, and flashes back for SHU-compatible workflows.
 
 Shared Windows `.bin` validator used by flashing scripts.
 
+`race_grade.cmd`
+
+Power-race attempt classifier used by mode D.
+
 `config.cmd`
 
 Stores OpenOCD paths, selected target configuration, colors, and mode timeout.
@@ -188,7 +263,8 @@ Bundled OpenOCD for Windows.
 
 `special\`
 
-Experimental / advanced scripts. Read `special\notes.txt` before using anything there.
+Advanced Flash Only, Slot 0, and protection/rescue scripts. Read
+`special\notes.txt` before using anything there.
 
 ## Common Windows Problems
 
@@ -211,6 +287,13 @@ Move the `.bin` file to a simple path using English letters and numbers.
 `Path contains unsupported character`
 
 Rename the file or folder. Avoid `{` and `}` in paths.
+
+`Bin file contains only a single repeated byte value` after rescue
+
+A successful protection rescue can leave main flash blank (`0xFF`). The normal
+Backup + Flash path rejects that dump by design. Use Advanced → Flash Only to
+restore a known-good full 128 KB image, then return to normal backup-required
+operations.
 
 Terminal closes too fast
 
