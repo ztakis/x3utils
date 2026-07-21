@@ -181,6 +181,56 @@ void main() {
     expect(controller.isSlotAction, isTrue);
     expect(controller.firmwarePath, isNull);
   });
+
+  test('idle hero presents the selected firmware identity', () {
+    SharedPreferences.setMockInitialValues({});
+    final controller = AppController();
+    addTearDown(controller.dispose);
+
+    controller.selectAction('make_zip3');
+    controller.setFirmware(
+      'dump.bin',
+      note: 'Firmware says: G3 · VCU',
+      warn: true,
+    );
+
+    expect(controller.heroTitle, 'Complete package identity');
+    expect(controller.heroMessage, 'Firmware says: G3 · VCU');
+    expect(controller.heroMessageWarn, isTrue);
+
+    controller.setZip3Type('VCU');
+    controller.setZip3Model('g3');
+    expect(controller.heroTitle, 'Ready to start');
+    expect(controller.heroMessage, 'Firmware says: G3 · VCU');
+  });
+
+  test('input failure returns to setup instead of rerunning', () async {
+    SharedPreferences.setMockInitialValues({});
+    final temp = Directory.systemTemp.createTempSync('x3utils_retry_');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final dump = File(p.join(temp.path, 'invalid_dump.bin'))
+      ..writeAsBytesSync(
+        Uint8List.fromList(
+          List<int>.generate(Firmware.expectedSize, (i) => i & 0xff),
+        ),
+      );
+    final controller = AppController();
+    addTearDown(controller.dispose);
+
+    controller.selectAction('make_zip3');
+    controller.setFirmware(dump.path);
+    controller.setZip3Type('VCU');
+    controller.setZip3Model('g3');
+
+    await controller.start();
+    expect(controller.stage, StageState.fail);
+    expect(controller.failureNeedsInput, isTrue);
+    expect(controller.failurePrimaryLabel, 'Change input');
+
+    await controller.retry();
+    expect(controller.stage, StageState.idle);
+    expect(controller.failureNeedsInput, isFalse);
+  });
 }
 
 Uint8List _payloadWithBanner(String banner) {

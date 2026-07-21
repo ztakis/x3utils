@@ -8,23 +8,23 @@ void main() {
   testWidgets('App boots and shows the default action', (
     WidgetTester tester,
   ) async {
-    // The desktop app starts at 1200x800; Flutter's 800x600 test default is
-    // narrower than the supported layout and overflows the status/console rows.
+    // Keep coverage at the compact 1024x768 responsive viewport.
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.physicalSize = const Size(1024, 768);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(const X3UtilsApp());
     // Title bar brand + the default "Check connection" action are present.
     expect(find.text('x3utils'), findsOneWidget);
     expect(find.text('Check connection'), findsWidgets);
+    expect(find.text('Ready to start'), findsOneWidget);
   });
 
   testWidgets('Flash Only exposes centered full and slot-0 scopes', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.physicalSize = const Size(1024, 768);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(const X3UtilsApp());
@@ -50,7 +50,7 @@ void main() {
     await tester.tap(find.text('I understand — continue'));
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('Choose a full image'), findsOneWidget);
+    expect(find.text('Choose firmware'), findsOneWidget);
     expect(find.text('Full image'), findsOneWidget);
     expect(find.text('Slot 0 only'), findsOneWidget);
     expect(find.text('Choose .zip'), findsOneWidget);
@@ -64,7 +64,7 @@ void main() {
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.physicalSize = const Size(1024, 768);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(const X3UtilsApp());
@@ -96,5 +96,7 @@ void main() {
     expect(find.text('Model'), findsOneWidget);
     expect(find.textContaining('Enforce model'), findsOneWidget);
     expect(find.text('Package name'), findsOneWidget);
+    expect(find.text('Choose a backup dump'), findsOneWidget);
+    expect(find.text('Make zip3').last.hitTestable(), findsOneWidget);
   });
 }

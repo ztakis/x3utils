@@ -228,6 +228,8 @@ class Firmware {
   // with native separators. Kept in sync with _dir / secondCopyDir above.
   static String get backupDirLabel =>
       _homeLabel(p.join('Documents', 'x3utils', 'backup'));
+  static String get packedZip3DirLabel =>
+      _homeLabel(p.join('Documents', 'x3utils', 'packed_zip3'));
   static String get logsDirLabel =>
       _homeLabel(p.join('Documents', 'x3utils', 'logs'));
   static String get secondCopyLabel {

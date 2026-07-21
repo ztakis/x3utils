@@ -8,6 +8,7 @@ import 'app_controller.dart';
 import 'engine/firmware.dart';
 import 'models.dart';
 import 'theme.dart';
+import 'widgets/desktop_path_display.dart';
 
 void main() => runApp(const X3UtilsApp());
 
@@ -52,7 +53,96 @@ class _HomeScreenState extends State<HomeScreen> {
       final ok = await _showConfirm(a);
       if (ok != true) return;
     }
-    c.start();
+    c.start(confirmFileReplace: _showZip3ReplaceConfirm);
+  }
+
+  Future<bool> _showZip3ReplaceConfirm(String path) async {
+    final replace = await showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0xB3040A0F),
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.line2),
+        ),
+        child: Container(
+          width: 440,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.warning_amber_rounded,
+                  color: AppColors.danger,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Replace existing package?',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.txt,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'A ZIP already exists at this exact path:',
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AppColors.dim,
+                ),
+              ),
+              const SizedBox(height: 8),
+              DesktopPathDisplay(path: path),
+              const SizedBox(height: 12),
+              const Text(
+                'Replace will permanently overwrite the existing package.',
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AppColors.hold,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _PillButton(
+                    label: 'Cancel',
+                    onTap: () => Navigator.pop(ctx, false),
+                    bg: AppColors.line,
+                    fg: AppColors.txt,
+                    border: AppColors.line2,
+                    small: true,
+                  ),
+                  const SizedBox(width: 10),
+                  _PillButton(
+                    label: 'Replace',
+                    onTap: () => Navigator.pop(ctx, true),
+                    gradient: const [Color(0xFFFF6472), AppColors.danger],
+                    fg: Colors.white,
+                    small: true,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return replace == true;
   }
 
   /// CLI muscle-memory: Enter fires the primary CTA for the current stage
@@ -241,110 +331,128 @@ class _HomeScreenState extends State<HomeScreen> {
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(ctx).size.height * 0.85,
               ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.settings_rounded,
-                          color: AppColors.brand,
-                          size: 22,
-                        ),
-                        SizedBox(width: 10),
-                        Text(
-                          'Settings',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.txt,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    _SettingRow(
-                      label: 'Default connection',
-                      child: _ModeDropdown(
-                        c: c,
-                        onChanged: () => setLocal(() {}),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.settings_rounded,
+                        color: AppColors.brand,
+                        size: 22,
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    _SettingRow(
-                      label: 'Hold countdown',
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _StepBtn(
-                            icon: Icons.remove,
-                            onTap: () {
-                              c.setDefaultCountdown(c.defaultCountdown - 1);
-                              setLocal(() {});
-                            },
-                          ),
-                          SizedBox(
-                            width: 30,
-                            child: Text(
-                              '${c.defaultCountdown}',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontFamily: kMono,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.txt,
+                      SizedBox(width: 10),
+                      Text(
+                        'Settings',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.txt,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Flexible(
+                    child: Scrollbar(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _SettingRow(
+                              label: 'Default connection',
+                              child: _ModeDropdown(
+                                c: c,
+                                onChanged: () => setLocal(() {}),
                               ),
                             ),
-                          ),
-                          _StepBtn(
-                            icon: Icons.add,
-                            onTap: () {
-                              c.setDefaultCountdown(c.defaultCountdown + 1);
-                              setLocal(() {});
-                            },
-                          ),
-                        ],
+                            const SizedBox(height: 14),
+                            _SettingRow(
+                              label: 'Hold countdown',
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _StepBtn(
+                                    icon: Icons.remove,
+                                    onTap: () {
+                                      c.setDefaultCountdown(
+                                        c.defaultCountdown - 1,
+                                      );
+                                      setLocal(() {});
+                                    },
+                                  ),
+                                  SizedBox(
+                                    width: 30,
+                                    child: Text(
+                                      '${c.defaultCountdown}',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontFamily: kMono,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.txt,
+                                      ),
+                                    ),
+                                  ),
+                                  _StepBtn(
+                                    icon: Icons.add,
+                                    onTap: () {
+                                      c.setDefaultCountdown(
+                                        c.defaultCountdown + 1,
+                                      );
+                                      setLocal(() {});
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            _SettingRow(
+                              label: 'Theme accent',
+                              child: _AccentPicker(
+                                c: c,
+                                onChanged: () => setLocal(() {}),
+                              ),
+                            ),
+                            const Divider(color: AppColors.line, height: 28),
+                            _BackupSettingsSection(c: c),
+                            const Divider(color: AppColors.line, height: 28),
+                            Text(
+                              'x3utils  ·  v$kAppVersionLabel',
+                              style: const TextStyle(
+                                color: AppColors.dim,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Engine: bundled OpenOCD (frozen) · AT32F415',
+                              style: TextStyle(
+                                color: AppColors.mut,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 14),
-                    _SettingRow(
-                      label: 'Theme accent',
-                      child: _AccentPicker(
-                        c: c,
-                        onChanged: () => setLocal(() {}),
-                      ),
+                  ),
+                  const SizedBox(height: 18),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _PillButton(
+                      label: 'Done',
+                      onTap: () => Navigator.pop(ctx),
+                      gradient: [AppColors.brand, AppColors.brand2],
+                      fg: const Color(0xFF04120F),
+                      small: true,
                     ),
-                    const Divider(color: AppColors.line, height: 28),
-                    _BackupSettingsSection(c: c),
-                    const Divider(color: AppColors.line, height: 28),
-                    Text(
-                      'x3utils  ·  v$kAppVersionLabel',
-                      style: const TextStyle(
-                        color: AppColors.dim,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Engine: bundled OpenOCD (frozen) · AT32F415',
-                      style: TextStyle(color: AppColors.mut, fontSize: 12),
-                    ),
-                    const SizedBox(height: 20),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: _PillButton(
-                        label: 'Done',
-                        onTap: () => Navigator.pop(ctx),
-                        gradient: [AppColors.brand, AppColors.brand2],
-                        fg: const Color(0xFF04120F),
-                        small: true,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1228,74 +1336,167 @@ class _HeroStageState extends State<_HeroStage>
                 ),
               ),
             ),
-            Center(
-              child: SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 600),
-                  child: Padding(
-                    padding: const EdgeInsets.all(28),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          c.eyebrow.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 2.8,
-                            color: accent,
+            Positioned.fill(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 600),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(28, 28, 28, 12),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  c.eyebrow.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 2.8,
+                                    color: accent,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  c.heroTitle,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.08,
+                                    color: AppColors.txt,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _HeroMessage(
+                                  text: c.heroMessage,
+                                  color: c.heroMessageWarn
+                                      ? AppColors.hold
+                                      : c.stage == StageState.fail
+                                      ? AppColors.danger
+                                      : c.messageTone.color,
+                                  callout:
+                                      c.heroMessageWarn ||
+                                      c.heroMessage.length > 96 ||
+                                      c.heroMessage.contains('\n'),
+                                  icon: c.heroMessageWarn
+                                      ? Icons.warning_amber_rounded
+                                      : Icons.info_outline_rounded,
+                                ),
+                                if (c.resultNote != null) ...[
+                                  const SizedBox(height: 14),
+                                  _HeroMessage(
+                                    text: 'Note: ${c.resultNote!}',
+                                    color: AppColors.hold,
+                                    callout: true,
+                                    icon: Icons.info_outline_rounded,
+                                  ),
+                                ],
+                                if (c.resultPath != null) ...[
+                                  const SizedBox(height: 14),
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 520,
+                                    ),
+                                    child: DesktopPathDisplay(
+                                      path: c.resultPath!,
+                                      action: DesktopPathAction.reveal,
+                                    ),
+                                  ),
+                                ],
+                                // Make zip3's idle hero is the picker + identity
+                                // form, so the generic bolt is redundant there.
+                                if (!(c.actionId == 'make_zip3' &&
+                                    c.stage == StageState.idle)) ...[
+                                  const SizedBox(height: 22),
+                                  _Visual(c: c, accent: accent, pulse: _pulse),
+                                ],
+                                if (c.stage == StageState.idle &&
+                                    c.action.needsFirmware) ...[
+                                  const SizedBox(height: 20),
+                                  _FirmwareBar(
+                                    c: c,
+                                    onPick: widget.onPickFirmware,
+                                    onPickZip: widget.onPickZip,
+                                  ),
+                                ],
+                                if (c.stage == StageState.idle &&
+                                    c.actionId == 'make_zip3') ...[
+                                  const SizedBox(height: 14),
+                                  _MakeZip3Form(c: c),
+                                ],
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 14),
-                        Text(
-                          c.title,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 30,
-                            fontWeight: FontWeight.w700,
-                            height: 1.08,
-                            color: AppColors.txt,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          c.sub,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            height: 1.5,
-                            color: c.messageTone.color,
-                          ),
-                        ),
-                        // Make zip3's idle hero is the picker + identity form,
-                        // so the generic bolt placeholder is redundant there.
-                        // Busy/OK/fail still show their badges.
-                        if (!(c.actionId == 'make_zip3' &&
-                            c.stage == StageState.idle)) ...[
-                          const SizedBox(height: 22),
-                          _Visual(c: c, accent: accent, pulse: _pulse),
-                        ],
-                        if (c.stage == StageState.idle &&
-                            c.action.needsFirmware) ...[
-                          const SizedBox(height: 20),
-                          _FirmwareBar(
-                            c: c,
-                            onPick: widget.onPickFirmware,
-                            onPickZip: widget.onPickZip,
-                          ),
-                        ],
-                        if (c.stage == StageState.idle &&
-                            c.actionId == 'make_zip3') ...[
-                          const SizedBox(height: 14),
-                          _MakeZip3Form(c: c),
-                        ],
-                        const SizedBox(height: 26),
-                        _StageButtons(c: c, onStart: widget.onStart),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      28,
+                      8,
+                      28,
+                      c.actionId == 'make_zip3' && c.stage == StageState.idle
+                          ? 40
+                          : 64,
+                    ),
+                    child: Column(
+                      children: [_StageButtons(c: c, onStart: widget.onStart)],
+                    ),
+                  ),
+                ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroMessage extends StatelessWidget {
+  const _HeroMessage({
+    required this.text,
+    required this.color,
+    required this.callout,
+    required this.icon,
+  });
+
+  final String text;
+  final Color color;
+  final bool callout;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(fontSize: 14, height: 1.5, color: color);
+    if (!callout) {
+      return Text(text, textAlign: TextAlign.center, style: style);
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.28)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(icon, size: 17, color: color),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(text, textAlign: TextAlign.start, style: style),
             ),
           ],
         ),
@@ -1624,21 +1825,23 @@ class _StageButtons extends StatelessWidget {
       case StageState.fail:
         children.add(
           _PillButton(
-            label: 'Retry',
+            label: c.failurePrimaryLabel,
             onTap: () => c.retry(),
             gradient: [AppColors.brand, AppColors.brand2],
             fg: const Color(0xFF04120F),
           ),
         );
-        children.add(
-          _PillButton(
-            label: 'Dismiss',
-            onTap: c.dismiss,
-            bg: AppColors.line,
-            fg: AppColors.txt,
-            border: AppColors.line2,
-          ),
-        );
+        if (!c.failureNeedsInput) {
+          children.add(
+            _PillButton(
+              label: 'Dismiss',
+              onTap: c.dismiss,
+              bg: AppColors.line,
+              fg: AppColors.txt,
+              border: AppColors.line2,
+            ),
+          );
+        }
         break;
     }
     return Wrap(
@@ -2323,14 +2526,6 @@ class _FirmwareBar extends StatelessWidget {
     final flashOnly = c.actionId == 'flash_only';
     final slot0 = c.isSlotAction;
     final twoLine = flashOnly || c.actionId == 'flash_slot0';
-    // Identity/claim note under the filename ("Firmware says …" /
-    // "Package says …") — amber for attention states (generic/cleared serial).
-    final note = c.firmwareNote;
-    final noteWarn = note != null && c.firmwareNoteWarn;
-    final noteStyle = TextStyle(
-      fontSize: 12,
-      color: noteWarn ? AppColors.hold : AppColors.dim,
-    );
 
     if (!twoLine) {
       return Container(
@@ -2379,22 +2574,16 @@ class _FirmwareBar extends StatelessWidget {
                 ),
               ],
             ),
-            if (note != null) ...[
-              const SizedBox(height: 6),
-              Text(note, textAlign: TextAlign.center, style: noteStyle),
-            ],
           ],
         ),
       );
     }
 
-    final hint =
-        note ??
-        (flashOnly
-            ? slot0
-                  ? 'Choose a slot-sized .bin or import a VCU/MCU ZIP3 package.'
-                  : 'ZIP3 packages contain slot firmware — select Slot 0 only.'
-            : null);
+    final hint = !has && flashOnly
+        ? (slot0
+              ? 'Choose a slot-sized .bin or import a VCU/MCU ZIP3 package.'
+              : 'ZIP3 packages contain slot firmware — select Slot 0 only.')
+        : null;
     return Container(
       constraints: const BoxConstraints(maxWidth: 540),
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 11),
@@ -2461,7 +2650,11 @@ class _FirmwareBar extends StatelessWidget {
           ),
           if (hint != null) ...[
             const SizedBox(height: 8),
-            Text(hint, textAlign: TextAlign.center, style: noteStyle),
+            Text(
+              hint,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: AppColors.dim),
+            ),
           ],
         ],
       ),
@@ -2642,7 +2835,8 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
                     color: AppColors.mut,
                   ),
                   helperText:
-                      'Blank → the default above. Saved to Documents/x3utils/packed_zip3.',
+                      'Blank → the default above. Output folder: '
+                      '${Firmware.packedZip3DirLabel.split(RegExp(r'[\\/]')).join(' › ')}',
                   helperStyle: const TextStyle(
                     fontSize: 11,
                     color: AppColors.mut,
@@ -2963,7 +3157,7 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
   @override
   Widget build(BuildContext context) {
     final c = widget.c;
-    final folder = c.backupFolder ?? '${Firmware.backupDirLabel}  (default)';
+    final folder = c.backupFolder ?? Firmware.backupDirLabel;
     final pre = _clean(_prefix.text);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3009,25 +3203,19 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
           ],
         ),
         const SizedBox(height: 6),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.panel2,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.line2),
-          ),
-          child: Text(
-            folder,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontFamily: kMono,
-              fontSize: 12,
-              color: AppColors.dim,
-            ),
-          ),
+        DesktopPathDisplay(
+          path: folder,
+          action: c.backupFolder == null
+              ? DesktopPathAction.none
+              : DesktopPathAction.reveal,
         ),
+        if (c.backupFolder == null) ...[
+          const SizedBox(height: 5),
+          const Text(
+            'Default location',
+            style: TextStyle(fontSize: 11, color: AppColors.mut),
+          ),
+        ],
         const SizedBox(height: 14),
         Row(
           children: [

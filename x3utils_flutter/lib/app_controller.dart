@@ -10,6 +10,7 @@ import 'engine/rdp_runner.dart';
 import 'engine/device_spec.dart';
 import 'engine/firmware.dart';
 import 'engine/pack_zip3.dart';
+import 'engine/confirmed_file_writer.dart';
 
 /// Drives the whole UI via a single StageState the hero binds to.
 class AppController extends ChangeNotifier {
@@ -196,6 +197,45 @@ class AppController extends ChangeNotifier {
     return true;
   }
 
+  /// The header owns the stable action explanation. While idle, the hero shows
+  /// only the next live state; running/result stages keep their orchestration
+  /// title and message unchanged.
+  String get heroTitle {
+    if (stage != StageState.idle) return title;
+    if (action.needsFirmware && firmwarePath == null) {
+      return actionId == 'make_zip3'
+          ? 'Choose a backup dump'
+          : 'Choose firmware';
+    }
+    if (actionId == 'make_zip3' && (zip3Type == null || zip3Model == null)) {
+      return 'Complete package identity';
+    }
+    return 'Ready to start';
+  }
+
+  String get heroMessage {
+    if (stage != StageState.idle) return sub;
+    if (action.needsFirmware && firmwarePath == null) {
+      if (actionId == 'make_zip3') {
+        return 'Choose a full 128 KB backup .bin below.';
+      }
+      if (isSlotAction) {
+        return 'Choose a slot-sized .bin or encrypted zip3 package below.';
+      }
+      return 'Choose a full 128 KB firmware .bin below.';
+    }
+    if (actionId == 'make_zip3' && (zip3Type == null || zip3Model == null)) {
+      return _firmwareNote ?? 'Choose both Type and Model below.';
+    }
+    if (action.needsFirmware) {
+      return _firmwareNote ?? 'Firmware selected. Start when ready.';
+    }
+    return '${mode.title} selected. Start when ready.';
+  }
+
+  bool get heroMessageWarn =>
+      stage == StageState.idle && _firmwareNote != null && _firmwareNoteWarn;
+
   void setFirmware(String? path, {String? note, bool warn = false}) {
     if (actionId == 'flash_backup') {
       _firmwareStandard = path;
@@ -366,6 +406,20 @@ class AppController extends ChangeNotifier {
   String title = 'Check connection';
   String sub = 'Pick a connection mode and an action, then hit start.';
   MessageTone messageTone = MessageTone.normal;
+  String? resultPath;
+  String? resultNote;
+  bool _failureNeedsInput = false;
+
+  /// A validation or policy failure must return to setup instead of repeating
+  /// the same run. Connection failures retain the existing re-seat retry loop.
+  bool get failureNeedsInput => stage == StageState.fail && _failureNeedsInput;
+
+  String get failurePrimaryLabel {
+    if (!failureNeedsInput) return 'Retry';
+    if (actionId == 'make_zip3') return 'Change input';
+    if (action.needsFirmware) return 'Change firmware';
+    return 'Back to setup';
+  }
 
   int countdownValue = 0;
   DateTime? _progressShownAt;
@@ -515,12 +569,21 @@ class AppController extends ChangeNotifier {
     _goIdle();
   }
 
-  /// Re-run the current action after a failure (the 1.6.6 re-seat retry loop;
-  /// skips the danger re-confirm — you already confirmed the first attempt).
-  Future<void> retry() => start();
+  /// Re-run a connection failure, or return an input/policy failure to setup.
+  /// The latter must never repeat a flash with the same rejected firmware.
+  Future<void> retry() async {
+    if (failureNeedsInput) {
+      _goIdle();
+      return;
+    }
+    await start();
+  }
 
   void _goIdle() {
     running = false;
+    resultPath = null;
+    resultNote = null;
+    _failureNeedsInput = false;
     stage = StageState.idle;
     eyebrow = 'Ready';
     if (actionId == 'flash_only') {
@@ -579,6 +642,11 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _setInputFailure(String eb, String t, String sb) {
+    _failureNeedsInput = true;
+    _set(StageState.fail, eb, t, sb);
+  }
+
   void _setInstruction(String value, {MessageTone tone = MessageTone.normal}) {
     if (sub == value && messageTone == tone) return;
     sub = value;
@@ -598,26 +666,29 @@ class AppController extends ChangeNotifier {
         '${DateTime.now().toString().split('.').first}';
   }
 
-  Future<void> start() async {
+  Future<void> start({ConfirmFileReplace? confirmFileReplace}) async {
     _runIssue = null;
     _runIssuePriority = 0;
     messageTone = MessageTone.normal;
+    resultPath = null;
+    resultNote = null;
+    _failureNeedsInput = false;
     _runLog.clear();
     _capturing = true;
     _log(contextHeader());
     try {
-      await _dispatch();
+      await _dispatch(confirmFileReplace: confirmFileReplace);
     } finally {
       _capturing = false;
       if (logToFile) _flushLog();
     }
   }
 
-  Future<void> _dispatch() async {
+  Future<void> _dispatch({ConfirmFileReplace? confirmFileReplace}) async {
     // Make zip3 is offline — a pure file→file repack that never talks to the
     // controller, so it runs before (and independent of) the OpenOCD runner.
     if (actionId == 'make_zip3') {
-      await _runMakeZip3();
+      await _runMakeZip3(confirmFileReplace: confirmFileReplace);
       return;
     }
     final runner = _runner;
@@ -1115,8 +1186,13 @@ class AppController extends ChangeNotifier {
     String okMsg,
     String failMsg, {
     bool reseat = true,
+    String? outputPath,
+    String? outputNote,
   }) {
     lastConnect = ok ? 'PASS' : 'FAIL';
+    resultPath = outputPath;
+    resultNote = outputNote;
+    _failureNeedsInput = !ok && !reseat;
     final String msg;
     if (ok) {
       msg = okMsg;
@@ -1140,13 +1216,22 @@ class AppController extends ChangeNotifier {
     String okMsg,
     String failMsg, {
     bool reseat = true,
+    String? outputPath,
+    String? outputNote,
   }) async {
     final my = _token;
     final hadBusySurface = _busySurfaceIsVisible;
     await _holdBusySurfaceForReading();
     if (my != _token) return;
     if (hadBusySurface && !_busySurfaceIsVisible) return;
-    _finishReal(ok, okMsg, failMsg, reseat: reseat);
+    _finishReal(
+      ok,
+      okMsg,
+      failMsg,
+      reseat: reseat,
+      outputPath: outputPath,
+      outputNote: outputNote,
+    );
   }
 
   Future<void> _holdBusySurfaceForReading() async {
@@ -1271,7 +1356,6 @@ class AppController extends ChangeNotifier {
       await _finishRealAfterHold(false, '', _dumpFailMessage(r));
       return;
     }
-    _setInstruction('Backup saved to $outPath');
     _setInstruction('Validating backup file...');
     final v = Firmware.validate(outPath);
     if (!v.ok) {
@@ -1282,13 +1366,19 @@ class AppController extends ChangeNotifier {
         'Dump saved but failed validation — do not trust it. ${v.message} '
             '(a read-protected or blank chip reads back like this — try Check protection).',
         reseat: false,
+        outputPath: outPath,
       );
       return;
     }
     _log('== validated OK → $outPath ==');
     _setInstruction('Backup validated. Keep this file safe.');
     _maybeSecondCopy(outPath);
-    await _finishRealAfterHold(true, 'Backed up & verified → $outPath', '');
+    await _finishRealAfterHold(
+      true,
+      'Backed up and verified.',
+      '',
+      outputPath: outPath,
+    );
   }
 
   Future<void> _runFlash(
@@ -1299,8 +1389,7 @@ class AppController extends ChangeNotifier {
   }) async {
     final fw = firmwarePath;
     if (fw == null) {
-      _set(
-        StageState.fail,
+      _setInputFailure(
         'No firmware',
         'Choose a firmware .bin first',
         'Pick a .bin file, then start the flash.',
@@ -1311,7 +1400,7 @@ class AppController extends ChangeNotifier {
         ? Firmware.validateSlot(fw)
         : Firmware.validate(fw, requireSize: true);
     if (!v.ok) {
-      _set(StageState.fail, 'Firmware invalid', 'Firmware invalid', v.message);
+      _setInputFailure('Firmware invalid', 'Firmware invalid', v.message);
       return;
     }
 
@@ -1348,7 +1437,6 @@ class AppController extends ChangeNotifier {
         );
         return;
       }
-      _setInstruction('Backup saved to $outPath');
       _setInstruction('Validating backup file before writing...');
       final backupCheck = Firmware.validate(outPath);
       if (!backupCheck.ok) {
@@ -1359,6 +1447,7 @@ class AppController extends ChangeNotifier {
           'Backup validation failed — flash aborted for safety. ${backupCheck.message} '
               '(read-protected or blank chip? try Check protection).',
           reseat: false,
+          outputPath: outPath,
         );
         return;
       }
@@ -1393,8 +1482,9 @@ class AppController extends ChangeNotifier {
         await _finishRealAfterHold(
           false,
           '',
-          'Flash aborted — ${tm.message} Backup saved to $outPath.',
+          'Flash aborted — ${tm.message} The pre-flash backup was saved.',
           reseat: false,
+          outputPath: outPath,
         );
         return;
       }
@@ -1428,15 +1518,24 @@ class AppController extends ChangeNotifier {
             : 'Flash verified. No backup was taken.',
       );
     }
-    var okMsg = backup && backupPath != null
+    final okMsg = backup && backupPath != null
         ? slot0
-              ? 'Slot 0 flashed & verified. Backup saved to $backupPath'
-              : 'Flashed & verified. Backup saved to $backupPath'
+              ? 'Slot 0 flashed and verified. The pre-flash backup was saved.'
+              : 'Flashed and verified. The pre-flash backup was saved.'
         : slot0
         ? 'Slot 0 flashed & verified. No backup was taken.'
         : action.okMsg;
-    if (serialNote != null) okMsg = '$okMsg. Note: $serialNote.';
-    await _finishRealAfterHold(flashOk, okMsg, _flashFailMessage(r));
+    var failMsg = _flashFailMessage(r);
+    if (backupPath != null) {
+      failMsg = '$failMsg The pre-flash backup was saved.';
+    }
+    await _finishRealAfterHold(
+      flashOk,
+      okMsg,
+      failMsg,
+      outputPath: backupPath,
+      outputNote: flashOk ? serialNote : null,
+    );
   }
 
   /// SHU-compat: dump the chip → patch its own firmware → flash it back
@@ -1474,7 +1573,7 @@ class AppController extends ChangeNotifier {
       return;
     }
 
-    _setInstruction('Original backup saved to $raw');
+    _setInstruction('Original backup saved. Preparing the patch...');
     _maybeSecondCopy(raw);
 
     // Step 2 — patch (pure Dart, no hardware).
@@ -1489,6 +1588,7 @@ class AppController extends ChangeNotifier {
         '',
         'Patch failed — the chip was NOT written. ${patch.message}',
         reseat: false,
+        outputPath: raw,
       );
       return;
     }
@@ -1512,8 +1612,9 @@ class AppController extends ChangeNotifier {
     }
     await _finishRealAfterHold(
       flashOk,
-      'SHU-compatible firmware flashed & verified. Original saved to $raw',
-      _flashFailMessage(f),
+      'SHU-compatible firmware flashed and verified. The original backup was saved.',
+      '${_flashFailMessage(f)} The original backup was saved.',
+      outputPath: raw,
     );
   }
 
@@ -1521,11 +1622,10 @@ class AppController extends ChangeNotifier {
   /// slot-0 payload via the device's own ZP length record, and repack it as a
   /// BLE-loadable v3 package with the operator-declared identity. No hardware —
   /// a file→file transform, so it just validates, packs, writes, and reports.
-  Future<void> _runMakeZip3() async {
+  Future<void> _runMakeZip3({ConfirmFileReplace? confirmFileReplace}) async {
     final src = firmwarePath;
     if (src == null) {
-      _set(
-        StageState.fail,
+      _setInputFailure(
         'No dump',
         'Choose a 128 KB dump first',
         'Pick a full backup .bin, then make the package.',
@@ -1535,8 +1635,7 @@ class AppController extends ChangeNotifier {
     final type = zip3Type;
     final model = zip3Model;
     if (type == null || model == null) {
-      _set(
-        StageState.fail,
+      _setInputFailure(
         'Pick identity',
         'Choose the type and model',
         'Set the firmware Type and Model the package should declare.',
@@ -1547,7 +1646,7 @@ class AppController extends ChangeNotifier {
     // could have changed on disk).
     final v = Firmware.validate(src, requireSize: true);
     if (!v.ok) {
-      _set(StageState.fail, 'Dump invalid', 'Dump invalid', v.message);
+      _setInputFailure('Dump invalid', 'Dump invalid', v.message);
       return;
     }
 
@@ -1571,17 +1670,26 @@ class AppController extends ChangeNotifier {
         result.displayName,
         prefix: backupPrefix,
       );
-      File(outPath).writeAsBytesSync(result.zipBytes);
+      final writeResult = await writeBytesWithConfirmation(
+        File(outPath),
+        result.zipBytes,
+        confirmReplace: confirmFileReplace,
+      );
+      if (writeResult == ConfirmedWriteResult.cancelled) {
+        _log('== make zip3 cancelled: existing package kept → $outPath ==');
+        return;
+      }
       _log(
         '== packed ${result.model}/${result.type} · '
         '${result.payloadLength} B payload → $outPath ==',
       );
       _finishReal(
         true,
-        'zip3 written → $outPath (${result.model.toUpperCase()} · '
-            '${result.type} · ${result.payloadLength} bytes)',
+        'zip3 created · ${result.model.toUpperCase()} · '
+            '${result.type} · ${result.payloadLength} bytes',
         '',
         reseat: false,
+        outputPath: outPath,
       );
     } on FormatException catch (e) {
       // The ZP guard fails closed on a dump whose exact length can't be read.
