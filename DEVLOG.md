@@ -962,3 +962,23 @@ survive machine switches and chat history loss.
   exact payload (56820 B for 1.5.13), packages wrote to `packed_zip3` and reload
   via Choose .bin. BLE "Load from file" acceptance is the remaining real-world
   proof — the offline path cannot self-verify it. Version unchanged: v1.2.0 BETA.
+
+- Windows CLI v1.8.0 launcher baseline completed and hardware-tested.
+  - `connection_test.bat` is the new read-only action. It uses direct OpenOCD
+    output for A/B/C so the C45 hold/count/release Tcl prompts remain live; D
+    reuses the established respawn loop and `race_grade.cmd` attempt grading.
+  - Connection checking passed on hardware in all four modes: A Default SWD,
+    B C45 Clone with `guided_connect`, C C45 Genuine/nRST, and D Power-race.
+    Failure/retry behavior was also exercised before successful reconnects.
+  - `launcher.bat` now mirrors the GUI action order: Check connection, Backup,
+    SHU compatible, Backup + Flash, Load/change file, Advanced, Exit.
+  - The Advanced submenu exposes standalone Flash Only and Flash Slot 0 prompts,
+    plus protection Check and Unlock/Rescue using the launcher-selected mode.
+    CLI protection actions intentionally do not block Power-race.
+  - Full Windows launcher testing completed with PASS. Standalone script entry
+    points remain supported; no directory-layout refactor was made.
+  - Windows CLI version is now 1.8.0. Linux/macOS remain 1.7.0 until their ports
+    and platform hardware checks are completed. Flutter remains v1.2.0 BETA and
+    is versioned independently as the primary feature path.
+  - Next port order: Linux first, then macOS. See temporary root handoff
+    `CLI_V180_PORT_HANDOFF.md`; delete it after both ports are complete.

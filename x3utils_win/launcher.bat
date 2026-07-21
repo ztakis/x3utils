@@ -45,12 +45,14 @@ if not "%dragged_file%"=="" (
 )
 echo.
 
-echo  [ %CL_C%Actions - Press 1-5 to execute%CL_NC% ]
-echo   [1] Flash SHU compatible (ZT3, G3, F3/F3Pro)
-echo   [2] Run Full Memory Dump (128 KB)
-echo   [3] Flash Loaded File to Chip
-echo   [4] Load / Change Target .bin File
-echo   [5] Exit
+echo  [ %CL_C%Actions - Press 1-7 to execute%CL_NC% ]
+echo   [1] Check Connection
+echo   [2] Backup Full Memory (128 KB)
+echo   [3] Flash SHU Compatible (ZT3, G3, F3/F3Pro)
+echo   [4] Backup + Flash Loaded File
+echo   [5] Load / Change Target .bin File
+echo   [6] Advanced
+echo   [7] Exit
 echo.
 echo  [ %CL_C%Connection Options - Press A, B, C, or D to change%CL_NC% ]
 if "%current_radio%"=="A" (echo   [%CL_C%X%CL_NC%] A - Default / Blinker buttons) else (echo   [ ] A - Default / Blinker buttons)
@@ -64,21 +66,21 @@ if "%current_radio%"=="B" (
     echo.
 )
 if "%current_radio%"=="B" goto :menu_choice_B
-choice /c 12345ABCD /n /m "> Press a key (1-5, A-D): "
+choice /c 1234567ABCD /n /m "> Press a key (1-7, A-D): "
 goto :menu_choice_done
 :menu_choice_B
-choice /c 12345ABCDT /n /m "> Press a key (1-5, A-D, or T): "
+choice /c 1234567ABCDT /n /m "> Press a key (1-7, A-D, or T): "
 :menu_choice_done
 set "key=%errorlevel%"
 
-:: Handle A, B, C, D Radio Toggles (Errorlevels 6, 7, 8, 9)
-if %key% equ 6 (call :set_radio A & goto :menu_loop)
-if %key% equ 7 (call :set_radio B & goto :menu_loop)
-if %key% equ 8 (call :set_radio C & goto :menu_loop)
-if %key% equ 9 (call :set_radio D & goto :menu_loop)
+:: Handle A, B, C, D Radio Toggles (Errorlevels 8, 9, 10, 11)
+if %key% equ 8 (call :set_radio A & goto :menu_loop)
+if %key% equ 9 (call :set_radio B & goto :menu_loop)
+if %key% equ 10 (call :set_radio C & goto :menu_loop)
+if %key% equ 11 (call :set_radio D & goto :menu_loop)
 
-:: Handle changing the Timeout variable (Errorlevel 10, B menu only)
-if %key% equ 10 (
+:: Handle changing the Timeout variable (Errorlevel 12, B menu only)
+if %key% equ 12 (
     echo.
     set /p "timeout_val=Enter new countdown timer value (0-60): "
     :: Validate: must be a number between 0 and 60
@@ -101,12 +103,14 @@ if %key% equ 10 (
     goto :menu_loop
 )
 
-:: Handle 1-5 GOTO jumps (Errorlevels 1-5)
-if %key% equ 1 goto :opt_compat
+:: Handle 1-7 GOTO jumps (Errorlevels 1-7)
+if %key% equ 1 goto :opt_check
 if %key% equ 2 goto :opt_dump
-if %key% equ 3 goto :opt_flash
-if %key% equ 4 goto :opt_load
-if %key% equ 5 goto :exit_menu
+if %key% equ 3 goto :opt_compat
+if %key% equ 4 goto :opt_flash
+if %key% equ 5 goto :opt_load
+if %key% equ 6 goto :advanced_menu
+if %key% equ 7 goto :exit_menu
 
 goto :menu_loop
 
@@ -176,6 +180,19 @@ exit /b 0
 :: Action Labels
 :: ----------------------------------------------------
 
+:: Call connection_test.bat
+:opt_check
+echo.
+echo Launching Connection Check...
+echo.
+if exist "%~dp0connection_test.bat" (
+    call "%~dp0connection_test.bat"
+) else (
+    echo [%CL_R%FAIL%CL_NC%] Could not find connection_test.bat.
+    pause
+)
+goto :menu_loop
+
 :: Call flash_compat.bat
 :opt_compat
 echo.
@@ -207,7 +224,7 @@ goto :menu_loop
 if "%dragged_file%"=="" (
     echo.
     echo [%CL_R%FAIL%CL_NC%] You cannot flash without loading a file first.
-    echo        Please select Option [4] to load a file.
+    echo        Please select Option [5] to load a file.
     echo.
     pause
     goto :menu_loop
@@ -250,6 +267,83 @@ if not "%VALIDATE_RESULT%"=="OK" (
 )
 set "display_name=%BIN_FILE_NAME%"
 goto :menu_loop
+
+:: ----------------------------------------------------
+:: Advanced submenu
+:: ----------------------------------------------------
+
+:advanced_menu
+cls
+echo.
+echo %D%
+echo                    Advanced Actions
+echo %D%
+echo.
+echo   [1] Flash Only - No Backup
+echo   [2] Flash Slot 0
+echo   [3] Check Protection
+echo   [4] Unlock / Rescue - Mass Erase
+echo   [5] Back
+echo.
+choice /c 12345 /n /m "> Press a key (1-5): "
+set "advanced_key=%errorlevel%"
+
+if %advanced_key% equ 1 goto :advanced_flash_only
+if %advanced_key% equ 2 goto :advanced_flash_slot0
+if %advanced_key% equ 3 goto :advanced_rdp_check
+if %advanced_key% equ 4 goto :advanced_rdp_rescue
+if %advanced_key% equ 5 goto :menu_loop
+goto :advanced_menu
+
+:advanced_flash_only
+echo.
+echo Launching Flash Only...
+echo.
+if exist "%~dp0special\flash_only.bat" (
+    call "%~dp0special\flash_only.bat"
+) else (
+    echo [%CL_R%FAIL%CL_NC%] Could not find special\flash_only.bat.
+    pause
+)
+goto :advanced_menu
+
+:advanced_flash_slot0
+echo.
+echo Launching Flash Slot 0...
+echo.
+if exist "%~dp0special\flash_slot0.bat" (
+    call "%~dp0special\flash_slot0.bat"
+) else (
+    echo [%CL_R%FAIL%CL_NC%] Could not find special\flash_slot0.bat.
+    pause
+)
+goto :advanced_menu
+
+:advanced_rdp_check
+echo.
+echo Launching Protection Check...
+echo.
+if exist "%~dp0special\rdp\rdp.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0special\rdp\rdp.ps1" -Check -Launcher
+) else (
+    echo [%CL_R%FAIL%CL_NC%] Could not find special\rdp\rdp.ps1.
+)
+echo.
+pause
+goto :advanced_menu
+
+:advanced_rdp_rescue
+echo.
+echo Launching Unlock / Rescue...
+echo.
+if exist "%~dp0special\rdp\rdp.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0special\rdp\rdp.ps1" -Rescue -Launcher
+) else (
+    echo [%CL_R%FAIL%CL_NC%] Could not find special\rdp\rdp.ps1.
+)
+echo.
+pause
+goto :advanced_menu
 
 :fail_exit
 echo.
