@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 
 import 'device_spec.dart';
 import 'ninebot_tea.dart';
+import 'zp_extract.dart';
 
 /// Dart port of ScooterHacking's fw-zip-package-v3 `Python/pack.py`:
 /// https://github.com/scooterhacking/fw-zip-package-v3
@@ -21,7 +22,9 @@ import 'ninebot_tea.dart';
 /// structure/key order, and matching MD5 hex digests.
 class PackV3 {
   static const Set<String> allowedEncFlags = {'both', 'plain', 'encrypted'};
-  static const Set<String> allowedTypeFlags = {'DRV', 'BMS', 'BLE'};
+  // x3 controllers are VCU/MCU only. (The upstream tool's DRV/BMS/BLE list does
+  // not apply here — a package must declare VCU or MCU, same as the unpack gate.)
+  static const Set<String> allowedTypeFlags = {'VCU', 'MCU'};
   static const (int, int) modelLengthRange = (1, 10);
 
   // ── Validation (mirrors the validate_* functions) ──────────────────────────
@@ -140,6 +143,88 @@ class PackV3 {
 
   /// Lowercase MD5 hex digest (matches `hashlib.md5(...).hexdigest()`).
   static String md5Hex(List<int> data) => md5.convert(data).toString();
+
+  // ── Dump → zip3 (the offline "Make zip3" tool) ──────────────────────────────
+
+  /// Inspect a full 128 KB [dumpBytes] to PRESELECT the Make-zip3 dropdowns.
+  ///
+  /// The banner (`0x1400`) gives the type reliably, and a VCU banner code
+  /// decodes to the model. An MCU carries no model identity at all — its banner
+  /// is `0001` and its dump holds only a generic MCU part serial (`Z025A4…`),
+  /// never a `1K1/1CG/1EF/03S` model serial — so its model cannot be
+  /// preselected: [Zip3Detect.model] is left null and the operator picks it.
+  /// Identity here is a suggestion only; the operator's dropdown choices are
+  /// what [buildZip3FromDump] actually uses.
+  static Zip3Detect detect(List<int> dumpBytes) {
+    final id = DeviceSpec.describeBin(dumpBytes, slotBin: false);
+    return Zip3Detect(
+      type: id.bannerType,
+      // Only VCU can be preselected; MCU (and unknown VCU codes) stay empty.
+      model: id.bannerType == 'VCU' ? id.bannerModel : null,
+    );
+  }
+
+  /// Build a BLE-loadable zip3 package from a full 128 KB backup [dumpBytes],
+  /// labelled with the OPERATOR-declared [type]/[model] (the Make-zip3
+  /// dropdowns), same as `ninebottea` takes its packaging inputs.
+  ///
+  /// Offline, no hardware:
+  /// 1. recover the EXACT slot-0 payload via the device's own `ZP` length record
+  ///    ([Zp.payloadFromDump], fail-closed — no guessed trim);
+  /// 2. pack it with [makeZipV3] as an encrypted, MD5'd package
+  ///    (`FIRM.bin.enc` + `info.json`), matching a real Ninebot v3 package so
+  ///    the BLE app's "Load from file" accepts it.
+  ///
+  /// `compatible` is derived the way real packages do: a VCU is model-specific
+  /// (`<model>_VCU_AT32`); an MCU is model-agnostic and always ships on the
+  /// generic `x3_MCU_AT32` board (its `model` field is still a concrete label).
+  /// [enforceModel] is the operator's checkbox. [displayName] fills the
+  /// `info.json` displayName; when null/blank it defaults to `<model>_<TYPE>`.
+  /// Throws a [FormatException] for an unsupported selection or an unreadable
+  /// ZP length record.
+  static Zip3BuildResult buildZip3FromDump(
+    List<int> dumpBytes, {
+    required String type,
+    required String model,
+    required bool enforceModel,
+    String? displayName,
+  }) {
+    final t = type.trim().toUpperCase();
+    final m = model.trim().toLowerCase();
+
+    // The operator-declared identity must be one we support (fails closed on an
+    // empty/unknown model or a BLE/BMS type).
+    final verdict = DeviceSpec.evaluateZip3(m, t);
+    if (!verdict.ok) {
+      throw FormatException(verdict.reason);
+    }
+
+    // Exact slot-0 payload from the device's own committed length.
+    final payload = Zp.payloadFromDump(dumpBytes);
+
+    final board = t == 'MCU' ? 'x3_MCU_AT32' : '${m}_VCU_AT32';
+    final name = (displayName != null && displayName.trim().isNotEmpty)
+        ? displayName.trim()
+        : '${m}_$t';
+
+    final zip = makeZipV3(
+      data: payload,
+      name: name,
+      typeFlag: t,
+      model: m,
+      boards: [board],
+      enforceModel: enforceModel,
+      enc: 'encrypted',
+    );
+
+    return Zip3BuildResult(
+      zipBytes: zip,
+      model: m,
+      type: t,
+      displayName: name,
+      payloadLength: payload.length,
+    );
+  }
 
   // ── Convenience: read a .bin, write the .zip ────────────────────────────────
 
@@ -287,6 +372,44 @@ class PackV3 {
       info: info,
     );
   }
+}
+
+/// Preselect suggestion from [PackV3.detect] for the Make-zip3 dropdowns.
+/// Either field is null when it cannot be inferred: [type] when there is no
+/// readable banner, [model] for MCU (no model identity) or an unknown VCU code.
+class Zip3Detect {
+  const Zip3Detect({this.type, this.model});
+
+  /// `VCU` / `MCU`, or null when no banner is readable.
+  final String? type;
+
+  /// `zt3`/`g3`/`gt3`/`f3`, or null when it cannot be preselected.
+  final String? model;
+}
+
+/// Result of [PackV3.buildZip3FromDump]: the finished package plus the identity
+/// derived from the dump (for the UI/filename and logs).
+class Zip3BuildResult {
+  const Zip3BuildResult({
+    required this.zipBytes,
+    required this.model,
+    required this.type,
+    required this.displayName,
+    required this.payloadLength,
+  });
+
+  /// The complete zip3 archive, ready to write to disk.
+  final Uint8List zipBytes;
+
+  /// Derived scooter model (e.g. `g3`) and type (`VCU`/`MCU`).
+  final String model;
+  final String type;
+
+  /// `info.json` displayName used (operator-supplied or `"<model> <TYPE>"`).
+  final String displayName;
+
+  /// Length of the exact slot-0 payload that was packed.
+  final int payloadLength;
 }
 
 /// Result of [PackV3.unpackV3]: the decrypted firmware plus package metadata.

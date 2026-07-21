@@ -143,6 +143,23 @@ class Firmware {
     return p.join(dir, '${_pre(prefix)}${label}_${_stamp()}.bin');
   }
 
+  /// Default editable name the "Make zip3" tool offers for a package:
+  /// `<model>_<TYPE>_<ts>` (e.g. `g3_MCU_2026-07-21_10-40-30`). A dump carries
+  /// no version string, so the operator accepts or edits this; it becomes both
+  /// the `info.json` displayName and the output filename.
+  static String defaultZip3Name({required String model, required String type}) =>
+      '${model}_${type}_${_stamp()}';
+
+  /// Output path for a "Make zip3" package under
+  /// `Documents/x3utils/packed_zip3`, named after the (possibly edited)
+  /// [displayName], sanitised, with a `.zip` extension.
+  static String packedZip3Path(String displayName, {String prefix = ''}) {
+    final dir = _dir('packed_zip3');
+    final clean = displayName.trim().replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final base = clean.isEmpty ? 'firmware' : clean;
+    return p.join(dir, '${_pre(prefix)}$base.zip');
+  }
+
   /// Raw + patched paths for the SHU-compat workflow — kept SEPARATE from
   /// regular backups, under Documents/x3utils/compat (mirrors flash_compat.bat).
   static (String raw, String patched) newCompatPaths({String prefix = ''}) {

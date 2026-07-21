@@ -558,10 +558,9 @@ survive machine switches and chat history loss.
   firmware (simple rule "for now"); scope recorded in the log line; firmware
   bar goes TWO-LINE (filename alone on line 1, buttons on line 2) — also
   fixes the existing filename squeeze on flash_slot0's single 460 px row.
-  Layout chosen from a clickable mockup (app palette, real bench filenames):
+  Layout chosen from a clickable mockup (app palette, sample filenames):
   Variant A — scope control ABOVE the bar (reading order scope → file → CTA),
-  START FLASH CTA on the RIGHT. Mockup:
-  https://claude.ai/code/artifact/51c8ede6-12c1-4026-bc04-7eafc2f4b231
+  START FLASH CTA on the RIGHT.
 - flash_only slot-0 follow-up — REOPENED and PARKED (discussion only, NOT
   approved for implementation). The earlier "settled" no-backup design above
   must not be built as-is. Its motivating recovery case is a controller that
@@ -643,7 +642,7 @@ survive machine switches and chat history loss.
     Consequently a structurally valid model-mislabeled package can pass, but a
     package declaring BLE/BMS cannot. The existing entry warning remains the
     operator-responsibility gate: no backup and no target guard.
-  - Archive survey used for the cap: 49 ZIPs under `I:\SCOOTER\fw.jsb.by`;
+  - Archive survey used for the cap: 49 ZIPs in the local firmware mirror;
     18 VCU packages were 56849..61948 bytes and 11 MCU packages were
     59273..59692 bytes. Largest VCU/MCU package was 61948 bytes; `70 * 1024`
     leaves 9732 bytes of headroom. Ten BMS packages were 57502..65251 bytes, so
@@ -729,14 +728,14 @@ survive machine switches and chat history loss.
     (`target identity` / `firmware identity`) and the cleared-serial change
     note.
   - Bench round 2 CORRECTIONS from that log (maintainer-confirmed):
-    - The serial is 14 CHARS, not 15 — the bench read `1K1E0000000001R`
+    - The serial is 14 CHARS, not 15 — the bench read one char too many
       because the 15th byte is adjacent memory bleeding into the read (the
       earlier `…x` in these notes was the same artifact). `kSerialLength` is
       now 14 and a regression test pins the stray-byte case.
-    - Confirmed real/generic pairs: ZT3 org `1K1EA2510P1673` / generic
-      `1K1E0000000001`; G3 org `1CGCC9926C8115` / generic `1CGC0000000001`.
-      Both generics are in `kGenericSerials`, so the bench unit now
-      classifies as generic replacement instead of real.
+    - Confirmed real/generic pairs for ZT3 and G3 (a normal per-unit serial
+      vs the factory replacement-part serial). Both generics are in
+      `kGenericSerials`, so the bench unit now classifies as generic
+      replacement instead of real.
     - Tense fix: the serial-change note printed pre-write read "device
       serial cleared (was …)" on a run the guard then BLOCKED — it claimed
       an action that never happened. Now tense-free `device serial: A →
@@ -745,9 +744,9 @@ survive machine switches and chat history loss.
     - After corrections: `flutter analyze` clean, 39 Flutter tests pass.
   - Bench round 3 (same night) validated the SUCCESS path: Backup + Flash of
     a genuine ZT3 dump onto the generic-serial bench unit showed the neutral
-    strip (`Firmware says: ZT3 · VCU · serial 1K1UA2510P9900 → ZT3`),
-    flashed & verified, and the DONE screen carried `Note: device serial:
-    1K1E0000000001 → 1K1UA2510P9900` — the replacement-part restore
+    strip (`Firmware says: ZT3 · VCU · serial <zt3-serial> → ZT3`),
+    flashed & verified, and the DONE screen carried a `Note: device serial:
+    <generic> → <zt3-serial>` change line — the replacement-part restore
     scenario end-to-end, with the 14-char generic classification visible.
     PARKED (maintainer, nitpick tier, do not start unprompted): a second
     pass on result-message wording plus colored/highlighted key words in
@@ -760,22 +759,21 @@ survive machine switches and chat history loss.
 - BLE-OTA vs SWD-slot0 dump comparison (real bench, zt3 VCU 1.5.2 Compat).
   Compared two full 128 KB dumps of the same device: `shu152` taken after a
   BLE flash of the repo's v1.5.2 Compat zip, `stl152` after an x3utils
-  slot0-zip flash of the local mirror `I:\SCOOTER\fw.jsb.by\zt3\VCU\1.5.2
-  (Compat).zip`. Result: byte-identical across all 131072 bytes EXCEPT a
+  slot0-zip flash of the local firmware mirror's zt3 VCU 1.5.2 (Compat)
+  package. Result: byte-identical across all 131072 bytes EXCEPT a
   single contiguous 20-byte block at 0x0F36C-0x0F37F, present (real data) in
   the BLE dump, blank 0xFF in the slot0 dump.
 - Provenance conclusion: the FIRMWARE is the same. The decrypted mirror
   payload (`FIRM_1.5.2 (Compat).bin`, 58220 bytes) is byte-identical to the
   slot0 region [0x1000, 0x0F36C) of BOTH dumps, and the mirror's
-  FIRM.bin.enc MD5 (fa13fea0...) matches its own info.json. So "repo zip ==
+  FIRM.bin.enc MD5 matches its own info.json. So "repo zip ==
   local mirror" is CONFIRMED at the payload level; the two dumps differ only
   by flash METHOD, not firmware.
 - The 20-byte trailer is NOT firmware: the payload is exactly 58220 bytes and
   ends at 0x0F36C, so the trailer sits PAST the image in the erased slot tail.
   Written by the BLE OTA path; SWD slot0-flash (raw decrypted payload only)
-  does not write it. 20 bytes = SHA-1-sized, but it is NOT a plain SHA-1 of
-  the payload or the .enc (checked) — looks like BLE OTA integrity/bookkeeping
-  metadata. Field use: a lone 20-byte block at the slot tail is a fingerprint
+  does not write it. It looks like BLE OTA integrity/bookkeeping metadata, not
+  firmware. Field use: a lone 20-byte block at the slot tail is a fingerprint
   of BLE-OTA provenance vs a clean SWD slot0 flash.
 - Boot outcome: the slot0-flashed device (missing the trailer) BOOTS and runs
   normally. Confirms the Compat bootloader does not gate boot on that trailer;
@@ -843,31 +841,18 @@ survive machine switches and chat history loss.
   This effectively un-parks the dump->slot0 path for the "Make zip3" packer, with
   f3/gt3 covered by the guard rather than by an (impossible) empirical test.
 - Post-payload trailer sizing (2026-07-20): measured via the exact ZP boundary, the
-  trailer is DEVICE-FAMILY-DEPENDENT, NOT universal: 12 bytes on g3 VCU (x4), zt3 VCU
-  1.5.5 (x3) AND zt3 MCU 1.4.3 -- but ZT3Pro is only 4 bytes (8d fd 15 17). f3/gt3
-  untested. Do NOT hardcode 12. (The earlier "20-byte" read was a 12-byte trailer +
-  one 8-byte fill period.) Whatever the size, it is too short to be a full MD5 (16) or
-  SHA1 (20), and it is IRRELEVANT to extraction -- the packer trims at the ZP-derived
-  payload boundary (byte-exact on every model incl. ZT3Pro), so the trailer sits past
-  it. Only a trim-by-counting-the-trailer approach would care about the size. A dev tipped it was an md5/sha1, but the trailer
-  matches NONE of md5(plain)/md5(enc)/sha1(plain)/sha1(enc) (nor their first-12),
-  and none of those digests appear anywhere in the 128 KB dump. The 12 bytes are
-  content-derived (vary per firmware); identity UNRESOLVED (truncated/keyed hash,
-  CRC-96, or signature) -> needs the dev's exact input+algorithm. FW-internals,
-  deferred, and irrelevant to the packer (ZP trims the payload before it).
-  The payload+12B unit appears TWICE per dump -- slot0_end (0x1000+len) and
-  slot1_end (0x10000+len), one slot (0xF000) apart -- and slot0==slot1 byte-exact
-  on a fresh flash. So the trailer is appended to the payload and copied down as one
-  unit (not computed post-flash per slot); the repo `.enc` decrypts to payload-only,
-  so SHU/OTA appends the 12 bytes. Corollary: extraction can be cross-checked slot0
-  vs slot1.
-  RESOLVED which layer the dev's "md5" meant: it's BLE-TRANSPORT, not flash. The SHU
-  BLE flasher (firmware_flasher.dart) sends md5(firmwareData) AFTER the length
-  (includeMd5AfterLength, gated on highDensity/negotiatedWindow flashing) + appends a
-  random byte. The md5 never reaches flash -> the negative flash-trailer test was
-  correct, no contradiction. On-flash 12B trailer stays a separate unidentified
-  device-side field; unconfirmed lead = the per-dump random fill may be appendRandomByte.
-- Reference corpus: `I:\SCOOTER\__Dumps\g3_dash\` = BLE-from-repo full dumps of
+  trailer past the payload is DEVICE-FAMILY-DEPENDENT, NOT universal: 12 bytes on
+  g3 VCU / zt3 VCU 1.5.5 / zt3 MCU 1.4.3, but only 4 bytes on ZT3Pro; f3/gt3
+  untested. Do NOT hardcode a size. It is IRRELEVANT to extraction -- the packer
+  trims at the ZP-derived payload boundary (byte-exact on every model incl.
+  ZT3Pro), so the trailer sits past it; only a trim-by-counting-the-trailer
+  approach would care about the size. Its exact identity is unresolved device-side
+  bookkeeping (content-derived, varies per firmware) -> FW-internals, deferred,
+  and irrelevant to the packer. The payload+trailer unit appears TWICE per dump
+  -- slot0_end (0x1000+len) and slot1_end (0x10000+len), one slot (0xF000) apart
+  -- and is byte-exact between them on a fresh flash, so extraction can be
+  cross-checked slot0 vs slot1.
+- Reference corpus: a local g3_dash dumps folder = BLE-from-repo full dumps of
   g3 VCU 1.5.15 / 1.5.6-100 / 1.6.1 / 1.6.2, each with a user-space-cleared twin
   (identity zeroed at 0x1F000). slot0 heads of 1.5.15 (61316 B) and 1.5.6-100
   (57476 B) are byte-EXACT to the mirror = stock; 1.6.1/1.6.2 are newer than the
@@ -875,3 +860,58 @@ survive machine switches and chat history loss.
   is always ≡ 4 (mod 8) (enc is 8-aligned, plain = enc - 4) — cheap cut-validity
   gate. zt3 VCU 1.5.2 tail signature `5A D6 7E B1 13 12 7A 00` is a zt3-VCU build
   constant, NOT universal (g3/f3/gt3 and all MCU differ), so no cross-model trim.
+
+## 2026-07-21
+
+- Make zip3 packer — ENGINE built + verified (Dart-only, offline; no CLI or
+  firmware change). Un-parks the dump->zip3 path via the ZP length record. The
+  GUI action + dropdowns are a SEPARATE next pass; nothing is wired into the app
+  yet.
+- New/changed engine files:
+  - `lib/engine/zp_extract.dart` (NEW): `Zp.payloadFromDump` — deterministic
+    exact slot-0 payload from a full 128 KB dump via the device's own ZP length
+    record. Fail-closed guard (magic "ZP", non-zero length, payload length
+    ≡ 4 mod 8, inside the slot window, fits the dump); otherwise it refuses and
+    demands a clean bin — never a guessed trim.
+  - `lib/engine/pack_zip3.dart`: fixed `makeZipV3.allowedTypeFlags` (stale
+    {DRV,BMS,BLE} -> {VCU,MCU}); added `PackV3.detect` (dropdown preselect) and
+    `PackV3.buildZip3FromDump` (operator-declared identity -> encrypted v3
+    package).
+  - `lib/engine/firmware.dart`: `defaultZip3Name` + `packedZip3Path` (output
+    under `Documents/x3utils/packed_zip3`).
+- Design settled with the maintainer this session:
+  - Offline Advanced action "Make zip3", placed after Flash slot 0 / before
+    Check protection. Reuses the firmware picker for ONE 128 KB dump; the
+    connection mode is ignored (left at its last state). 64 KB slot-bin input is
+    deferred to a separate discussion.
+  - IDENTITY IS OPERATOR-DECLARED, ninebottea-style. A Type dropdown (VCU/MCU —
+    a dropdown, not a toggle, so a future type can be added) drives a Model
+    dropdown ({zt3, g3, gt3, f3}). `detect()` PRESELECTS from the banner: the
+    type always, and the VCU model from its banner code. The MCU model dropdown
+    STARTS EMPTY and the operator must pick it — an MCU has no model identity
+    (banner is 0001 on every model, and an MCU dump holds only a generic MCU
+    part serial, never a 1K1/1CG/1EF/03S model serial; verified on a real zt3
+    MCU dump). Background selection-vs-detection mismatch WARNINGS are an
+    advanced nice-to-have, deferred; plain preselection is in.
+  - `compatible` is computed like the real packages: VCU is model-specific
+    (`<model>_VCU_AT32`); MCU is model-agnostic and always ships on the generic
+    `x3_MCU_AT32` board (its `model` field is still a concrete label).
+    `enforceModel` is an operator checkbox, default on. `displayName` defaults to
+    `<model>_<TYPE>_<timestamp>`, is editable, and becomes the output filename.
+  - Why MCU is generic at the board level: MCU hardware is shared across
+    ZT3/G3/GT3 (F3/F3pro nearly the same). The maintainer has field-flashed g3
+    MCU firmware onto ZT3 MCU hardware — it boots and runs, just with different
+    behaviour, no lockup.
+- Verification (offline, no hardware):
+  - `flutter analyze` clean; full suite 59/59 (20 new zip3 engine tests plus the
+    existing ones). New tests cover the ZP guard rejections, `detect` preselect
+    (including MCU -> empty model), operator VCU/MCU builds, the enforceModel
+    toggle, displayName default/override, the unpack round-trip, and
+    unsupported-selection / ZP-guard propagation.
+  - Byte-exact proof against the local firmware mirror (throwaway test, not
+    committed): a real g3 VCU dump -> `buildZip3FromDump` reproduced the shipped
+    package's encrypted member byte-for-byte. This works because the ZP payload
+    length is ≡ 4 (mod 8), so NinebotTEA encrypt is the exact inverse of decrypt
+    — the output is a genuine BLE-loadable package, not just a valid-looking one.
+- Next: the GUI "Make zip3" action (dropdowns, enforce checkbox, editable
+  displayName, offline flow). Then weigh a version note (GUI is v1.2.0 BETA).
