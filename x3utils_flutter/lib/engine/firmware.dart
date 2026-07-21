@@ -265,7 +265,10 @@ class Firmware {
 /// out the obvious OEM case — it does not guarantee SHU BLE will accept the
 /// package. Whether an OEM dump could be made SHU-flashable just by rewriting
 /// this key is unresolved (suspected enough for older firmware, not newer), so
-/// Make zip3 refuses OEM dumps rather than guess.
+/// Make zip3 refuses OEM dumps rather than guess. NB 0x1420 is INSIDE the
+/// payload (0x20 past the banner), so some older repo builds hold unrelated
+/// bytes there and trip this as a known exception — unconfirmed theory: that fw
+/// doesn't look for a key, and newer fw adopted the blank convention.
 enum FwKeyState {
   /// The default SHU key — repo/Compat firmware.
   defaultKey,

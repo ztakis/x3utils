@@ -200,20 +200,26 @@ class PackV3 {
       throw FormatException(verdict.reason);
     }
 
-    // SHU BLE flashing decrypts with the default key, so a source dump missing
-    // that key at 0x1420 (repo/Compat firmware has it; the newer repo default
-    // leaves it blank 0xFF) is definitely OEM/stock and would fail a BLE flash
-    // — refuse it. NOTE: passing this is NECESSARY, NOT SUFFICIENT — a present
-    // key does not guarantee SHU BLE will accept the package; the gate only
-    // rejects the obvious OEM case. Whether an OEM dump could be made
-    // SHU-flashable by rewriting this key is unresolved (suspected enough for
-    // older firmware, not newer), so it's refused for now; this stop is where
-    // any patch step would slot in.
+    // The 16 bytes at 0x1420: newer repo firmware leaves them blank (0xFF), and
+    // flash_compat writes the default SHU key there. Anything else is USUALLY
+    // OEM/stock (a different production key) and would fail a BLE flash — so
+    // refuse it. Two caveats, both UNCONFIRMED maintainer guesses:
+    //  * 0x1420 is INSIDE the payload (0x20 past the banner), so some OLDER repo
+    //    builds hold unrelated firmware bytes there (observed: an ASCII token on
+    //    a real g3 VCU 1.4.8) yet still BLE-flash fine. Working theory: that fw
+    //    was patched to not look for a key at all, and newer fw later adopted
+    //    the simpler blank convention. Those older builds trip this gate as a
+    //    known EXCEPTION, not a bug.
+    //  * Passing is NECESSARY, NOT SUFFICIENT: a blank/key here does not
+    //    guarantee SHU BLE will accept the package.
+    // So this is a best-effort filter for the obvious OEM case, not a proof.
     if (!CompatPatch.keyState(dumpBytes).bleFlashable) {
       throw const FormatException(
-        'This dump is OEM/stock firmware — it does not carry the default SHU '
-        'key at 0x1420, so a package made from it would fail a BLE flash. Only '
-        'firmware flashed from the repo (SHU-compatible) can be repackaged.',
+        'This dump does not carry the default SHU key at 0x1420 (not the '
+        'default key, not blank). That is usually OEM/stock firmware, which '
+        'would fail a BLE flash — but some older repo builds also lack it and '
+        'can still be fine. Make zip3 only packs firmware with the expected '
+        'key; if you are sure this is good repo firmware, keep the raw .bin.',
       );
     }
 

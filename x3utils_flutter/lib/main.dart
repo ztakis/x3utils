@@ -1707,8 +1707,9 @@ Future<bool?> _showMakeZip3Notice(BuildContext context) {
             ),
             const SizedBox(height: 12),
             const Text(
-              'Repo firmware only. The dump must come from firmware flashed '
-              'from the repo (SHU-compatible); an OEM/stock dump is refused. '
+              'Repo firmware only. The dump should come from firmware flashed '
+              'from the repo (SHU-compatible); a dump missing the expected key '
+              'is refused — usually OEM/stock, occasionally an older repo build. '
               'And a successful pack is not a promise — SHU BLE can still '
               'reject the file, so confirm it by loading it.',
               style: TextStyle(
