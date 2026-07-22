@@ -2814,6 +2814,15 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
                   ),
                 ],
               ),
+              if (hasDump && !canName) ...[
+                const SizedBox(height: 8),
+                Text(
+                  c.zip3Type == 'MCU'
+                      ? 'An MCU dump has no model identity — pick the model.'
+                      : 'Pick the firmware type and model to build.',
+                  style: const TextStyle(fontSize: 12, color: AppColors.hold),
+                ),
+              ],
               const SizedBox(height: 10),
               _EnforceModelToggle(c: c),
               const SizedBox(height: 12),
@@ -2863,15 +2872,6 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
                   ),
                 ),
               ),
-              if (hasDump && !canName) ...[
-                const SizedBox(height: 8),
-                Text(
-                  c.zip3Type == 'MCU'
-                      ? 'An MCU dump has no model identity — pick the model.'
-                      : 'Pick the firmware type and model to build.',
-                  style: const TextStyle(fontSize: 12, color: AppColors.hold),
-                ),
-              ],
             ],
           ),
         ),
