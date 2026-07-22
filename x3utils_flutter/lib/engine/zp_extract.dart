@@ -14,9 +14,13 @@ import 'firmware.dart' show Firmware;
 /// plaintext payload length is that minus 4. slot 0 begins at dump offset
 /// `0x1000` (flash `0x08001000`).
 ///
-/// So the cut is DETERMINISTIC — no heuristics. Validated byte-exact against the
-/// firmware mirror on real dumps across models (g3/zt3) and both types
-/// (VCU/MCU). See DEVLOG 2026-07-20.
+/// A BLE flash updates this record, but an ST-Link slot-0 write does not. The
+/// cut is deterministic only when the dump was taken after the current firmware
+/// was installed through BLE, before any later ST-Link firmware write. A valid
+/// but stale record cannot be identified from the dump alone. The guarded
+/// extraction was validated byte-exact against the firmware mirror on real
+/// fresh BLE-flash dumps across models (g3/zt3) and both types (VCU/MCU). See
+/// DEVLOG 2026-07-20 and 2026-07-22.
 class Zp {
   const Zp._();
 
@@ -37,8 +41,9 @@ class Zp {
   /// negative length), accepts a candidate only when the magic matches, the
   /// encoded length is non-zero, the derived payload length is `≡4 (mod 8)` (the
   /// decrypted-firmware invariant), it falls inside the slot-0 size window, and
-  /// it fits within the dump. Anything else means the caller must supply a clean
-  /// slot-0 bin rather than a guessed trim.
+  /// it fits within the dump. Anything else means Make zip3 must refuse this
+  /// image rather than guess a trim. These structural checks cannot detect a
+  /// valid record made stale by a later ST-Link slot-0 write.
   static Uint8List payloadFromDump(List<int> dump) {
     if (dump.length < _searchEnd) {
       throw FormatException(
@@ -62,9 +67,11 @@ class Zp {
       );
     }
     throw const FormatException(
-      'No valid "ZP" firmware-length record found near 0x1F800 — the exact '
-      'firmware length cannot be determined from this dump. Supply a clean '
-      'slot-0 bin instead.',
+      'Make zip3 stopped: this dump has no trustworthy BLE firmware-length '
+      'record, so x3utils cannot safely determine the exact payload. This '
+      'optional tool requires a fresh full backup taken immediately after a '
+      'BLE flash, before any ST-Link firmware write, and refuses rather than '
+      'guessing.',
     );
   }
 

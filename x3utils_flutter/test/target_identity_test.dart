@@ -9,7 +9,11 @@ import 'package:x3utils_flutter/engine/device_spec.dart';
 
 const _zt3Banner = 'SCOOTER_VCU_xxU2';
 const _g3Banner = 'SCOOTER_VCU_xxG3';
+const _gt3Banner = 'SCOOTER_VCU_xGT3';
+const _f3Banner = 'SCOOTER_VCU_xxF3';
 const _mcuBanner = 'SCOOTER_MCU_0001';
+const _unknownVcuBanner = 'SCOOTER_VCU_ZZZZ';
+const _unknownMcuBanner = 'SCOOTER_MCU_9999';
 
 Uint8List _fullImage({
   String? banner,
@@ -114,14 +118,27 @@ void main() {
   });
 
   group('checkTargetMatch is banner-only', () {
-    test('banner model swap still blocks (hardware-validated case)', () {
-      final tm = DeviceSpec.checkTargetMatch(
-        dump: _fullImage(banner: _zt3Banner, serial: realZt3),
-        firmware: _fullImage(banner: _g3Banner, serial: realG3),
-        incomingIsSlotBin: false,
-      );
-      expect(tm.blocked, isTrue);
-    });
+    const vcuBanners = {
+      'zt3': _zt3Banner,
+      'g3': _g3Banner,
+      'gt3': _gt3Banner,
+      'f3': _f3Banner,
+    };
+
+    for (final target in vcuBanners.entries) {
+      for (final incoming in vcuBanners.entries) {
+        if (target.key == incoming.key) continue;
+        test('${target.key} VCU rejects ${incoming.key} VCU', () {
+          final tm = DeviceSpec.checkTargetMatch(
+            dump: _fullImage(banner: target.value),
+            firmware: _fullImage(banner: incoming.value),
+            incomingIsSlotBin: false,
+          );
+          expect(tm.blocked, isTrue);
+          expect(tm.message, contains('can brick the controller'));
+        });
+      }
+    }
 
     test('banner type swap still blocks', () {
       final tm = DeviceSpec.checkTargetMatch(
@@ -130,6 +147,22 @@ void main() {
         incomingIsSlotBin: true,
       );
       expect(tm.blocked, isTrue);
+      expect(
+        tm.message,
+        'the target firmware identifies as ZT3 VCU, but the selected firmware '
+        'identifies as MCU. Incompatible firmware can brick the controller.',
+      );
+    });
+
+    test('MCU target rejects VCU firmware too', () {
+      final tm = DeviceSpec.checkTargetMatch(
+        dump: _fullImage(banner: _mcuBanner),
+        firmware: _slotBin(banner: _gt3Banner),
+        incomingIsSlotBin: true,
+      );
+      expect(tm.blocked, isTrue);
+      expect(tm.message, contains('target firmware identifies as MCU'));
+      expect(tm.message, contains('GT3 VCU'));
     });
 
     test('serial disagreement no longer blocks (enforcement retired)', () {
@@ -143,14 +176,37 @@ void main() {
       expect(tm.blocked, isFalse);
     });
 
-    test('nothing readable is allowed with a skipped note', () {
+    test('missing target banner fails closed', () {
       final tm = DeviceSpec.checkTargetMatch(
         dump: _fullImage(),
-        firmware: _fullImage(),
+        firmware: _fullImage(banner: _zt3Banner),
         incomingIsSlotBin: false,
       );
-      expect(tm.blocked, isFalse);
-      expect(tm.note, isNotNull);
+      expect(tm.blocked, isTrue);
+      expect(
+        tm.message,
+        'the target backup has no supported SCOOTER firmware banner at 0x1400, '
+        'so compatibility cannot be verified. Use Flash Only only as an expert '
+        'override; it skips this protection.',
+      );
+    });
+
+    test('unsupported target and incoming banners fail closed', () {
+      final unknownTarget = DeviceSpec.checkTargetMatch(
+        dump: _fullImage(banner: _unknownVcuBanner),
+        firmware: _fullImage(banner: _zt3Banner),
+        incomingIsSlotBin: false,
+      );
+      expect(unknownTarget.blocked, isTrue);
+      expect(unknownTarget.message, contains('target backup'));
+
+      final unknownIncoming = DeviceSpec.checkTargetMatch(
+        dump: _fullImage(banner: _zt3Banner),
+        firmware: _slotBin(banner: _unknownMcuBanner),
+        incomingIsSlotBin: true,
+      );
+      expect(unknownIncoming.blocked, isTrue);
+      expect(unknownIncoming.message, contains('selected firmware'));
     });
 
     test('agreeing banners pass without a note', () {
@@ -162,6 +218,18 @@ void main() {
       expect(tm.blocked, isFalse);
       expect(tm.note, isNull);
     });
+
+    test('MCU to MCU passes with an explicit model limitation', () {
+      final tm = DeviceSpec.checkTargetMatch(
+        dump: _fullImage(banner: _mcuBanner),
+        firmware: _slotBin(banner: _mcuBanner),
+        incomingIsSlotBin: true,
+      );
+      expect(tm.blocked, isFalse);
+      expect(tm.note, contains('does not encode the MCU model'));
+      expect(tm.note, contains('ZT3/GT3/G3 share MCU hardware'));
+      expect(tm.note, contains('F3 compatibility cannot be verified'));
+    });
   });
 
   group('checkIncomingBin selection gate', () {
@@ -172,18 +240,34 @@ void main() {
         enforceBanner: true,
       );
       expect(gate.ok, isFalse);
-      expect(gate.message, contains('Flash Only'));
+      expect(
+        gate.message,
+        'Cannot verify firmware compatibility: no supported SCOOTER firmware '
+        'banner was found at 0x1400. Backup + Flash was stopped. Flash Only is '
+        'an expert override that skips this protection.',
+      );
     });
 
-    test('mainstream accepts bannered full and slot bins', () {
-      expect(
-        DeviceSpec.checkIncomingBin(
-          _fullImage(banner: _zt3Banner),
-          slotBin: false,
-          enforceBanner: true,
-        ).ok,
-        isTrue,
-      );
+    test('mainstream accepts every supported VCU banner', () {
+      for (final banner in const [
+        _zt3Banner,
+        _g3Banner,
+        _gt3Banner,
+        _f3Banner,
+      ]) {
+        expect(
+          DeviceSpec.checkIncomingBin(
+            _fullImage(banner: banner),
+            slotBin: false,
+            enforceBanner: true,
+          ).ok,
+          isTrue,
+          reason: banner,
+        );
+      }
+    });
+
+    test('mainstream accepts exact MCU_0001', () {
       expect(
         DeviceSpec.checkIncomingBin(
           _slotBin(banner: _mcuBanner),
@@ -194,26 +278,44 @@ void main() {
       );
     });
 
-    test('mainstream rejects a bannerless slot bin', () {
-      expect(
-        DeviceSpec.checkIncomingBin(
-          _slotBin(),
+    test('unknown VCU and non-0001 MCU codes are rejected', () {
+      for (final banner in const [_unknownVcuBanner, _unknownMcuBanner]) {
+        final gate = DeviceSpec.checkIncomingBin(
+          _slotBin(banner: banner),
           slotBin: true,
           enforceBanner: true,
-        ).ok,
-        isFalse,
+        );
+        expect(gate.ok, isFalse, reason: banner);
+        expect(gate.message, contains('no supported SCOOTER firmware banner'));
+      }
+    });
+
+    test('mainstream rejects a bannerless slot bin', () {
+      final gate = DeviceSpec.checkIncomingBin(
+        _slotBin(),
+        slotBin: true,
+        enforceBanner: true,
+      );
+      expect(gate.ok, isFalse);
+      expect(
+        gate.message,
+        'Cannot verify firmware compatibility: no supported SCOOTER firmware '
+        'banner was found at 0x400. Flash slot 0 was stopped. Flash Only is an '
+        'expert override that skips this protection.',
       );
     });
 
-    test('flash_only stays permissive (no banner required)', () {
-      expect(
-        DeviceSpec.checkIncomingBin(
-          _fullImage(),
-          slotBin: false,
-          enforceBanner: false,
-        ).ok,
-        isTrue,
-      );
+    test('flash_only stays permissive for missing and unknown banners', () {
+      for (final banner in [null, _unknownVcuBanner, _unknownMcuBanner]) {
+        expect(
+          DeviceSpec.checkIncomingBin(
+            _fullImage(banner: banner),
+            slotBin: false,
+            enforceBanner: false,
+          ).ok,
+          isTrue,
+        );
+      }
     });
   });
 

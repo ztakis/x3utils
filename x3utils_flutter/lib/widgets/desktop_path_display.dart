@@ -69,8 +69,10 @@ class DesktopPathDisplay extends StatelessWidget {
       executable = 'open';
       arguments = _isDirectory ? [path] : ['-R', path];
     } else if (Platform.isLinux) {
-      executable = 'xdg-open';
-      arguments = [directory];
+      await Process.start('xdg-open', [
+        directory,
+      ], mode: ProcessStartMode.detached);
+      return;
     } else {
       throw UnsupportedError(
         'Opening folders is unsupported on this platform.',

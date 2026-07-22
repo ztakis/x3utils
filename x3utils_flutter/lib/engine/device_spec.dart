@@ -9,8 +9,9 @@
 /// - **Model validation**: trust `info.json`'s declared `model` / `type`
 ///   against [kSupportedDevices] — see [DeviceSpec.evaluateZip3].
 /// - **Device-side guard**: BANNERS ENFORCE, SERIALS INFORM (decided
-///   2026-07-19). [DeviceSpec.checkTargetMatch] blocks only on firmware-banner
-///   disagreement (model/type). Serial facts — prefix→model decode, the
+///   2026-07-19). [DeviceSpec.checkTargetMatch] requires supported firmware
+///   banners and blocks on their type/model disagreement. Serial facts —
+///   prefix→model decode, the
 ///   generic replacement-part string, cleared identity regions — are surfaced
 ///   via [DeviceSpec.describeBin] for the UI strip and run logs, and never
 ///   block. Serial-based enforcement (pairing matrix, exact-match rules) was
@@ -60,8 +61,9 @@ const kSupportedDevices = <SupportedDevice>[
   SupportedDevice(model: 'f3', types: {'MCU', 'VCU'}, vcuCode: 'xxF3'),
 ];
 
-/// MCU firmware uses this one banner code across every model (so an MCU banner
-/// confirms the type but not which model).
+/// MCU firmware uses this one banner code across every model, so an MCU banner
+/// confirms the type but not which model. ZT3/GT3/G3 share MCU hardware; F3
+/// does not, but its identical banner leaves that mismatch undetectable here.
 const kMcuCode = '0001';
 
 /// The firmware banner is a fixed 16-byte ASCII string `SCOOTER_<TYPE>_<CODE>`
@@ -204,43 +206,39 @@ class DeviceSpec {
         'Firmware is too small to contain a banner at 0x400.',
       );
     }
-    final banner = String.fromCharCodes(
-      firmware.sublist(kBannerOffset, kBannerOffset + kBannerLength),
-    );
-    final m = _bannerRe.firstMatch(banner);
-    if (m == null) {
+    final raw = _bannerAt(firmware, kBannerOffset);
+    if (raw == null) {
       return BannerVerdict.mismatch(
-        banner,
+        '',
         'No SCOOTER_<TYPE>_<CODE> banner found at 0x400.',
       );
     }
-    final bannerType = m.group(1)!; // VCU | MCU
-    final bannerCode = m.group(2)!;
+    final banner = _supportedBannerAt(firmware, kBannerOffset);
+    if (banner == null) {
+      return BannerVerdict.mismatch(
+        raw,
+        'Unsupported firmware banner "$raw" at 0x400.',
+      );
+    }
     final t = type.trim().toUpperCase();
     final mo = model.trim().toLowerCase();
 
-    if (bannerType != t) {
+    if (banner.type != t) {
       return BannerVerdict.mismatch(
-        banner,
-        'Firmware banner is $bannerType but the package claims $t.',
+        banner.raw,
+        'Firmware banner is ${banner.type} but the package claims $t.',
       );
     }
-    if (bannerType == 'VCU') {
+    if (banner.type == 'VCU' && banner.model != mo) {
       final expected = _codeFor(mo);
-      if (expected != null && bannerCode != expected) {
-        return BannerVerdict.mismatch(
-          banner,
-          'Firmware banner code "$bannerCode" does not match model $mo '
-          '(expected "$expected").',
-        );
-      }
-    } else if (bannerCode != kMcuCode) {
       return BannerVerdict.mismatch(
-        banner,
-        'MCU banner code "$bannerCode" is unexpected (expected "$kMcuCode").',
+        banner.raw,
+        'Firmware banner identifies as ${banner.label}, but the package '
+        'claims ${mo.toUpperCase()} VCU'
+        '${expected == null ? '' : ' (expected code "$expected")'}.',
       );
     }
-    return BannerVerdict.ok(banner);
+    return BannerVerdict.ok(banner.raw);
   }
 
   static String? _codeFor(String modelLower) {
@@ -252,9 +250,11 @@ class DeviceSpec {
 
   /// Device-side (pre-flash) guard — BANNERS ONLY. Compares the target's
   /// slot-0 firmware banner (from the fresh backup [dump]) against the loaded
-  /// [firmware]'s banner and blocks on model or type disagreement. Nothing
-  /// readable → couldn't ID → allowed (first flash / rescue). Only
-  /// backup+flash / flash_slot0 call this (they dump first).
+  /// [firmware]'s banner and blocks on model or type disagreement. A missing,
+  /// malformed, or unsupported banner also blocks: guarded flashing cannot
+  /// claim compatibility without both identities. Only Backup + Flash and
+  /// Flash slot 0 call this (they dump first); Flash Only is the deliberate
+  /// expert override.
   ///
   /// Serials deliberately do NOT participate (2026-07-19): they are
   /// BLE-app-owned, layout varies by firmware, and enforcement kept producing
@@ -266,47 +266,56 @@ class DeviceSpec {
     required List<int> firmware,
     required bool incomingIsSlotBin,
   }) {
-    final models = <(String, String)>[]; // (source, model)
-    final types = <(String, String)>[]; // (source, VCU/MCU)
+    final incomingOffset = incomingIsSlotBin
+        ? kBannerOffset
+        : kSlotBannerOffset;
+    final target = _supportedBannerAt(dump, kSlotBannerOffset);
+    final incoming = _supportedBannerAt(firmware, incomingOffset);
 
-    void addBanner(String src, String? banner) {
-      if (banner == null) return;
-      final m = _bannerRe.firstMatch(banner)!;
-      types.add((src, m.group(1)!));
-      final model = _modelFromVcuCode(m.group(2)!);
-      if (model != null) models.add((src, model));
-    }
-
-    addBanner('target firmware', _bannerAt(dump, kSlotBannerOffset));
-    addBanner(
-      'loaded firmware',
-      _bannerAt(
-        firmware,
-        incomingIsSlotBin ? kBannerOffset : kSlotBannerOffset,
-      ),
-    );
-
-    final modelClash = _firstClash(models);
-    if (modelClash != null) {
-      return TargetMatch(blocked: true, message: modelClash);
-    }
-    final typeClash = _firstClash(types);
-    if (typeClash != null) {
-      return TargetMatch(blocked: true, message: typeClash);
-    }
-
-    if (models.isEmpty && types.isEmpty) {
+    if (target == null) {
       return const TargetMatch(
-        note: "couldn't ID target or firmware — target check skipped",
+        blocked: true,
+        message:
+            'the target backup has no supported SCOOTER firmware banner at '
+            '0x1400, so compatibility cannot be verified. Use Flash Only only '
+            'as an expert override; it skips this protection.',
       );
     }
-    return const TargetMatch(); // every readable signal agrees
+    if (incoming == null) {
+      return TargetMatch(
+        blocked: true,
+        message:
+            'the selected firmware has no supported SCOOTER firmware banner '
+            'at 0x${incomingOffset.toRadixString(16).toUpperCase()}, so '
+            'compatibility cannot be verified.',
+      );
+    }
+    if (target.type != incoming.type ||
+        (target.type == 'VCU' && target.model != incoming.model)) {
+      return TargetMatch(
+        blocked: true,
+        message:
+            'the target firmware identifies as ${target.label}, but the '
+            'selected firmware identifies as ${incoming.label}. Incompatible '
+            'firmware can brick the controller.',
+      );
+    }
+    if (target.type == 'MCU') {
+      return const TargetMatch(
+        note:
+            'Both banners identify MCU firmware. The banner does not encode '
+            'the MCU model: ZT3/GT3/G3 share MCU hardware, but F3 '
+            'compatibility cannot be verified.',
+      );
+    }
+    return const TargetMatch();
   }
 
-  /// Selection-time gate for a picked `.bin`. When [enforceBanner] (the
-  /// mainstream Backup+Flash / Flash slot 0 actions), a file with no readable
-  /// `SCOOTER_` banner at its expected offset is not recognizable firmware and
-  /// is rejected — Flash Only stays the path for unrecognized/crafted images.
+  /// Gate for a picked or revalidated `.bin`. When [enforceBanner] (the guarded
+  /// Backup + Flash / Flash slot 0 actions), the expected offset must contain a
+  /// supported VCU banner code or the exact shared MCU banner
+  /// `SCOOTER_MCU_0001`. Flash Only stays the deliberate expert override for
+  /// unrecognized/crafted images.
   static FirmwareCheck checkIncomingBin(
     List<int> bytes, {
     required bool slotBin,
@@ -314,11 +323,13 @@ class DeviceSpec {
   }) {
     if (!enforceBanner) return FirmwareCheck.valid;
     final off = slotBin ? kBannerOffset : kSlotBannerOffset;
-    if (_bannerAt(bytes, off) == null) {
+    if (_supportedBannerAt(bytes, off) == null) {
+      final guardedAction = slotBin ? 'Flash slot 0' : 'Backup + Flash';
       return FirmwareCheck.fail(
-        'No SCOOTER firmware banner at 0x${off.toRadixString(16).toUpperCase()} '
-        '— not a recognizable firmware image. Flash Only can write '
-        'unrecognized images.',
+        'Cannot verify firmware compatibility: no supported SCOOTER firmware '
+        'banner was found at 0x${off.toRadixString(16).toUpperCase()}. '
+        '$guardedAction was stopped. Flash Only is an expert override that '
+        'skips this protection.',
       );
     }
     return FirmwareCheck.valid;
@@ -397,19 +408,6 @@ class DeviceSpec {
     return null;
   }
 
-  /// First pair of sources whose values disagree, as a user-facing message;
-  /// null if all present values match.
-  static String? _firstClash(List<(String, String)> signals) {
-    for (var i = 1; i < signals.length; i++) {
-      if (signals[i].$2 != signals[0].$2) {
-        return '${signals[0].$1} says "${signals[0].$2}" but '
-            '${signals[i].$1} says "${signals[i].$2}" — resolve the mismatch '
-            'before flashing.';
-      }
-    }
-    return null;
-  }
-
   /// The model whose VCU banner uses [code] (e.g. xxG3 → g3), or null for the
   /// shared MCU code / unknown.
   static String? _modelFromVcuCode(String code) {
@@ -441,11 +439,36 @@ class DeviceSpec {
     final s = String.fromCharCodes(b.sublist(off, off + kBannerLength));
     return _bannerRe.hasMatch(s) ? s : null;
   }
+
+  static _SupportedBanner? _supportedBannerAt(List<int> b, int off) {
+    final raw = _bannerAt(b, off);
+    if (raw == null) return null;
+    final match = _bannerRe.firstMatch(raw)!;
+    final type = match.group(1)!;
+    final code = match.group(2)!;
+    if (type == 'MCU') {
+      return code == kMcuCode ? _SupportedBanner(raw: raw, type: type) : null;
+    }
+    final model = _modelFromVcuCode(code);
+    return model == null
+        ? null
+        : _SupportedBanner(raw: raw, type: type, model: model);
+  }
 }
 
-/// Result of [DeviceSpec.checkTargetMatch]. [blocked] is true only on a
-/// confirmed target/firmware mismatch; [note] carries the "couldn't ID / check
-/// skipped" reason when we allow through without a positive match.
+class _SupportedBanner {
+  const _SupportedBanner({required this.raw, required this.type, this.model});
+
+  final String raw;
+  final String type;
+  final String? model;
+
+  String get label => type == 'MCU' ? 'MCU' : '${model!.toUpperCase()} VCU';
+}
+
+/// Result of [DeviceSpec.checkTargetMatch]. [blocked] is true on an unsupported
+/// identity or a confirmed target/firmware mismatch; [note] carries an
+/// informational limitation for an otherwise-allowed match.
 class TargetMatch {
   const TargetMatch({this.blocked = false, this.message = '', this.note});
   final bool blocked;

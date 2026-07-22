@@ -206,6 +206,42 @@ The shared validators are part of the safety boundary. They should continue to:
 Avoid duplicating validation logic in callers. Prefer updating the shared
 validator and then consuming its result.
 
+### Flutter Firmware Identity and Make zip3 Safety
+
+The guarded Flutter flash paths are stricter than the shared structural
+validator and must remain fail-closed:
+
+- Backup + Flash and Flash slot 0 accept only the known VCU banner codes
+  `xxU2` (ZT3), `xxG3` (G3), `xGT3` (GT3), and `xxF3` (F3), or the exact MCU
+  banner `SCOOTER_MCU_0001`. A banner-shaped unknown code is not supported.
+- After the mandatory backup, inspect the installed firmware banner in the dump
+  and compare it with the selected firmware before any erase/write operation.
+  A missing/unsupported banner, VCU/MCU mismatch, or cross-model VCU mismatch
+  must abort while preserving and showing the backup path.
+- The banner identifies installed firmware, not physical hardware. All supported
+  MCU firmware uses `SCOOTER_MCU_0001`; ZT3/GT3/G3 share MCU hardware, but F3
+  differs, so the banner cannot detect an F3 MCU mismatch. Do not claim stronger
+  MCU compatibility than this evidence supports.
+- Guarded selections keep a SHA-256 digest. Recheck the file at Start and after
+  the backup so a changed-on-disk firmware cannot reach the write step.
+- Flash Only remains the explicitly warned expert override. Do not silently
+  apply its permissive policy to either guarded action.
+
+Make zip3 is an optional, best-effort local archive feature, not a compatibility
+or BLE-acceptance guarantee:
+
+- Its intended source is a fresh full ST-LINK backup taken immediately after
+  the current firmware was installed through BLE, before any ST-LINK firmware
+  write. BLE updates the ZP firmware-length record; an ST-LINK slot-0 write does
+  not, so a structurally valid ZP can be stale and that cannot be detected from
+  the dump alone.
+- Missing/invalid ZP evidence must be rejected rather than guessed. The SHU-key
+  check is also only a best-effort filter: it can reject some older repo
+  firmware and does not prove BLE acceptance.
+- A created package must still be tested through the BLE app's Load from file.
+  Keep the UI wording conservative and preserve operator responsibility for the
+  declared Type and Model.
+
 ## OpenOCD Notes
 
 - Windows and Linux use bundled `oocd/` directories.

@@ -1857,9 +1857,9 @@ class _StageButtons extends StatelessWidget {
 
 /// Entry intro for Make zip3: an untimed "what is this for" modal shown when
 /// the action is opened from the rail. The action is offline and
-/// non-destructive, so this only EXPLAINS what it does and that the package
-/// identity is operator-declared — nothing here verifies the declared
-/// Type/Model against real hardware. Returns true to enter the action.
+/// non-destructive, so this explains its best-effort BLE-backup workflow, the
+/// stale-ZP limitation, and the operator-declared package identity. Returns true
+/// to enter the action.
 Future<bool?> _showMakeZip3Notice(BuildContext context) {
   return showDialog<bool>(
     context: context,
@@ -1901,18 +1901,18 @@ Future<bool?> _showMakeZip3Notice(BuildContext context) {
             ),
             const SizedBox(height: 8),
             const Text(
-              'It repackages a 128 KB backup dump into a zip3 you can BLE-flash '
-              'from the app’s “Load from file”. Fully offline — it reads the '
-              'dump and writes a .zip, and never touches a controller.',
+              'Make zip3 is an optional, best-effort way to turn a fresh '
+              '128 KB ST-Link backup into a local package for the BLE app’s '
+              '“Load from file”. It helps you keep repo firmware versions that '
+              'may no longer be available. The conversion is fully offline.',
               style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
             ),
             const SizedBox(height: 12),
             const Text(
-              'Repo firmware only. The dump should come from firmware flashed '
-              'from the repo (SHU-compatible); a dump missing the expected key '
-              'is refused — usually OEM/stock, occasionally an older repo build. '
-              'And a successful pack is not a promise — SHU BLE can still '
-              'reject the file, so confirm it by loading it.',
+              'Use a full backup taken immediately after the current firmware '
+              'was installed through BLE, before any ST-Link firmware write. '
+              'BLE records the payload length in ZP; an ST-Link slot0 write '
+              'does not update it, so a valid-looking ZP can be stale.',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.5,
@@ -1921,10 +1921,21 @@ Future<bool?> _showMakeZip3Notice(BuildContext context) {
             ),
             const SizedBox(height: 12),
             const Text(
-              'The package is labelled with the Type and Model you pick here; '
-              'nothing checks that against real hardware. Declare the wrong '
-              'identity and you get a correctly-built but mislabelled package. '
-              'Confirm VCU/MCU and the model before you pack.',
+              'x3utils checks the ZP record and repo firmware key, but cannot '
+              'detect a stale valid ZP. It refuses missing or invalid evidence '
+              'rather than guess. A created package is not a guarantee — '
+              'confirm that the BLE app accepts it.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: AppColors.hold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'The package can also be used with Flash slot 0. Its Type and '
+              'Model come from your selection, not the physical controller. '
+              'Confirm both before you pack.',
               style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
             ),
             const SizedBox(height: 20),

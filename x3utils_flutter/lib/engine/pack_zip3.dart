@@ -170,11 +170,12 @@ class PackV3 {
   /// dropdowns), same as `ninebottea` takes its packaging inputs.
   ///
   /// Offline, no hardware:
-  /// 1. recover the EXACT slot-0 payload via the device's own `ZP` length record
-  ///    ([Zp.payloadFromDump], fail-closed — no guessed trim);
+  /// 1. recover the slot-0 payload length from the device's `ZP` record
+  ///    ([Zp.payloadFromDump], fail-closed for a missing/invalid record — no
+  ///    guessed trim; a structurally valid but stale record is not detectable);
   /// 2. pack it with [makeZipV3] as an encrypted, MD5'd package
-  ///    (`FIRM.bin.enc` + `info.json`), matching a real Ninebot v3 package so
-  ///    the BLE app's "Load from file" accepts it.
+  ///    (`FIRM.bin.enc` + `info.json`) in the format intended for the BLE app's
+  ///    "Load from file". The BLE app must still confirm acceptance.
   ///
   /// `compatible` is derived the way real packages do: a VCU is model-specific
   /// (`<model>_VCU_AT32`); an MCU is model-agnostic and always ships on the
@@ -215,11 +216,10 @@ class PackV3 {
     // So this is a best-effort filter for the obvious OEM case, not a proof.
     if (!CompatPatch.keyState(dumpBytes).bleFlashable) {
       throw const FormatException(
-        'This dump does not carry the default SHU key at 0x1420 (not the '
-        'default key, not blank). That is usually OEM/stock firmware, which '
-        'would fail a BLE flash — but some older repo builds also lack it and '
-        'can still be fine. Make zip3 only packs firmware with the expected '
-        'key; if you are sure this is good repo firmware, keep the raw .bin.',
+        'This dump has neither the default SHU key nor a blank key at 0x1420. '
+        'It is usually OEM/stock firmware and may not be BLE-flashable, so Make '
+        'zip3 was stopped. Some older repo firmware may also be rejected by '
+        'this safety check.',
       );
     }
 

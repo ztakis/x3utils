@@ -18,6 +18,16 @@ import 'package:x3utils_flutter/engine/zp_extract.dart';
 const _g3Vcu = 'SCOOTER_VCU_xxG3';
 const _zt3Vcu = 'SCOOTER_VCU_xxU2';
 const _mcu = 'SCOOTER_MCU_0001';
+const _zpError =
+    'Make zip3 stopped: this dump has no trustworthy BLE firmware-length '
+    'record, so x3utils cannot safely determine the exact payload. This '
+    'optional tool requires a fresh full backup taken immediately after a BLE '
+    'flash, before any ST-Link firmware write, and refuses rather than guessing.';
+const _shuKeyError =
+    'This dump has neither the default SHU key nor a blank key at 0x1420. It '
+    'is usually OEM/stock firmware and may not be BLE-flashable, so Make zip3 '
+    'was stopped. Some older repo firmware may also be rejected by this safety '
+    'check.';
 
 /// A valid slot-0 payload length inside the window and ≡4 (mod 8).
 const _len = 51204;
@@ -78,7 +88,9 @@ void main() {
     test('fail-closed: missing ZP record', () {
       expect(
         () => Zp.payloadFromDump(_dump(omitZp: true)),
-        throwsFormatException,
+        throwsA(
+          isA<FormatException>().having((e) => e.message, 'message', _zpError),
+        ),
       );
     });
 
@@ -260,7 +272,9 @@ void main() {
           model: 'g3',
           enforceModel: true,
         ),
-        throwsFormatException,
+        throwsA(
+          isA<FormatException>().having((e) => e.message, 'message', _zpError),
+        ),
       );
     });
 
@@ -303,7 +317,13 @@ void main() {
             model: 'g3',
             enforceModel: true,
           ),
-          throwsFormatException,
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              _shuKeyError,
+            ),
+          ),
         );
       });
     });

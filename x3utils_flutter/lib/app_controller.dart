@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show Color;
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
@@ -15,7 +16,13 @@ import 'engine/confirmed_file_writer.dart';
 
 /// Drives the whole UI via a single StageState the hero binds to.
 class AppController extends ChangeNotifier {
-  AppController() {
+  AppController({@visibleForTesting OpenOcdRunner? runner}) {
+    if (runner != null) {
+      _runner = runner;
+      openOcdStatus = 'ready';
+      _loadPrefs();
+      return;
+    }
     try {
       final paths = OpenOcdPaths.find();
       _runner = OpenOcdRunner(paths);
@@ -127,6 +134,8 @@ class AppController extends ChangeNotifier {
   // switch — so nothing stale or wrong-sized ever carries over.
   String? _firmwareStandard; // flash_backup
   String? _firmwareAdvanced; // flash_only / flash_slot0 (transient)
+  String? _firmwareStandardDigest;
+  String? _firmwareAdvancedDigest;
   // One-line identity/claim note shown under the loaded filename (zip3
   // "Package says …" or the bin's own "Firmware says …"); warn = amber.
   String? _firmwareNote;
@@ -184,6 +193,9 @@ class AppController extends ChangeNotifier {
 
   String? get firmwarePath =>
       actionId == 'flash_backup' ? _firmwareStandard : _firmwareAdvanced;
+  String? get _firmwareDigest => actionId == 'flash_backup'
+      ? _firmwareStandardDigest
+      : _firmwareAdvancedDigest;
   String? get firmwareNote => _firmwareNote;
   bool get firmwareNoteWarn => _firmwareNoteWarn;
 
@@ -331,14 +343,45 @@ class AppController extends ChangeNotifier {
   }
 
   void setFirmware(String? path, {String? note, bool warn = false}) {
+    final digest = path == null ? null : _digestFile(path);
     if (actionId == 'flash_backup') {
       _firmwareStandard = path;
+      _firmwareStandardDigest = digest;
     } else {
       _firmwareAdvanced = path;
+      _firmwareAdvancedDigest = digest;
     }
     _firmwareNote = path == null ? null : note;
     _firmwareNoteWarn = path != null && warn;
     notifyListeners();
+  }
+
+  String? _digestFile(String path) {
+    try {
+      return crypto.sha256.convert(File(path).readAsBytesSync()).toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  FirmwareCheck _validateFirmwareFile(
+    String path, {
+    required bool slot0,
+    required bool enforceBanner,
+  }) {
+    final structural = slot0
+        ? Firmware.validateSlot(path)
+        : Firmware.validate(path, requireSize: true);
+    if (!structural.ok || !enforceBanner) return structural;
+    try {
+      return DeviceSpec.checkIncomingBin(
+        File(path).readAsBytesSync(),
+        slotBin: slot0,
+        enforceBanner: true,
+      );
+    } catch (e) {
+      return FirmwareCheck.fail('Could not read the firmware file: $e');
+    }
   }
 
   /// Validate + remember a picked `.bin` for the current action. Structural
@@ -351,9 +394,11 @@ class AppController extends ChangeNotifier {
     final makeZip3 = actionId == 'make_zip3';
     // Make zip3 takes a full 128 KB dump (like the mainstream full-image path),
     // never a slot bin.
-    final check = isSlotAction
-        ? Firmware.validateSlot(path)
-        : Firmware.validate(path, requireSize: true);
+    final check = _validateFirmwareFile(
+      path,
+      slot0: isSlotAction,
+      enforceBanner: actionId != 'flash_only' && !makeZip3,
+    );
     if (!check.ok) {
       // A rejected pick leaves no confirmed-good selection for this kind —
       // clear it so Start doesn't stay lit on a stale/invalid file.
@@ -361,18 +406,6 @@ class AppController extends ChangeNotifier {
       return check;
     }
     final bytes = File(path).readAsBytesSync();
-    // Flash Only and Make zip3 stay permissive: Flash Only writes crafted
-    // images, and Make zip3 lets the operator declare identity for a dump whose
-    // banner may be blank (rescue / never-provisioned).
-    final gate = DeviceSpec.checkIncomingBin(
-      bytes,
-      slotBin: isSlotAction,
-      enforceBanner: actionId != 'flash_only' && !makeZip3,
-    );
-    if (!gate.ok) {
-      setFirmware(null);
-      return gate;
-    }
     if (makeZip3) {
       // Preselect the dropdowns from the dump's banner (a suggestion only —
       // type reliably, VCU model from its code; MCU/unknown leaves the model
@@ -396,6 +429,7 @@ class AppController extends ChangeNotifier {
     if (running || actionId != 'flash_only' || flashOnlyScope == scope) return;
     flashOnlyScope = scope;
     _firmwareAdvanced = null;
+    _firmwareAdvancedDigest = null;
     _firmwareNote = null;
     _firmwareNoteWarn = false;
     _goIdle();
@@ -598,6 +632,7 @@ class AppController extends ChangeNotifier {
     if (id == 'flash_only') flashOnlyScope = FlashOnlyScope.fullImage;
     _resetZip3Form(); // the packer form is transient, per action entry
     _firmwareAdvanced = null; // advanced actions don't remember loaded bins
+    _firmwareAdvancedDigest = null;
     _firmwareNote = null;
     _firmwareNoteWarn = false;
     _goIdle();
@@ -1507,11 +1542,21 @@ class AppController extends ChangeNotifier {
       );
       return;
     }
-    final v = slot0
-        ? Firmware.validateSlot(fw)
-        : Firmware.validate(fw, requireSize: true);
+    final guarded = actionId != 'flash_only';
+    final v = _validateFirmwareFile(fw, slot0: slot0, enforceBanner: guarded);
     if (!v.ok) {
       _setInputFailure('Firmware invalid', 'Firmware invalid', v.message);
+      return;
+    }
+    final selectedDigest = _firmwareDigest;
+    if (guarded &&
+        (selectedDigest == null || _digestFile(fw) != selectedDigest)) {
+      _setInputFailure(
+        'Firmware changed',
+        'Choose the firmware again',
+        'The selected firmware changed on disk after it was checked. Choose it '
+            'again before flashing.',
+      );
       return;
     }
 
@@ -1568,12 +1613,37 @@ class AppController extends ChangeNotifier {
       backupPath = outPath;
 
       // Device-side guard: does the target (from the backup we just took) match
-      // the firmware we're about to write? Banner mismatch → abort, keep the
-      // backup. Blank/unreadable target → allowed (first-flash / rescue).
-      // Serials never decide — they are read, logged, and reported only.
+      // the firmware we're about to write? Unsupported/missing identity or a
+      // banner mismatch → abort and keep the backup. Serials never decide —
+      // they are read, logged, and reported only.
       _setInstruction('Checking the target matches the firmware...');
       final dumpBytes = File(outPath).readAsBytesSync();
-      final fwBytes = File(fw).readAsBytesSync();
+      late final List<int> fwBytes;
+      try {
+        fwBytes = File(fw).readAsBytesSync();
+      } catch (e) {
+        await _finishRealAfterHold(
+          false,
+          '',
+          'Flash aborted — the selected firmware could not be read after the '
+              'backup: $e. The pre-flash backup was saved.',
+          reseat: false,
+          outputPath: outPath,
+        );
+        return;
+      }
+      final currentDigest = crypto.sha256.convert(fwBytes).toString();
+      if (selectedDigest == null || currentDigest != selectedDigest) {
+        await _finishRealAfterHold(
+          false,
+          '',
+          'Flash aborted — the selected firmware changed on disk after it was '
+              'checked. Choose it again. The pre-flash backup was saved.',
+          reseat: false,
+          outputPath: outPath,
+        );
+        return;
+      }
       final targetId = DeviceSpec.describeBin(dumpBytes, slotBin: false);
       final fwId = DeviceSpec.describeBin(fwBytes, slotBin: slot0);
       _log('== target identity: ${targetId.logLine} ==');
@@ -1808,7 +1878,7 @@ class AppController extends ChangeNotifier {
       _finishReal(false, '', e.message, reseat: false);
     } catch (e) {
       _log('== make zip3 error: $e ==');
-      _finishReal(false, '', 'Could not write the package: $e', reseat: false);
+      _finishReal(false, '', 'Could not create the package: $e', reseat: false);
     }
   }
 }

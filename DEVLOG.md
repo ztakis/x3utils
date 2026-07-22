@@ -1098,3 +1098,45 @@ Linux/macOS get the same code but were not rebuilt this session.
   and Power-race labels still take precedence. Timing stays scoped to the
   current real OpenOCD/RDP process for now, and will be reconsidered only after
   more real-use feedback suggests a better presentation.
+- Guarded firmware compatibility was tightened after reviewing its user-facing
+  failures on Linux. Backup + Flash and Flash slot 0 now accept only the four
+  known VCU banner codes (`xxU2`, `xxG3`, `xGT3`, `xxF3`) or exact shared MCU
+  banner `SCOOTER_MCU_0001`; unknown codes no longer pass merely because they
+  match the 16-byte banner shape. After the mandatory backup, a missing or
+  unsupported target banner now fails closed instead of claiming compatibility.
+  Known VCU cross-model swaps (including G3/F3) and MCU/VCU swaps abort; MCU/MCU
+  remains allowed because ZT3/GT3/G3 share MCU hardware, with an explicit note
+  that the common banner cannot identify the model or protect F3's different
+  MCU hardware. Flash Only remains the warned expert override.
+- Guarded selections now keep a SHA-256 of the accepted firmware and recheck the
+  file at Start and after the backup, aborting before write if it changed. The
+  same strict banner parser backs guarded ZIP3 payload validation; Flash Only's
+  intentionally permissive ZIP3 behavior is unchanged.
+- Make zip3 now describes its actual best-effort role: preserve local BLE-loadable
+  copies of repo firmware, including versions that may later disappear, from a
+  fresh full ST-Link backup taken immediately after a BLE flash. BLE writes the
+  payload length to ZP; an ST-Link slot-0 write does not, so a structurally valid
+  ZP can be stale and that cannot be detected from the dump alone. The intro now
+  states that limitation, says a created package must still be accepted by the
+  BLE app, and notes that Flash slot 0 can also consume it. Missing/invalid ZP
+  evidence stops with the fresh-after-BLE instruction rather than suggesting an
+  unsupported slot bin or promising a guessed result. The SHU-key rejection is
+  shorter while preserving the older-repo caveat, and the generic fallback says
+  "create" rather than "write" package.
+- Linux dry validation: all 90 non-UI Flutter tests passed, `flutter analyze`
+  was clean, and `flutter build linux --release` passed. No hardware command was
+  run by the coding agent. The pre-existing `test/widget_test.dart` smoke suite
+  still fails at its 1024x768 harness on a 1 px status-bar overflow plus
+  off-screen Advanced rail taps. After the Make zip3 copy update, its focused
+  widget test remains blocked by those same two failures before it can open the
+  notice; the engine's 27 focused tests pass and `flutter analyze` remains clean.
+- Linux maintainer closeout: live UI confirmed that a ZT3 VCU target plus
+  selected GT3 VCU firmware saves the mandatory backup and aborts before the
+  slot-0 write, and that Make zip3 rejects a dump without trustworthy BLE ZP
+  evidence with the revised wording. `docs/testing.md` records those results,
+  the AppImage/window-size check, and the fixed immediate Nemo reveal feedback.
+  `TEMP_MACOS_FLUTTER_V120_HANDOFF.md` carries the next package/UI/hardware
+  checklist and must be deleted after the macOS results are recorded here and
+  in `docs/testing.md`. `AGENTS.md` now also records the strict guarded-banner,
+  digest-recheck, MCU limitation, and stale-ZP/Make-zip3 safety contracts so a
+  later implementation pass does not weaken them.

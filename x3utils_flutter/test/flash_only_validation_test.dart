@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:x3utils_flutter/app_controller.dart';
 import 'package:x3utils_flutter/engine/firmware.dart';
 import 'package:x3utils_flutter/engine/ninebot_tea.dart';
+import 'package:x3utils_flutter/engine/openocd_paths.dart';
+import 'package:x3utils_flutter/engine/openocd_runner.dart';
 import 'package:x3utils_flutter/engine/pack_zip3.dart';
 import 'package:x3utils_flutter/models.dart';
 
@@ -146,6 +148,38 @@ void main() {
       },
     );
 
+    test('guarded slot import rejects unsupported banner codes', () {
+      for (final banner in ['SCOOTER_VCU_ZZZZ', 'SCOOTER_MCU_9999']) {
+        final zip = _zip3(
+          _payloadWithBanner(banner),
+          model: 'zt3',
+          type: banner.contains('_MCU_') ? 'MCU' : 'VCU',
+        );
+        expect(
+          () => PackV3.unpackV3(zip),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('Unsupported firmware banner'),
+            ),
+          ),
+          reason: banner,
+        );
+      }
+    });
+
+    test('Flash Only keeps unsupported banner codes informational', () {
+      final zip = _zip3(
+        _payloadWithBanner('SCOOTER_VCU_ZZZZ'),
+        model: 'zt3',
+        type: 'VCU',
+      );
+
+      final unpacked = PackV3.unpackV3(zip, enforceDeviceIdentity: false);
+      expect(unpacked.type, 'VCU');
+    });
+
     test('MD5 integrity remains mandatory in Flash Only', () {
       final zip = _zip3(
         _payloadWithBanner('SCOOTER_VCU_xxU2'),
@@ -230,6 +264,40 @@ void main() {
     await controller.retry();
     expect(controller.stage, StageState.idle);
     expect(controller.failureNeedsInput, isFalse);
+  });
+
+  test('guarded flash rejects a file changed after selection', () async {
+    SharedPreferences.setMockInitialValues({});
+    final temp = Directory.systemTemp.createTempSync('x3utils_changed_fw_');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final bytes = Uint8List.fromList(
+      List<int>.generate(Firmware.expectedSize, (i) => i & 0xff),
+    );
+    const banner = 'SCOOTER_VCU_xxG3';
+    bytes.setRange(0x1400, 0x1400 + banner.length, banner.codeUnits);
+    final firmware = File(p.join(temp.path, 'firmware.bin'))
+      ..writeAsBytesSync(bytes);
+    final inertRunner = OpenOcdRunner(
+      OpenOcdPaths('/not-a-real-openocd', '/not-a-real-scripts'),
+    );
+    final controller = AppController(runner: inertRunner);
+    addTearDown(controller.dispose);
+
+    controller.selectAction('flash_backup');
+    expect(controller.selectFirmwareBin(firmware.path).ok, isTrue);
+
+    bytes[0x2000] ^= 0x01;
+    firmware.writeAsBytesSync(bytes);
+    await controller.start();
+
+    expect(controller.stage, StageState.fail);
+    expect(controller.failureNeedsInput, isTrue);
+    expect(controller.failurePrimaryLabel, 'Change firmware');
+    expect(controller.heroMessage, contains('changed on disk'));
+    expect(
+      controller.console.any((line) => line.contains('> openocd')),
+      isFalse,
+    );
   });
 }
 
