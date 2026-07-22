@@ -78,6 +78,11 @@ ThemeData buildTheme() {
 /// Monospace for console + numeric readouts (Windows-present).
 const kMono = 'Consolas';
 
+/// Shared max width for the stacked hero blocks — warning/result callouts,
+/// the firmware bar, and the Make zip3 identity form — so they align
+/// edge-to-edge instead of stepping in and out at different widths.
+const kHeroBlockWidth = 500.0;
+
 /// App version — single source of truth (keep pubspec.yaml `version:` in sync).
 const kAppVersion = '1.2.0';
 // Release channel shown after the version (e.g. "v1.2.0 BETA"); '' for stable.

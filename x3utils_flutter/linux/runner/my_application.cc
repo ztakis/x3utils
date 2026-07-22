@@ -52,7 +52,9 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "x3utils");
   }
 
-  gtk_window_set_default_size(window, 1040, 780);
+  // 4:3, matched to the Windows runner: sized so even the tall Make zip3 screen
+  // clears the hero card without a scrollbar.
+  gtk_window_set_default_size(window, 1024, 768);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

@@ -105,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              DesktopPathDisplay(path: path),
+              DesktopPathDisplay(path: path, action: DesktopPathAction.none),
               const SizedBox(height: 12),
               const Text(
                 'Replace will permanently overwrite the existing package.',
@@ -1345,17 +1345,22 @@ class _HeroStageState extends State<_HeroStage>
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 600),
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(28, 28, 28, 12),
+                            // Tighter top/bottom so the tall Make zip3 screen
+                            // consumes the vertical space instead of overflowing
+                            // the button past the card edge.
+                            padding: const EdgeInsets.fromLTRB(28, 18, 28, 16),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  c.eyebrow.toUpperCase(),
+                                  c.heroEyebrow.toUpperCase(),
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: 2.8,
-                                    color: accent,
+                                    color: c.stage == StageState.idle
+                                        ? c.stakesColor
+                                        : accent,
                                   ),
                                 ),
                                 const SizedBox(height: 14),
@@ -1398,7 +1403,7 @@ class _HeroStageState extends State<_HeroStage>
                                   const SizedBox(height: 14),
                                   ConstrainedBox(
                                     constraints: const BoxConstraints(
-                                      maxWidth: 520,
+                                      maxWidth: kHeroBlockWidth,
                                     ),
                                     child: DesktopPathDisplay(
                                       path: c.resultPath!,
@@ -1415,7 +1420,7 @@ class _HeroStageState extends State<_HeroStage>
                                 ],
                                 if (c.stage == StageState.idle &&
                                     c.action.needsFirmware) ...[
-                                  const SizedBox(height: 20),
+                                  const SizedBox(height: 14),
                                   _FirmwareBar(
                                     c: c,
                                     onPick: widget.onPickFirmware,
@@ -1424,27 +1429,16 @@ class _HeroStageState extends State<_HeroStage>
                                 ],
                                 if (c.stage == StageState.idle &&
                                     c.actionId == 'make_zip3') ...[
-                                  const SizedBox(height: 14),
+                                  const SizedBox(height: 12),
                                   _MakeZip3Form(c: c),
                                 ],
+                                const SizedBox(height: 16),
+                                _StageButtons(c: c, onStart: widget.onStart),
                               ],
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      28,
-                      8,
-                      28,
-                      c.actionId == 'make_zip3' && c.stage == StageState.idle
-                          ? 40
-                          : 64,
-                    ),
-                    child: Column(
-                      children: [_StageButtons(c: c, onStart: widget.onStart)],
                     ),
                   ),
                 ],
@@ -1478,7 +1472,7 @@ class _HeroMessage extends StatelessWidget {
     }
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 520),
+      constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
@@ -2529,7 +2523,7 @@ class _FirmwareBar extends StatelessWidget {
 
     if (!twoLine) {
       return Container(
-        constraints: const BoxConstraints(maxWidth: 460),
+        constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: AppColors.panel,
@@ -2585,7 +2579,7 @@ class _FirmwareBar extends StatelessWidget {
               : 'ZIP3 packages contain slot firmware — select Slot 0 only.')
         : null;
     return Container(
-      constraints: const BoxConstraints(maxWidth: 540),
+      constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 11),
       decoration: BoxDecoration(
         color: AppColors.panel,
@@ -2767,7 +2761,7 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
       child: IgnorePointer(
         ignoring: !hasDump,
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 460),
+          constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
           decoration: BoxDecoration(
             color: AppColors.panel,

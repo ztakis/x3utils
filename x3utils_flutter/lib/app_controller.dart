@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
@@ -200,6 +201,7 @@ class AppController extends ChangeNotifier {
   /// The header owns the stable action explanation. While idle, the hero shows
   /// only the next live state; running/result stages keep their orchestration
   /// title and message unchanged.
+  // Invariant: non-idle stages fall back to the mutable title/sub, seeded with action.name/action.sub in _goIdle — every non-idle transition must go through _set() so the hero never re-echoes the header description.
   String get heroTitle {
     if (stage != StageState.idle) return title;
     if (action.needsFirmware && firmwarePath == null) {
@@ -235,6 +237,91 @@ class AppController extends ChangeNotifier {
 
   bool get heroMessageWarn =>
       stage == StageState.idle && _firmwareNote != null && _firmwareNoteWarn;
+
+  /// Idle eyebrow (Lens 1 — stakes): what the action does to the device, so the
+  /// consequence sits right above the button. Label + colour travel together.
+  ({String label, Color color}) get _stakes {
+    switch (actionId) {
+      case 'flash_slot0':
+        return (label: 'Slot 0 only', color: AppColors.ok);
+      case 'flash_only':
+        return flashOnlyScope == FlashOnlyScope.slot0
+            ? (label: 'Slot 0 only', color: AppColors.ok)
+            : (label: 'Writes flash', color: AppColors.hold);
+      case 'flash_backup':
+      case 'flash_compat':
+        return (label: 'Writes flash', color: AppColors.hold);
+      case 'rdp_rescue':
+        return (label: 'Erases flash', color: AppColors.danger);
+      case 'make_zip3':
+        return (label: 'Offline', color: AppColors.ok);
+      default: // check, dump, rdp_check
+        return (label: 'Read-only', color: AppColors.ok);
+    }
+  }
+
+  /// Idle-eyebrow tint (view uses this only while idle; other stages keep the
+  /// stage accent).
+  Color get stakesColor => _stakes.color;
+
+  /// The eyebrow to display. Idle → stakes; a live run → an elapsed clock; a
+  /// finished run → the outcome fact. Anything that wasn't actually timed
+  /// (offline pack, RDP, input failures, guided steps, race attempts, verdicts)
+  /// falls back to the stored [eyebrow], so we never invent a duration/exit.
+  String get heroEyebrow {
+    switch (stage) {
+      case StageState.idle:
+        return _stakes.label;
+      case StageState.run:
+        return _runStartedAt != null
+            ? _fmtDuration(DateTime.now().difference(_runStartedAt!))
+            : eyebrow;
+      case StageState.ok:
+        return _lastRunDuration != null
+            ? 'Took ${_fmtDuration(_lastRunDuration!)}'
+            : eyebrow;
+      case StageState.fail:
+        // Only surface a non-zero exit — "Exit 0" on a judged failure misleads.
+        return (_lastExitCode != null &&
+                _lastExitCode != 0 &&
+                _lastRunDuration != null)
+            ? 'Exit $_lastExitCode · ${_fmtDuration(_lastRunDuration!)}'
+            : eyebrow;
+      default: // hold / count / release / connect / warn keep their step/phase
+        return eyebrow;
+    }
+  }
+
+  static String _fmtDuration(Duration d) =>
+      '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  /// Start the run clock + live elapsed ticker. Called when a real process run
+  /// begins; resets any prior outcome so a stale duration can't leak.
+  void _startRunClock() {
+    _runStartedAt = DateTime.now();
+    _lastRunDuration = null;
+    _lastExitCode = null;
+    _elapsedTicker?.cancel();
+    _elapsedTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (running) {
+        notifyListeners();
+      } else {
+        _elapsedTicker?.cancel();
+        _elapsedTicker = null;
+      }
+    });
+  }
+
+  /// Freeze the elapsed clock and record the outcome for the result eyebrow.
+  void _stopRunClock(int? exitCode) {
+    if (_runStartedAt != null) {
+      _lastRunDuration = DateTime.now().difference(_runStartedAt!);
+    }
+    _lastExitCode = exitCode;
+    _runStartedAt = null;
+    _elapsedTicker?.cancel();
+    _elapsedTicker = null;
+  }
 
   void setFirmware(String? path, {String? note, bool warn = false}) {
     if (actionId == 'flash_backup') {
@@ -403,6 +490,12 @@ class AppController extends ChangeNotifier {
 
   StageState stage = StageState.idle;
   String eyebrow = 'Ready';
+  // Eyebrow telemetry (Lens 3): only set when a real process was timed, so the
+  // outcome eyebrow never fabricates a duration/exit for an untimed stage.
+  DateTime? _runStartedAt;
+  Duration? _lastRunDuration;
+  int? _lastExitCode;
+  Timer? _elapsedTicker;
   String title = 'Check connection';
   String sub = 'Pick a connection mode and an action, then hit start.';
   MessageTone messageTone = MessageTone.normal;
@@ -581,6 +674,9 @@ class AppController extends ChangeNotifier {
 
   void _goIdle() {
     running = false;
+    _elapsedTicker?.cancel();
+    _elapsedTicker = null;
+    _runStartedAt = null;
     resultPath = null;
     resultNote = null;
     _failureNeedsInput = false;
@@ -673,6 +769,8 @@ class AppController extends ChangeNotifier {
     resultPath = null;
     resultNote = null;
     _failureNeedsInput = false;
+    _lastRunDuration = null;
+    _lastExitCode = null;
     _runLog.clear();
     _capturing = true;
     _log(contextHeader());
@@ -776,6 +874,7 @@ class AppController extends ChangeNotifier {
     _diagnosis = null;
     running = true;
     _realRun = true;
+    _startRunClock();
     lastConnect = 'connecting…';
     final raceCheck = verb == 'Check' && mode == ConnectionMode.powerRace;
     if (raceCheck) {
@@ -821,6 +920,7 @@ class AppController extends ChangeNotifier {
       if (my != _token) return;
       _realRun = false;
       running = false;
+      _stopRunClock(null);
       _set(
         StageState.fail,
         'Failed',
@@ -832,6 +932,7 @@ class AppController extends ChangeNotifier {
     if (my != _token) return;
     _realRun = false;
     running = false;
+    _stopRunClock(code);
     _log('== rdp exit $code ==');
 
     if (verb == 'Check') {
@@ -927,6 +1028,7 @@ class AppController extends ChangeNotifier {
     _diagnosis = null;
     running = true;
     _realRun = true;
+    _startRunClock();
     lastConnect = 'connecting…';
     final race = mode == ConnectionMode.powerRace;
     if (guided) {
@@ -990,6 +1092,7 @@ class AppController extends ChangeNotifier {
       if (my != _token) return null;
       _realRun = false;
       running = false;
+      _stopRunClock(null);
       _set(
         StageState.fail,
         'Failed',
@@ -1004,6 +1107,7 @@ class AppController extends ChangeNotifier {
     }
     _realRun = false;
     running = false;
+    _stopRunClock(result.exitCode);
     _log('== openocd exit ${result.exitCode} ==');
     return result;
   }

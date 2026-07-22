@@ -130,8 +130,12 @@ checklist:
 - The custom app icon is the normal `AppIcon` catalog. A stale Flutter icon in
   Dock/Launchpad was confirmed to be a macOS cache issue, not a bad package.
   Do not rename the icon identity or bump the build number solely to clear it.
-- The macOS window starts at 1200x800 from `MainMenu.xib`; preserve that unless
-  the UI layout is intentionally redesigned.
+- The startup window is 1024x768 (4:3) on all three platforms: Windows
+  `windows/runner/main.cpp` (outer size), Linux `linux/runner/my_application.cc`
+  (`gtk_window_set_default_size`), and macOS `MainMenu.xib` `contentRect`. Note
+  the Windows number is the outer window while Linux/macOS are the content area,
+  so those two get ~30px more usable height. Keep the three in sync and 4:3
+  unless the UI layout is intentionally redesigned.
 
 ### Flutter RDP Platform Details
 

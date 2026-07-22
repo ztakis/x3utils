@@ -1042,3 +1042,49 @@ survive machine switches and chat history loss.
     menus, direct-script entry points, A/B/C/D RDP launcher behavior, rescue
     warnings, and blank-chip recovery. The macOS guide also records xPack's
     slower uneven Mode-D cadence and the evidence required for check/rescue.
+
+## 2026-07-22
+
+Flutter GUI polish pass (no engine/hardware behavior change). Windows-tested;
+Linux/macOS get the same code but were not rebuilt this session.
+
+- Hero card layout / "zones": defined and locked each content-pane zone to one
+  job — header = "what this does" (immutable `action.name` + `action.sub`);
+  eyebrow = state/telemetry; big title = the state/outcome; message = the one
+  live fact; input; action; status bar. Confirmed no live header/hero
+  description duplication (header reads the immutable model `sub`; the hero
+  computes its own text). Added an invariant comment at `heroTitle`/`heroMessage`
+  in `app_controller.dart`: non-idle stages fall back to the mutable `title`/`sub`
+  seeded in `_goIdle`, so every non-idle transition must go through `_set()` or
+  the hero would re-echo the header.
+- Eyebrow redesigned so it stops duplicating the title. Chosen blend (maintainer
+  picked "1+3" after discussion; "just remove the eyebrow" was rejected because
+  it earns its keep as the `STEP 1/2/3 OF 3` counter in the guided C45 connect):
+  - idle → STAKES, colour-coded: READ-ONLY (green) / WRITES FLASH (amber) /
+    SLOT 0 ONLY (green) / OFFLINE (green) / ERASES FLASH (red). New `heroEyebrow`
+    + `stakesColor` getters + `_stakes` map keyed on actionId (+ flashOnlyScope).
+  - live run → an elapsed clock `M:SS` (1 s ticker). Guided steps + power-race
+    `ATTEMPT n` are untouched (they fall through to the stored eyebrow).
+  - result → outcome fact: `Took M:SS` on success, `Exit n · M:SS` on failure.
+  - Honesty guards (per the never-fabricate rule): duration/exit are only shown
+    when a real process was actually timed — run clock started/stopped at BOTH
+    the OpenOCD core (`_runRealCore`) and the RDP core. Offline Make zip3 keeps
+    DONE, input-validation aborts keep FAILED, and a zero exit code is suppressed
+    (no misleading `Exit 0` on a judged failure).
+- Shared hero block width: new `kHeroBlockWidth = 500` (theme.dart) applied to
+  the warning/result callout, firmware bar (both variants), identity form, and
+  result-path box so they align edge-to-edge (amber callout was 520 vs 460 boxes).
+- Make zip3 no longer needs a scrollbar: trimmed hero vertical rhythm (card
+  padding 28→18 top / 12→16 bottom; inter-block gaps 20→14, 14→12, 26→16). Hero
+  content stays vertically centred (a top-anchor experiment was tried and
+  reverted — it dumped short screens at the top).
+- Startup window standardized to 1024x768 (4:3) on ALL three OSes: Windows
+  `main.cpp` (outer), Linux `my_application.cc`, macOS `MainMenu.xib` contentRect
+  (was 1040x752; the AGENTS "1200x800" note was stale). Windows number is outer,
+  Linux/macOS are content, so those two get ~30px more usable height. AGENTS.md
+  updated to the all-platform rule.
+- Make zip3 "Replace existing package?" confirm dialog: dropped the useless
+  copy-to-clipboard button (`DesktopPathDisplay(action: DesktopPathAction.none)`);
+  path stays readable as text + tooltip.
+- Added `tool/window_size.ps1` — reads a running window's outer/client rect to
+  size the startup window against real screens.

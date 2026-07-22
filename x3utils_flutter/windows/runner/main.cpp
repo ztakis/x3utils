@@ -27,7 +27,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   // Win32Window passes Size straight to CreateWindow, so this IS the outer size.
-  Win32Window::Size size(1040, 780);
+  // 4:3, sized so even the tall Make zip3 screen clears the hero card without a
+  // scrollbar. Confirmed to fit at 1024x768.
+  Win32Window::Size size(1024, 768);
   if (!window.Create(L"x3utils", origin, size)) {
     return EXIT_FAILURE;
   }
