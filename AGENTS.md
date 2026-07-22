@@ -92,9 +92,16 @@ checklist:
   `dumped`, `erased`, `wrote`, and `verified`, but does not distinguish between
   them. Any marker flips the UI into the run state once and refreshes the race
   watchdog's liveness timestamp. It is a liveness detector, not a stage parser.
-- Hero eyebrow text is per-action, not per-stage. It comes from `_runEyebrow()`
-  (`Backing up`, `Flashing`, ...) plus explicit
-  `_showOpenOcdProgress(eyebrow: ...)` calls in the orchestration.
+- The hero zones stay distinct: the header explains the selected action, the
+  eyebrow carries stakes/state/telemetry, the large title carries the current
+  instruction or outcome, and the message carries the supporting live fact.
+- Idle eyebrows show the action's stakes. A genuinely running OpenOCD/RDP core
+  may show an `M:SS` elapsed clock and a timed result; guided C45 steps and
+  Power-race phases keep their more useful phase labels. The clock is deliberate
+  reassurance for slower macOS runs (Windows/Linux normally finish within about
+  10 seconds), not a claim of precise per-step progress. Timing remains scoped
+  to the current real process rather than the complete multi-process action;
+  keep this behavior until real use motivates a clearer model.
 - The UI is a single busy spinner plus that eyebrow. Per-step checklist rows
   were deliberately removed because they implied timing accuracy the tool does
   not have. Typed per-step progress events are not planned; adding them would be

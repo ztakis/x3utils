@@ -1088,3 +1088,13 @@ Linux/macOS get the same code but were not rebuilt this session.
   path stays readable as text + tooltip.
 - Added `tool/window_size.ps1` — reads a running window's outer/client rect to
   size the startup window against real screens.
+- Follow-up review found and fixed two polish defects: `AppController.dispose()`
+  now cancels the elapsed ticker before disposing the notifier, and the macOS
+  XIB content-view frame now matches its 1024x768 `contentRect`. `flutter
+  analyze` passed after both corrections.
+- Kept the eyebrow timer model after review. Windows/Linux operations normally
+  complete within about 10 seconds, while macOS can be noticeably slower; the
+  elapsed clock gives the operator reassurance beyond the spinner. Guided C45
+  and Power-race labels still take precedence. Timing stays scoped to the
+  current real OpenOCD/RDP process for now, and will be reconsidered only after
+  more real-use feedback suggests a better presentation.

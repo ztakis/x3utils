@@ -323,6 +323,13 @@ class AppController extends ChangeNotifier {
     _elapsedTicker = null;
   }
 
+  @override
+  void dispose() {
+    _elapsedTicker?.cancel();
+    _elapsedTicker = null;
+    super.dispose();
+  }
+
   void setFirmware(String? path, {String? note, bool warn = false}) {
     if (actionId == 'flash_backup') {
       _firmwareStandard = path;

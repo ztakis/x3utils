@@ -335,7 +335,7 @@
             <rect key="contentRect" x="335" y="390" width="1024" height="768"/>
             <rect key="screenRect" x="0.0" y="0.0" width="2560" height="1577"/>
             <view key="contentView" wantsLayer="YES" id="EiT-Mj-1SZ">
-                <rect key="frame" x="0.0" y="0.0" width="1040" height="752"/>
+                <rect key="frame" x="0.0" y="0.0" width="1024" height="768"/>
                 <autoresizingMask key="autoresizingMask"/>
             </view>
         </window>
