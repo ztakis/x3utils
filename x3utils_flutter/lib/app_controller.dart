@@ -1498,6 +1498,7 @@ class AppController extends ChangeNotifier {
       guided: guided,
     );
     if (r == null) return;
+    _showOpenOcdProgress(eyebrow: 'Validating');
     if (!_dumpConfirmed(r)) {
       await _finishRealAfterHold(false, '', _dumpFailMessage(r));
       return;
@@ -1791,6 +1792,7 @@ class AppController extends ChangeNotifier {
       title: 'Flashing SHU-compatible firmware…',
     );
     if (f == null) return;
+    _showOpenOcdProgress(eyebrow: 'Validating');
     final flashOk = _flashConfirmed(f);
     if (flashOk) {
       _setInstruction('SHU-compatible firmware verified.');
