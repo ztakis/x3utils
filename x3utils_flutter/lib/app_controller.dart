@@ -1689,6 +1689,10 @@ class AppController extends ChangeNotifier {
       title: '${action.name}…',
     );
     if (r == null) return;
+    // OpenOCD has stopped, so the live timer is frozen. Keep the busy surface
+    // truthful while the evidence verdict and final result are being settled
+    // instead of falling back to the stale "Flashing" phase label.
+    _showOpenOcdProgress(eyebrow: 'Validating');
     final flashOk = _flashConfirmed(r);
     if (flashOk) {
       _setInstruction(

@@ -299,6 +299,54 @@ void main() {
       isFalse,
     );
   });
+
+  testWidgets('flash eyebrow changes to Validating before the result', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final temp = Directory.systemTemp.createTempSync('x3utils_flash_eyebrow_');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final firmware = File(p.join(temp.path, 'firmware.bin'))
+      ..writeAsBytesSync(
+        Uint8List.fromList(
+          List<int>.generate(Firmware.expectedSize, (i) => i & 0xff),
+        ),
+      );
+    final controller = AppController(runner: _SuccessfulFlashRunner());
+    addTearDown(controller.dispose);
+
+    controller.selectAction('flash_only');
+    expect(controller.selectFirmwareBin(firmware.path).ok, isTrue);
+
+    final started = controller.start();
+    await tester.pump();
+
+    expect(controller.stage, StageState.run);
+    expect(controller.heroEyebrow, 'Validating');
+
+    await tester.pump(const Duration(seconds: 3));
+    await started;
+    expect(controller.stage, StageState.ok);
+    expect(controller.heroEyebrow, startsWith('Took '));
+  });
+}
+
+class _SuccessfulFlashRunner extends OpenOcdRunner {
+  _SuccessfulFlashRunner()
+    : super(OpenOcdPaths('/not-a-real-openocd', '/not-a-real-scripts'));
+
+  @override
+  Future<OpenOcdResult> run(
+    List<String> args,
+    void Function(String line) onLine,
+  ) async {
+    final evidence = OpenOcdEvidence();
+    for (final line in ['wrote 131072 bytes', 'verified 131072 bytes']) {
+      evidence.record(line);
+      onLine(line);
+    }
+    return OpenOcdResult(0, evidence);
+  }
 }
 
 Uint8List _payloadWithBanner(String banner) {
