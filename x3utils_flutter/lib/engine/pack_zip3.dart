@@ -216,7 +216,7 @@ class PackV3 {
     // So this is a best-effort filter for the obvious OEM case, not a proof.
     if (!CompatPatch.keyState(dumpBytes).bleFlashable) {
       throw const FormatException(
-        'This dump has neither the default SHU key nor a blank key at 0x1420. '
+        'This dump has neither the default SHU key nor a blank key. '
         'It is usually OEM/stock firmware and may not be BLE-flashable, so Make '
         'zip3 was stopped. Some older repo firmware may also be rejected by '
         'this safety check.',

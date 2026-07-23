@@ -1135,9 +1135,9 @@ Linux/macOS get the same code but were not rebuilt this session.
   slot-0 write, and that Make zip3 rejects a dump without trustworthy BLE ZP
   evidence with the revised wording. `docs/testing.md` records those results,
   the AppImage/window-size check, and the fixed immediate Nemo reveal feedback.
-  `TEMP_MACOS_FLUTTER_V120_HANDOFF.md` carries the next package/UI/hardware
-  checklist and must be deleted after the macOS results are recorded here and
-  in `docs/testing.md`. `AGENTS.md` now also records the strict guarded-banner,
+  `docs/flutter-v1.2.0-minimum-macos-linux-validation.md` carries the narrowed
+  package/UI/hardware checklist for the final checkout. `AGENTS.md` also records
+  the strict guarded-banner,
   digest-recheck, MCU limitation, and stale-ZP/Make-zip3 safety contracts so a
   later implementation pass does not weaken them.
 
@@ -1252,3 +1252,44 @@ Linux/macOS get the same code but were not rebuilt this session.
     not firmware suitability for the connected controller. Synthetic fixtures
     were never flashed. Guarded-action regression and other-platform checks
     remain separate follow-up work.
+- Completed the Windows guarded Flash slot 0 regression on the same debug build
+  and AT32F415 X3 testbed using ST-LINK / Default SWD.
+  - Selection rejected a slot-sized `.bin` with no supported banner before any
+    hardware action.
+  - Genuine G3 VCU and MCU `.bin` inputs each triggered the mandatory backup,
+    identified the installed target as ZT3 VCU, preserved and displayed the
+    backup path, and aborted before write with the correct model/type mismatch.
+    A matching ZT3 VCU `.bin` then backed up, wrote, and verified slot 0 in 4 s.
+  - A valid G3 VCU ZIP3 decrypted successfully, then followed the same backed-up
+    target-mismatch abort without writing. A matching ZT3 VCU ZIP3 decrypted,
+    backed up, wrote, and verified slot 0 in 4 s.
+  - This closes the guarded `.bin` and ZIP3 paths on the Windows debug build:
+    selection gates stay transient, while failures discovered after Start keep
+    the durable hero result and saved-backup path. Shared malformed-ZIP cases
+    were not repeated because they use the already-validated import gate.
+    Other-platform guarded regressions remain pending.
+- Completed the Windows Backup + Flash regression on the same debug build and
+  AT32F415 X3 testbed using ST-LINK / Default SWD.
+  - Repeated-byte, wrong-size, unsupported-banner, and missing-banner full
+    images stopped at selection before any backup or write.
+  - Genuine G3 VCU and MCU full images were accepted at selection, created and
+    displayed the mandatory backup, then aborted before write against the
+    installed ZT3 VCU with the correct model/type mismatch.
+  - Re-flashing the fresh matching ZT3 backup created another pre-flash backup,
+    wrote the full image, and verified successfully in 7 s.
+- Completed the Windows Make zip3 desktop validation.
+  - Genuine ZT3 VCU and MCU dumps created packages; MCU required the operator to
+    choose the model. A repeated output name showed the Replace dialog: Cancel
+    preserved size, timestamp, and SHA-256, while Replace rewrote the file.
+  - A real OEM-key dump, a real length-zero ZP dump, and conflicting synthetic
+    ZP records failed with the intended durable explanations. A single
+    relocated ZP record succeeded and extracted the expected 58436-byte
+    payload.
+  - A package created from the genuine ZT3 VCU dump re-imported through Flash
+    Only, passed MD5/decryption, and showed matching ZT3/VCU JSON and firmware
+    banner evidence; it was cancelled before flashing. This is desktop
+    structural validation, not BLE Load-from-file acceptance.
+  - Removed the temporary macOS-only handoff and replaced it with
+    `docs/flutter-v1.2.0-minimum-macos-linux-validation.md`: focused tests and
+    packaging, one packaged offline smoke, and one matching guarded hardware
+    write per OS, with a stop rule against replaying the Windows matrix.

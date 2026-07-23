@@ -24,7 +24,7 @@ const _zpError =
     'optional tool requires a fresh full backup taken immediately after a BLE '
     'flash, before any ST-Link firmware write, and refuses rather than guessing.';
 const _shuKeyError =
-    'This dump has neither the default SHU key nor a blank key at 0x1420. It '
+    'This dump has neither the default SHU key nor a blank key. It '
     'is usually OEM/stock firmware and may not be BLE-flashable, so Make zip3 '
     'was stopped. Some older repo firmware may also be rejected by this safety '
     'check.';
