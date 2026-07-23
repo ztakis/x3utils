@@ -1293,3 +1293,22 @@ Linux/macOS get the same code but were not rebuilt this session.
     `docs/flutter-v1.2.0-minimum-macos-linux-validation.md`: focused tests and
     packaging, one packaged offline smoke, and one matching guarded hardware
     write per OS, with a stop rule against replaying the Windows matrix.
+
+## 2026-07-24
+
+- Closed the Flutter v1.2.0 BETA minimum Linux validation on the Linux Mint
+  home-primary x86_64 workstation.
+  - The focused tests and analyzer passed, and the final
+    `x3utils-1.2.0-x86_64.AppImage` built and launched with its real Linux
+    payload.
+  - The packaged 1024x768 smoke passed the truncated-input refusal, Make zip3
+    creation and unchanged-output Cancel check, ZIP3 round-trip import with
+    matching ZT3/VCU evidence, and prompt Linux file-manager reveal. Local
+    package/import artifacts corroborate the round trip.
+  - The packaged backend produced an evidence-backed Check connection PASS,
+    followed by one genuine matching guarded Backup + Flash under Default SWD
+    with a fresh backup, write evidence, verify evidence, and green completion.
+    Per-run Save log was off, so exact firmware and backup paths were not
+    retained in a log.
+  - The stop rule applies: the exhaustive Windows matrix was not replayed.
+    Linux is complete; macOS is the remaining platform.

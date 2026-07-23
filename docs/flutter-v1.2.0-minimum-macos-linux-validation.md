@@ -8,6 +8,11 @@ Run this checklist against the packaged application, not only a debug build.
 Keep the complete private test corpus intact; the checklist names only the
 fixtures needed for this minimum run.
 
+## Status
+
+- Linux x86_64: complete (2026-07-24).
+- macOS: pending.
+
 ## Stop rule
 
 When the dry/package checks, packaged-app smoke, and one matching guarded write
