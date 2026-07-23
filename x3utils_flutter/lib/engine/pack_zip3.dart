@@ -286,20 +286,19 @@ class PackV3 {
   /// flash. A zip3 is defined as **encrypted and MD5'd**, so this is strict:
   ///
   /// 1. readable ZIP with `info.json`, `schemaVersion == 1`;
-  /// 2. a `FIRM.bin.enc` member (a plain `FIRM.bin` alone is not a zip3 and is
+  /// 2. supported VCU/MCU metadata whose `compatible` board agrees with its
+  ///    model/type;
+  /// 3. a `FIRM.bin.enc` member (a plain `FIRM.bin` alone is not a zip3 and is
   ///    rejected — the point of zip3 is the encryption);
-  /// 3. a matching `md5.enc` in `info.json` — the payload is hashed and checked
+  /// 4. a matching `md5.enc` in `info.json` — the payload is hashed and checked
   ///    before it is decrypted;
-  /// 4. NinebotTEA decrypt, whose internal checksum guards the plaintext.
+  /// 5. NinebotTEA decrypt, whose internal checksum guards the plaintext;
+  /// 6. a firmware banner that agrees with the package metadata.
   ///
   /// The decrypted bytes are returned as-is (identical to `ninebottea decrypt`),
   /// including NinebotTEA's canonical trailing pad. Throws [FormatException] for
   /// anything that fails the above.
-  static UnpackedV3 unpackV3(
-    List<int> zipBytes, {
-    List<int>? key,
-    bool enforceDeviceIdentity = true,
-  }) {
+  static UnpackedV3 unpackV3(List<int> zipBytes, {List<int>? key}) {
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(zipBytes);
@@ -335,19 +334,44 @@ class PackV3 {
     final type = fw['type']?.toString().trim().toUpperCase();
     if (type != 'VCU' && type != 'MCU') {
       throw FormatException(
-        'Unsupported firmware type "${type ?? 'missing'}" — '
-        'x3utils flashes VCU/MCU packages only (not BLE/BMS).',
+        'This package contains ${type ?? 'unknown'} firmware. '
+        'x3utils flashes only VCU/MCU firmware.',
       );
     }
 
-    // Guarded slot flashing retains the supported-model allow-list. Flash Only
-    // deliberately treats model metadata as information, while still rejecting
-    // BLE/BMS above and retaining all package-integrity checks below.
-    if (enforceDeviceIdentity) {
-      final verdict = DeviceSpec.evaluateZip3(model, type);
-      if (!verdict.ok) {
-        throw FormatException(verdict.reason);
-      }
+    // ZIP3 is an integrity-bearing package. Every import path, including Flash
+    // Only, must reject unsupported or internally inconsistent metadata. An
+    // operator who intentionally wants to bypass package identity can decrypt
+    // it separately and select the raw slot-0 .bin instead.
+    final verdict = DeviceSpec.evaluateZip3(model, type);
+    if (!verdict.ok) {
+      throw FormatException(verdict.reason);
+    }
+
+    final compatibleValue = fw['compatible'];
+    if (compatibleValue is! List ||
+        compatibleValue.isEmpty ||
+        compatibleValue.any(
+          (value) => value is! String || value.trim().isEmpty,
+        )) {
+      throw const FormatException(
+        'info.json has no valid firmware.compatible list.',
+      );
+    }
+    final compatible = compatibleValue
+        .cast<String>()
+        .map((value) => value.trim())
+        .toList(growable: false);
+    final expectedBoard = type == 'MCU'
+        ? 'x3_MCU_AT32'
+        : '${model.toLowerCase()}_VCU_AT32';
+    if (compatible.length != 1 ||
+        compatible.single.toLowerCase() != expectedBoard.toLowerCase()) {
+      final boards = compatible.join(', ');
+      throw FormatException(
+        'Inconsistent JSON, "model" : ${model.toUpperCase()} $type, '
+        '"compatible" : $boards.',
+      );
     }
 
     // zip3 must carry the encrypted payload.
@@ -379,15 +403,11 @@ class PackV3 {
       key: key,
     ).decrypt(encBytes); // TEA checksum inside
 
-    // Payload-side gate: the firmware's own banner must match the declared
-    // model/type. A mismatch means a mislabeled package — hard-rejected, same as
-    // the model gate. Proven safe across the full jsb.by firmware set (every
-    // VCU/MCU image's banner matches its model; 0 mismatches over 99 files).
-    if (enforceDeviceIdentity) {
-      final banner = DeviceSpec.verifyBanner(firmware, model, type!);
-      if (!banner.consistent) {
-        throw FormatException(banner.message);
-      }
+    // The decrypted payload must agree with the package claim. This checks the
+    // package itself; it does not claim that the connected controller matches.
+    final banner = DeviceSpec.verifyBanner(firmware, model, type!);
+    if (!banner.consistent) {
+      throw FormatException(banner.message);
     }
 
     return UnpackedV3(

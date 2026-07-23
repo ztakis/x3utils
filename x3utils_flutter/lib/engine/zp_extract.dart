@@ -2,6 +2,47 @@ import 'dart:typed_data';
 
 import 'firmware.dart' show Firmware;
 
+enum ZpRecordState {
+  /// Slot payloads do not contain the full image's identity/ZP page.
+  notApplicable,
+
+  /// One trustworthy record named a payload length inside the slot window.
+  readable,
+
+  /// Multiple relocated records passed the guards but disagreed on length.
+  conflicting,
+
+  /// No guard-passing record was found.
+  unavailable,
+
+  /// The supplied bytes do not contain the full identity page.
+  fullImageRequired,
+}
+
+/// Read-only evidence about the firmware-length record in a full image.
+///
+/// [readable] means the record is structurally trustworthy enough to name a
+/// payload length. It does not prove that the record is fresh: an ST-Link
+/// slot-0 write can leave a stale record behind.
+class ZpInspection {
+  const ZpInspection._(this.state, {this.payloadLength});
+
+  const ZpInspection.notApplicable() : this._(ZpRecordState.notApplicable);
+
+  const ZpInspection.readable(int payloadLength)
+    : this._(ZpRecordState.readable, payloadLength: payloadLength);
+
+  const ZpInspection.conflicting() : this._(ZpRecordState.conflicting);
+
+  const ZpInspection.unavailable() : this._(ZpRecordState.unavailable);
+
+  const ZpInspection.fullImageRequired()
+    : this._(ZpRecordState.fullImageRequired);
+
+  final ZpRecordState state;
+  final int? payloadLength;
+}
+
 /// Recover the exact slot-0 firmware payload from a full 128 KB backup dump,
 /// using the device's own "update config" record instead of guessing where the
 /// firmware ends.
@@ -53,16 +94,43 @@ class Zp {
   /// checks cannot detect a valid record made stale by a later ST-Link slot-0
   /// write.
   static Uint8List payloadFromDump(List<int> dump) {
-    if (dump.length < _searchEnd) {
-      throw FormatException(
+    final status = inspect(dump);
+    return switch (status.state) {
+      ZpRecordState.readable => _extract(dump, status.payloadLength!),
+      ZpRecordState.fullImageRequired => throw FormatException(
         'Dump is ${dump.length} bytes — a full ${Firmware.expectedSize}-byte '
         'image is required to read the ZP length record.',
-      );
+      ),
+      ZpRecordState.conflicting => throw const FormatException(
+        'Make zip3 stopped: this dump holds conflicting ZP length records, so '
+        'x3utils cannot safely determine the exact payload and refuses rather '
+        'than guessing.',
+      ),
+      ZpRecordState.unavailable => throw const FormatException(
+        'Make zip3 stopped: this dump has no trustworthy BLE firmware-length '
+        'record, so x3utils cannot safely determine the exact payload. This '
+        'optional tool requires a fresh full backup taken immediately after a '
+        'BLE flash, before any ST-Link firmware write, and refuses rather than '
+        'guessing.',
+      ),
+      ZpRecordState.notApplicable => throw StateError(
+        'A full-image ZP inspection cannot be notApplicable.',
+      ),
+    };
+  }
+
+  /// Inspect the ZP page without extracting or throwing.
+  ///
+  /// This exposes the same evidence [payloadFromDump] uses so other actions can
+  /// report what is present without inheriting Make zip3's hard-stop policy.
+  static ZpInspection inspect(List<int> dump) {
+    if (dump.length < _searchEnd) {
+      return const ZpInspection.fullImageRequired();
     }
 
     // Authoritative offset first: 0x1F800 on every real dump surveyed.
     final known = _payloadLenAt(dump, _knownOffset);
-    if (known != null) return _extract(dump, known);
+    if (known != null) return ZpInspection.readable(known);
 
     // Fallback: scan the page for a relocated record, requiring unanimity.
     final lengths = <int>{};
@@ -70,21 +138,11 @@ class Zp {
       final len = _payloadLenAt(dump, i);
       if (len != null) lengths.add(len);
     }
-    if (lengths.length == 1) return _extract(dump, lengths.first);
+    if (lengths.length == 1) return ZpInspection.readable(lengths.first);
     if (lengths.length > 1) {
-      throw const FormatException(
-        'Make zip3 stopped: this dump holds conflicting ZP length records, so '
-        'x3utils cannot safely determine the exact payload and refuses rather '
-        'than guessing.',
-      );
+      return const ZpInspection.conflicting();
     }
-    throw const FormatException(
-      'Make zip3 stopped: this dump has no trustworthy BLE firmware-length '
-      'record, so x3utils cannot safely determine the exact payload. This '
-      'optional tool requires a fresh full backup taken immediately after a '
-      'BLE flash, before any ST-Link firmware write, and refuses rather than '
-      'guessing.',
-    );
+    return const ZpInspection.unavailable();
   }
 
   /// The payload length named by a guard-passing `ZP` record at [i], or null.

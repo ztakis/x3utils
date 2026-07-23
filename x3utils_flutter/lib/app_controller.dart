@@ -11,6 +11,7 @@ import 'engine/openocd_runner.dart';
 import 'engine/rdp_runner.dart';
 import 'engine/device_spec.dart';
 import 'engine/firmware.dart';
+import 'engine/firmware_inspection.dart';
 import 'engine/pack_zip3.dart';
 import 'engine/confirmed_file_writer.dart';
 
@@ -140,6 +141,7 @@ class AppController extends ChangeNotifier {
   // "Package says …" or the bin's own "Firmware says …"); warn = amber.
   String? _firmwareNote;
   bool _firmwareNoteWarn = false;
+  FirmwareInspection? _firmwareInspection;
   FlashOnlyScope flashOnlyScope = FlashOnlyScope.fullImage;
 
   // ── Make zip3 (offline packer) form state ──────────────────────────────────
@@ -198,6 +200,7 @@ class AppController extends ChangeNotifier {
       : _firmwareAdvancedDigest;
   String? get firmwareNote => _firmwareNote;
   bool get firmwareNoteWarn => _firmwareNoteWarn;
+  FirmwareInspection? get firmwareInspection => _firmwareInspection;
 
   /// Whether the primary CTA is ready to fire for the current action. Firmware
   /// actions need a loaded file; Make zip3 additionally needs both dropdowns
@@ -257,6 +260,9 @@ class AppController extends ChangeNotifier {
       case 'flash_slot0':
         return (label: 'Slot 0 only', color: AppColors.ok);
       case 'flash_only':
+        if (firmwarePath != null) {
+          return (label: 'Compatibility warning', color: AppColors.hold);
+        }
         return flashOnlyScope == FlashOnlyScope.slot0
             ? (label: 'Slot 0 only', color: AppColors.ok)
             : (label: 'Writes flash', color: AppColors.hold);
@@ -342,7 +348,12 @@ class AppController extends ChangeNotifier {
     super.dispose();
   }
 
-  void setFirmware(String? path, {String? note, bool warn = false}) {
+  void setFirmware(
+    String? path, {
+    String? note,
+    bool warn = false,
+    FirmwareInspection? inspection,
+  }) {
     final digest = path == null ? null : _digestFile(path);
     if (actionId == 'flash_backup') {
       _firmwareStandard = path;
@@ -353,6 +364,7 @@ class AppController extends ChangeNotifier {
     }
     _firmwareNote = path == null ? null : note;
     _firmwareNoteWarn = path != null && warn;
+    _firmwareInspection = path == null ? null : inspection;
     notifyListeners();
   }
 
@@ -415,14 +427,55 @@ class AppController extends ChangeNotifier {
       zip3Model = d.model;
       zip3Name = '';
     }
-    final id = DeviceSpec.describeBin(bytes, slotBin: isSlotAction);
+    final inspection = FirmwareInspector.inspect(bytes, slotBin: isSlotAction);
+    final id = inspection.identity;
     final summary = id.summary;
     setFirmware(
       path,
       note: summary == null ? null : 'Firmware says: $summary',
-      warn: id.warn,
+      // Flash Only uses the persistent eyebrow + confirmation modal for its
+      // findings. Guarded/packer identity notes keep their existing amber
+      // presentation.
+      warn: actionId == 'flash_only' ? false : id.warn,
+      inspection: inspection,
     );
     return FirmwareCheck.valid;
+  }
+
+  /// Re-read a selected Flash Only source immediately before its confirmation
+  /// modal. Flash Only deliberately does not enforce the stored digest, but
+  /// the evidence shown to the operator must describe the bytes about to be
+  /// written rather than a stale selection-time snapshot.
+  FirmwareCheck refreshFlashOnlyInspection() {
+    if (actionId != 'flash_only') return FirmwareCheck.valid;
+    final path = firmwarePath;
+    if (path == null) {
+      return FirmwareCheck.fail('No firmware file selected.');
+    }
+    final check = _validateFirmwareFile(
+      path,
+      slot0: isFlashOnlySlot0,
+      enforceBanner: false,
+    );
+    if (!check.ok) return check;
+    try {
+      final packageClaim = _firmwareInspection?.packageClaim;
+      final inspection = FirmwareInspector.inspect(
+        File(path).readAsBytesSync(),
+        slotBin: isFlashOnlySlot0,
+        packageClaim: packageClaim,
+      );
+      _firmwareInspection = inspection;
+      final summary = inspection.identity.summary;
+      _firmwareNote = packageClaim == null
+          ? (summary == null ? null : 'Firmware says: $summary')
+          : 'Package says: ${packageClaim.label}';
+      _firmwareNoteWarn = false;
+      notifyListeners();
+      return FirmwareCheck.valid;
+    } catch (e) {
+      return FirmwareCheck.fail('Could not inspect the firmware file: $e');
+    }
   }
 
   void setFlashOnlyScope(FlashOnlyScope scope) {
@@ -432,6 +485,7 @@ class AppController extends ChangeNotifier {
     _firmwareAdvancedDigest = null;
     _firmwareNote = null;
     _firmwareNoteWarn = false;
+    _firmwareInspection = null;
     _goIdle();
   }
 
@@ -470,8 +524,7 @@ class AppController extends ChangeNotifier {
         return containerCheck;
       }
       final bytes = await File(zipPath).readAsBytes();
-      final guarded = actionId == 'flash_slot0';
-      final pkg = PackV3.unpackV3(bytes, enforceDeviceIdentity: guarded);
+      final pkg = PackV3.unpackV3(bytes);
       ilog(
         '== package says: ${pkg.displayName} · ${pkg.model}/${pkg.type} · '
         '${pkg.source} · ${pkg.firmware.length} bytes ==',
@@ -486,9 +539,19 @@ class AppController extends ChangeNotifier {
         ilog('== package firmware rejected: ${v.message} ==');
         return FirmwareCheck.fail(v.message);
       }
+      final claim = PackageClaim(
+        model: pkg.model,
+        type: pkg.type,
+        displayName: pkg.displayName,
+      );
+      final inspection = FirmwareInspector.inspect(
+        pkg.firmware,
+        slotBin: true,
+        packageClaim: claim,
+      );
       final packageClaim =
           'Package says: ${pkg.model.toUpperCase()} · ${pkg.type.toUpperCase()}';
-      setFirmware(outPath, note: packageClaim);
+      setFirmware(outPath, note: packageClaim, inspection: inspection);
       ilog('== loaded slot-0 firmware from package → $outPath ==');
       return FirmwareCheck(
         true,
@@ -635,6 +698,7 @@ class AppController extends ChangeNotifier {
     _firmwareAdvancedDigest = null;
     _firmwareNote = null;
     _firmwareNoteWarn = false;
+    _firmwareInspection = null;
     _goIdle();
   }
 

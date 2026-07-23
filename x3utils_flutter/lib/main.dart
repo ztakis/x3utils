@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'app_controller.dart';
 import 'engine/firmware.dart';
+import 'engine/firmware_inspection.dart';
 import 'models.dart';
 import 'theme.dart';
 import 'widgets/desktop_path_display.dart';
@@ -49,11 +50,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _onStart() async {
     final a = c.action;
-    if (a.danger != DangerLevel.none) {
+    if (a.id == 'flash_only') {
+      final refreshed = c.refreshFlashOnlyInspection();
+      if (!refreshed.ok) {
+        // Let the normal Start path place a changed/invalid selection in the
+        // hero failure state. Do not show compatibility evidence for stale
+        // bytes.
+        await c.start(confirmFileReplace: _showZip3ReplaceConfirm);
+        return;
+      }
+      final ok = await _showFlashOnlyConfirm();
+      if (ok != true) return;
+    } else if (a.danger != DangerLevel.none) {
       final ok = await _showConfirm(a);
       if (ok != true) return;
     }
-    c.start(confirmFileReplace: _showZip3ReplaceConfirm);
+    await c.start(confirmFileReplace: _showZip3ReplaceConfirm);
   }
 
   Future<bool> _showZip3ReplaceConfirm(String path) async {
@@ -296,6 +308,224 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Future<bool?> _showFlashOnlyConfirm() {
+    final report = c.firmwareInspection;
+    return showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0xB3040A0F),
+      builder: (ctx) {
+        Widget sectionTitle(String text) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+              color: AppColors.hold,
+            ),
+          ),
+        );
+
+        Widget evidenceRow(String label, String value, {String? detail}) =>
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dim,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: AppColors.txt,
+                    ),
+                  ),
+                  if (detail != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: AppColors.dim,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+
+        Widget finding(CompatibilityFinding item) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 7),
+                child: Icon(Icons.circle, size: 5, color: AppColors.hold),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  item.message,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.45,
+                    color: AppColors.txt,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        Widget plainBullet(String text) =>
+            finding(CompatibilityFinding('not_checked', text));
+
+        return Dialog(
+          backgroundColor: AppColors.panel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: AppColors.line2),
+          ),
+          child: Container(
+            width: 600,
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.80,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: AppColors.hold.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.warning_amber_rounded,
+                          color: AppColors.hold,
+                          size: 25,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Text(
+                          'Compatibility warning',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.txt,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Flexible(
+                    child: Scrollbar(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            sectionTitle('OBSERVED IN THE SELECTED FILE'),
+                            if (report?.packageClaim != null)
+                              evidenceRow(
+                                'Package claim',
+                                report!.packageClaim!.label,
+                              ),
+                            evidenceRow(
+                              'Banner',
+                              report?.bannerValue ?? 'Unavailable',
+                            ),
+                            evidenceRow(
+                              'Serial',
+                              report?.serialValue ?? 'Unavailable',
+                            ),
+                            evidenceRow(
+                              'ZP record',
+                              report?.zpValue ?? 'Unavailable',
+                              detail: report?.zpDetail,
+                            ),
+                            if (report != null &&
+                                report.findings.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              sectionTitle(
+                                'FINDINGS (${report.findings.length})',
+                              ),
+                              for (final item in report.findings) finding(item),
+                            ],
+                            const SizedBox(height: 6),
+                            sectionTitle('NOT CHECKED'),
+                            plainBullet(
+                              'Compatibility with the connected controller.',
+                            ),
+                            plainBullet(
+                              'Other firmware correctness or hardware suitability.',
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'Flash Only will not create a backup.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 1.45,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.hold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      _PillButton(
+                        label: 'Cancel',
+                        onTap: () => Navigator.pop(ctx, false),
+                        bg: AppColors.line,
+                        fg: AppColors.txt,
+                        border: AppColors.line2,
+                        small: true,
+                      ),
+                      const SizedBox(width: 10),
+                      _PillButton(
+                        label: 'Flash anyway',
+                        onTap: () => Navigator.pop(ctx, true),
+                        gradient: const [Color(0xFFFFC247), AppColors.hold],
+                        fg: const Color(0xFF211600),
+                        small: true,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

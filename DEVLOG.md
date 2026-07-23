@@ -1222,3 +1222,33 @@ Linux/macOS get the same code but were not rebuilt this session.
     correct payload with the decoy ignored, new `12d` (conflict → refuse) and
     `12e` (relocated → accept); the AGENTS pinned-behavior note retires the
     ZP scan-order pin, leaving only the 64 KiB window edge.
+- Finalized the Flutter Flash Only validation and confirmation flow.
+  - Structurally valid raw full-image and slot-0 `.bin` files remain the expert
+    override: a compatibility-warning modal lists the observed banner, serial,
+    and ZP evidence, collects every finding, states what was not checked, and
+    still offers Cancel or Flash anyway. The modal never claims that no other
+    problems exist and never claims compatibility with the connected controller.
+  - ZIP3 is no longer permissive in Flash Only. Every ZIP import now hard-fails
+    objective package problems before loading: malformed or unsupported
+    metadata, BLE/BMS type, unsupported X3 model, missing or inconsistent
+    `compatible`, MD5/TEA integrity failure, unsupported payload banner, or
+    disagreement between JSON and the decrypted firmware banner. This
+    supersedes the previous note that Flash Only's ZIP3 behavior was unchanged;
+    the expert override applies to raw firmware and unknown target suitability,
+    not to a broken or mislabeled integrity-bearing package.
+  - User-facing mismatch text now names the evidence sources directly: JSON
+    fields for internal metadata disagreement, and JSON versus firmware banner
+    for payload disagreement. The shared Snackbar keeps the `Package rejected:`
+    prefix. BLE/BMS wording stays short and uses VCU/MCU terminology.
+  - Windows debug-build UI validation covered raw-bin size stops and
+    banner/serial/ZP findings, multi-finding modal layout, valid ZIP import, and
+    representative ZIP hard failures. The focused Flash Only and inspection
+    suites passed 28 tests and `flutter analyze` was clean.
+  - Windows hardware validation (AT32F415 X3 testbed, ST-LINK, Default SWD)
+    passed all three post-modal Flash Only paths: full 128 KB VCU `.bin`
+    erase/write/verify in 7 s, VCU slot-0 `.bin` write/verify in 4 s, and valid
+    VCU ZIP3 decrypt plus slot-0 write/verify in 4 s. No backup was taken, as
+    advertised. These runs prove the Flash Only workflow and write verification,
+    not firmware suitability for the connected controller. Synthetic fixtures
+    were never flashed. Guarded-action regression and other-platform checks
+    remain separate follow-up work.

@@ -76,12 +76,14 @@ class Firmware {
     }
     if (len < slot0MinBytes) {
       return FirmwareCheck.fail(
-        'Too small for a slot-0 firmware ($len bytes, min $slot0MinBytes).',
+        'This file is too small for Slot 0 '
+        '($len bytes; minimum $slot0MinBytes).',
       );
     }
     if (len > slot0MaxBytes) {
       return FirmwareCheck.fail(
-        'Too big for slot 0 ($len bytes, max $slot0MaxBytes).',
+        'This file is too large for Slot 0 '
+        '($len bytes; maximum $slot0MaxBytes).',
       );
     }
     return FirmwareCheck.valid;

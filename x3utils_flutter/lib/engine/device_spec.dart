@@ -172,7 +172,8 @@ class DeviceSpec {
     }
     if (dev == null) {
       return Zip3Verdict.reject(
-        'Unsupported model "$model" — x3utils flashes ${modelList()} only.',
+        'This package is for ${m.toUpperCase()}. '
+        'x3utils supports ${modelList()} only.',
       );
     }
     if (!dev.types.contains(t)) {
@@ -184,17 +185,26 @@ class DeviceSpec {
     return Zip3Verdict.accept(dev);
   }
 
-  /// Comma-separated supported models, for messages/UI.
-  static String modelList() => kSupportedDevices.map((d) => d.model).join(', ');
+  /// Friendly supported-model list for messages/UI.
+  static String modelList() {
+    final models = kSupportedDevices
+        .map((device) => device.model.toUpperCase())
+        .toList(growable: false);
+    if (models.length == 1) return models.single;
+    return '${models.sublist(0, models.length - 1).join(', ')}, '
+        'and ${models.last}';
+  }
 
   /// Cross-check the DECRYPTED firmware's banner (`SCOOTER_<TYPE>_<CODE>` at
   /// [kBannerOffset]) against the package's declared [model]/[type]. This reads
   /// the payload itself, so it catches a mislabeled image the metadata gate
   /// can't. [model]/[type] are assumed already accepted by [evaluateZip3].
   ///
-  /// Soft by design: returns a [BannerVerdict] rather than throwing. Verifies
-  /// the type for every package, and the model for VCU (MCU shares [kMcuCode]
-  /// across models, so it can't confirm the model).
+  /// Returns a [BannerVerdict] so callers can apply their own policy. ZIP3
+  /// import treats a mismatch as a hard failure; the inspection report can
+  /// still present the same evidence without throwing. Verifies the type for
+  /// every package, and the model for VCU (MCU shares [kMcuCode] across models,
+  /// so it can't confirm the model).
   static BannerVerdict verifyBanner(
     List<int> firmware,
     String model,
@@ -210,7 +220,7 @@ class DeviceSpec {
     if (raw == null) {
       return BannerVerdict.mismatch(
         '',
-        'No SCOOTER_<TYPE>_<CODE> banner found at 0x400.',
+        'x3utils cannot identify this file as VCU or MCU firmware.',
       );
     }
     final banner = _supportedBannerAt(firmware, kBannerOffset);
@@ -226,26 +236,17 @@ class DeviceSpec {
     if (banner.type != t) {
       return BannerVerdict.mismatch(
         banner.raw,
-        'Firmware banner is ${banner.type} but the package claims $t.',
+        'The JSON says $t, but the firmware banner says ${banner.type}.',
       );
     }
     if (banner.type == 'VCU' && banner.model != mo) {
-      final expected = _codeFor(mo);
       return BannerVerdict.mismatch(
         banner.raw,
-        'Firmware banner identifies as ${banner.label}, but the package '
-        'claims ${mo.toUpperCase()} VCU'
-        '${expected == null ? '' : ' (expected code "$expected")'}.',
+        'The JSON says ${mo.toUpperCase()} VCU, but the firmware banner says '
+        '${banner.label}.',
       );
     }
     return BannerVerdict.ok(banner.raw);
-  }
-
-  static String? _codeFor(String modelLower) {
-    for (final d in kSupportedDevices) {
-      if (d.model == modelLower) return d.vcuCode;
-    }
-    return null;
   }
 
   /// Device-side (pre-flash) guard — BANNERS ONLY. Compares the target's
@@ -325,7 +326,7 @@ class DeviceSpec {
     final off = slotBin ? kBannerOffset : kSlotBannerOffset;
     if (_supportedBannerAt(bytes, off) == null) {
       return FirmwareCheck.fail(
-        'No supported VCU/MCU firmware banner was found.',
+        'x3utils cannot identify this file as VCU or MCU firmware.',
       );
     }
     return FirmwareCheck.valid;
@@ -336,10 +337,9 @@ class DeviceSpec {
   /// ([slotBin] false: banner at 0x1400 + serial pair; true: banner at 0x400,
   /// no serial — slot bins structurally lack one).
   static BinIdentity describeBin(List<int> bytes, {required bool slotBin}) {
-    final banner = _bannerAt(
-      bytes,
-      slotBin ? kBannerOffset : kSlotBannerOffset,
-    );
+    final offset = slotBin ? kBannerOffset : kSlotBannerOffset;
+    final banner = _bannerAt(bytes, offset);
+    final supportedBanner = _supportedBannerAt(bytes, offset);
     String? bannerModel;
     String? bannerType;
     if (banner != null) {
@@ -351,6 +351,7 @@ class DeviceSpec {
       banner: banner,
       bannerModel: bannerModel,
       bannerType: bannerType,
+      bannerSupported: supportedBanner != null,
       serial: slotBin ? null : readSerial(bytes),
     );
   }
@@ -480,13 +481,29 @@ class BinIdentity {
     this.banner,
     this.bannerModel,
     this.bannerType,
+    this.bannerSupported = false,
     this.serial,
   });
 
   final String? banner; // raw 16-char banner, null when absent/garbage
   final String? bannerModel; // zt3/g3/... for VCU banners with a known code
   final String? bannerType; // VCU | MCU
+  final bool bannerSupported;
   final SerialInfo? serial; // null for slot bins (structurally no serial)
+
+  /// Friendly identity read from the firmware banner, without claiming target
+  /// compatibility. Unknown-but-shaped banners retain their raw evidence.
+  String get bannerLabel {
+    if (bannerType == 'VCU') {
+      return bannerModel != null
+          ? '${bannerModel!.toUpperCase()} · VCU'
+          : 'VCU · unsupported code';
+    }
+    if (bannerType == 'MCU') {
+      return bannerSupported ? 'MCU' : 'MCU · unsupported code';
+    }
+    return 'Not found';
+  }
 
   /// The serial's decoded model contradicts the banner's (both known).
   bool get serialModelClash =>
@@ -562,7 +579,8 @@ class BinIdentity {
 }
 
 /// Result of [DeviceSpec.verifyBanner]: whether the firmware's own banner is
-/// consistent with the package label (soft — a mismatch is a warning).
+/// consistent with the package label. The caller decides whether a mismatch is
+/// a hard failure or an observed finding.
 class BannerVerdict {
   const BannerVerdict.ok(this.banner) : consistent = true, message = '';
   const BannerVerdict.mismatch(this.banner, this.message) : consistent = false;

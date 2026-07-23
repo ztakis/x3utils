@@ -240,7 +240,10 @@ void main() {
         enforceBanner: true,
       );
       expect(gate.ok, isFalse);
-      expect(gate.message, 'No supported VCU/MCU firmware banner was found.');
+      expect(
+        gate.message,
+        'x3utils cannot identify this file as VCU or MCU firmware.',
+      );
     });
 
     test('mainstream accepts every supported VCU banner', () {
@@ -281,7 +284,10 @@ void main() {
           enforceBanner: true,
         );
         expect(gate.ok, isFalse, reason: banner);
-        expect(gate.message, 'No supported VCU/MCU firmware banner was found.');
+        expect(
+          gate.message,
+          'x3utils cannot identify this file as VCU or MCU firmware.',
+        );
       }
     });
 
@@ -292,7 +298,10 @@ void main() {
         enforceBanner: true,
       );
       expect(gate.ok, isFalse);
-      expect(gate.message, 'No supported VCU/MCU firmware banner was found.');
+      expect(
+        gate.message,
+        'x3utils cannot identify this file as VCU or MCU firmware.',
+      );
     });
 
     test('flash_only stays permissive for missing and unknown banners', () {
