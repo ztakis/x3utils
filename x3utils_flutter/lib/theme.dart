@@ -51,6 +51,21 @@ const kAccents = <AccentTheme>[
     Color(0xFFE7ECF3),
   ),
   AccentTheme('Blue', Color(0xFF3D9BFF), Color(0xFF2C7BE0), Color(0xFF26D8F0)),
+  // Appended, never reordered — accentIndex is persisted by position.
+  AccentTheme('Ice', Color(0xFF4FE3FF), Color(0xFF2BB8DB), Color(0xFF7A6BFF)),
+  AccentTheme('Sand', Color(0xFFD8C4A0), Color(0xFFAE9B79), Color(0xFFF2E6CE)),
+  AccentTheme(
+    'Indigo',
+    Color(0xFF6C7BFF),
+    Color(0xFF4A57E0),
+    Color(0xFFB05CFF),
+  ),
+  AccentTheme(
+    'Violet',
+    Color(0xFF9D6BFF),
+    Color(0xFF7A46E6),
+    Color(0xFF16E0C4),
+  ),
 ];
 
 /// Drives a MaterialApp rebuild when the accent changes (see X3UtilsApp).
