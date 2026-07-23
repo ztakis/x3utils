@@ -1200,3 +1200,25 @@ Linux/macOS get the same code but were not rebuilt this session.
   MD5, real MD5 mismatch, missing info.json). No hardware command ran.
   `docs/testing.md` records the non-hardware check; `AGENTS.md` records the
   generator contract.
+- Follow-ups the same day, anticipating the message-truth testing pass:
+  - Added wrong-component 128 KB test bins (`8e` BLE-style, `8f` BMS-style,
+    no SCOOTER banner anywhere) because an oversized BLE zip is rejected by
+    the container size gate with a misleading "too large" message before the
+    truthful "unsupported component" gate can fire; at 128 KB the size gates
+    cannot catch a wrong-component bin and the banner gate's message is the
+    honest one. The old-repo donor-key refusal wording ("usually OEM/stock")
+    was ruled a corner case and stays as is.
+  - Hardened `Zp.payloadFromDump` against its one silent-wrong case: a stray
+    guard-passing `ZP` earlier in the identity page used to win by scan order
+    and extract the wrong payload without any error. The authoritative
+    `0x1F800` record (every real dump surveyed) now wins outright; otherwise
+    the page scan requires unanimity and conflicting candidates refuse with a
+    truthful "conflicting ZP length records" message. A single relocated
+    record is still accepted, preserving tolerance. Four new engine tests
+    cover decoy-vs-authoritative, guard-failing decoys, relocation, and
+    conflict refusal (31 pass, analyzer clean); the real engine was also run
+    against the generated fixtures and the real rescue/OEM corpus images with
+    unchanged verdicts. Test-bin set is now 40 files: `12a` expects the
+    correct payload with the decoy ignored, new `12d` (conflict → refuse) and
+    `12e` (relocated → accept); the AGENTS pinned-behavior note retires the
+    ZP scan-order pin, leaving only the 64 KiB window edge.

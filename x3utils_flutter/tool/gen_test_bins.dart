@@ -141,7 +141,7 @@ Uint8List fullImage(
   bool mcu = false,
   String? serial = kSerialZt3Generic,
   ZpMode zp = ZpMode.valid,
-  (int off, int encLen)? zpDecoy,
+  List<(int off, int encLen)> zpDecoys = const [],
 }) {
   final b = Uint8List(kFullSize)..fillRange(0, kFullSize, 0xFF);
   b.setAll(kSlot0Off, pay);
@@ -172,7 +172,9 @@ Uint8List fullImage(
     case ZpMode.absurd:
       zpRecord(kZpOff, 0x30000);
   }
-  if (zpDecoy != null) zpRecord(zpDecoy.$1, zpDecoy.$2);
+  for (final d in zpDecoys) {
+    zpRecord(d.$1, d.$2);
+  }
   return b;
 }
 
@@ -292,17 +294,27 @@ void main(List<String> args) {
   // ── 12: ZP length-record guard ────────────────────────────────────────────
   stdout.writeln('ZP guard:');
   emit('12a_zt3_vcu_zp_decoy_plausible_SYNTHETIC_FULL.bin',
-      fullImage(payload('12a'), zpDecoy: (0x1F100, 57472)),
+      fullImage(payload('12a'), zpDecoys: [(0x1F100, 57472)]),
       'full', 'plausible decoy ZP at 0x1F100 before the real record',
-      'PINS CURRENT BEHAVIOR: first candidate wins, decoy payload 57468 extracted (review if hardened)');
+      'authoritative 0x1F800 record wins; exact payload $kPayloadLen extracted, decoy ignored');
   emit('12b_zt3_vcu_zp_decoy_skipped_SYNTHETIC_FULL.bin',
-      fullImage(payload('12b'), zpDecoy: (0x1F100, 12346)),
+      fullImage(payload('12b'), zpDecoys: [(0x1F100, 12346)]),
       'full', 'invalid decoy ZP (fails mod-8 guard) before the real record',
       'decoy skipped; exact payload $kPayloadLen extracted');
   emit('12c_zt3_vcu_zp_absurd_SYNTHETIC_FULL.bin',
       fullImage(payload('12c'), zp: ZpMode.absurd),
       'full', 'ZP encrypted length 0x30000',
       'no trustworthy record in window; Make zip3 refuses');
+  emit('12d_zt3_vcu_zp_conflict_SYNTHETIC_FULL.bin',
+      fullImage(payload('12d'),
+          zp: ZpMode.allFf, zpDecoys: [(0x1F100, 57472), (0x1F300, 58440)]),
+      'full', 'no 0x1F800 record; two disagreeing relocated candidates',
+      'Make zip3 refuses: conflicting ZP length records');
+  emit('12e_zt3_vcu_zp_relocated_SYNTHETIC_FULL.bin',
+      fullImage(payload('12e'),
+          zp: ZpMode.allFf, zpDecoys: [(0x1F300, kPayloadLen + 4)]),
+      'full', 'single relocated ZP record at 0x1F300, none at 0x1F800',
+      'scan fallback accepts the unanimous record; exact payload $kPayloadLen extracted');
 
   // ── 13: full-image banner gate ────────────────────────────────────────────
   stdout.writeln('Full banner gate:');
@@ -314,6 +326,24 @@ void main(List<String> args) {
       fullImage(payload('13b', banner: null)),
       'full', 'no banner at 0x1400',
       'guarded Backup+Flash rejects missing banner');
+
+  // Scenario-8 companions: wrong-component artifacts at exactly 128 KB, where
+  // the size gates cannot catch them (real BLE/BMS bins carry no SCOOTER
+  // banner anywhere — corpus-verified). The truthful rejection is the banner
+  // gate's, unlike the oversized BLE zip whose size message fires first.
+  stdout.writeln('Wrong-component 128K bins:');
+  final ble128 = Uint8List(kFullSize);
+  Rng(seedOf('8e_ble')).fill(ble128);
+  ble128.setAll(kMarkerOff, asciiBytes(kMarker));
+  emit('8e_ble_style_128k_SYNTHETIC_FULL.bin', ble128,
+      'full', 'BLE-style artifact: 128 KB, no SCOOTER banner anywhere',
+      'guarded flash rejects on missing banner (truthful message for a wrong-component bin)');
+  final bms128 = Uint8List(kFullSize);
+  Rng(seedOf('8f_bms')).fill(bms128);
+  bms128.setAll(kMarkerOff, asciiBytes(kMarker));
+  emit('8f_bms_style_128k_SYNTHETIC_FULL.bin', bms128,
+      'full', 'BMS-style artifact: 128 KB, no SCOOTER banner anywhere',
+      'guarded flash rejects on missing banner (truthful message for a wrong-component bin)');
 
   // ── 14: slot-size window ──────────────────────────────────────────────────
   stdout.writeln('Slot-size window (banner present so ONLY size varies):');

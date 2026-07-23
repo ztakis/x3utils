@@ -45,6 +45,7 @@ Uint8List _dump({
   int? encLenOverride,
   bool omitZp = false,
   List<int>? keyAt1420, // 16 bytes at 0x1420; default = the SHU key (repo fw)
+  Map<int, int> extraZp = const {}, // extra ZP records: offset → encoded length
 }) {
   final b = Uint8List(131072);
   // Vary the payload body so it is never a single repeated byte.
@@ -56,16 +57,20 @@ Uint8List _dump({
   }
   // The firmware key region — repo firmware by default so the gate lets it pass.
   b.setRange(0x1420, 0x1420 + 16, keyAt1420 ?? _defaultKey);
-  if (!omitZp) {
-    b[0x1F800] = 0x5A; // 'Z'
-    b[0x1F801] = 0x50; // 'P'
-    final encLen = encLenOverride ?? (payloadLen + 4);
-    const o = 0x1F808;
+  void zpRecord(int off, int encLen) {
+    b[off] = 0x5A; // 'Z'
+    b[off + 1] = 0x50; // 'P'
+    final o = off + 8;
     b[o] = encLen & 0xFF;
     b[o + 1] = (encLen >> 8) & 0xFF;
     b[o + 2] = (encLen >> 16) & 0xFF;
     b[o + 3] = (encLen >> 24) & 0xFF;
   }
+
+  if (!omitZp) {
+    zpRecord(0x1F800, encLenOverride ?? (payloadLen + 4));
+  }
+  extraZp.forEach(zpRecord);
   return b;
 }
 
@@ -127,6 +132,41 @@ void main() {
 
     test('fail-closed: dump smaller than a full image', () {
       expect(() => Zp.payloadFromDump(Uint8List(60000)), throwsFormatException);
+    });
+
+    test('authoritative 0x1F800 record beats an earlier plausible decoy', () {
+      // Decoy at 0x1F100 names a different guard-passing length (51212); the
+      // real record at 0x1F800 must win regardless of scan order.
+      final dump = _dump(extraZp: {0x1F100: 51216});
+      expect(Zp.payloadFromDump(dump).length, _len);
+    });
+
+    test('guard-failing decoy never interferes', () {
+      // 12346 → payload 12342, 12342 % 8 == 6: the decoy fails the guards.
+      final dump = _dump(extraZp: {0x1F100: 12346});
+      expect(Zp.payloadFromDump(dump).length, _len);
+    });
+
+    test('a single relocated record is accepted by the scan fallback', () {
+      final dump = _dump(omitZp: true, extraZp: {0x1F300: _len + 4});
+      expect(Zp.payloadFromDump(dump).length, _len);
+    });
+
+    test('fail-closed: conflicting relocated records refuse', () {
+      final dump = _dump(
+        omitZp: true,
+        extraZp: {0x1F100: 51208, 0x1F300: 51216},
+      );
+      expect(
+        () => Zp.payloadFromDump(dump),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('conflicting ZP length records'),
+          ),
+        ),
+      );
     });
   });
 

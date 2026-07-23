@@ -27,9 +27,13 @@ class Zp {
   /// Where slot 0 starts inside a full dump (flash `0x08001000`).
   static const int slot0Offset = 0x1000;
 
-  // The record lives in the top user/identity page (found at 0x1F800 on every
-  // dump checked). Scan the whole page and accept the first candidate that
-  // passes every guard, so a stray `ZP` in data cannot be mistaken for it.
+  // The record lives in the top user/identity page. Every real dump surveyed
+  // holds it at exactly 0x1F800, so that offset is authoritative: a valid
+  // record there wins outright. The full-page scan is only a fallback for a
+  // relocated record, and it must be unanimous — when guard-passing candidates
+  // disagree on the length, extraction refuses rather than letting whichever
+  // stray `ZP` comes first silently win.
+  static const int _knownOffset = 0x1F800;
   static const int _searchStart = 0x1F000;
   static const int _searchEnd = 0x20000;
   static const int _lenFieldFromMagic = 8; // LE u32 at ZP+8
@@ -37,13 +41,17 @@ class Zp {
   /// Extract the exact slot-0 payload from [dump], or throw a [FormatException]
   /// (fail-closed) when no trustworthy `ZP` length record is present.
   ///
-  /// The guard, proven necessary by a real `len=0` case (a naive read gives a
-  /// negative length), accepts a candidate only when the magic matches, the
-  /// encoded length is non-zero, the derived payload length is `≡4 (mod 8)` (the
-  /// decrypted-firmware invariant), it falls inside the slot-0 size window, and
-  /// it fits within the dump. Anything else means Make zip3 must refuse this
-  /// image rather than guess a trim. These structural checks cannot detect a
-  /// valid record made stale by a later ST-Link slot-0 write.
+  /// A valid record at the authoritative [_knownOffset] is used directly.
+  /// Otherwise the page is scanned for a relocated record, which must be
+  /// unanimous: conflicting guard-passing candidates refuse instead of picking
+  /// the first one. The guards, proven necessary by a real `len=0` case (a
+  /// naive read gives a negative length), accept a candidate only when the
+  /// magic matches, the encoded length is non-zero, the derived payload length
+  /// is `≡4 (mod 8)` (the decrypted-firmware invariant), it falls inside the
+  /// slot-0 size window, and it fits within the dump. Anything else means Make
+  /// zip3 must refuse this image rather than guess a trim. These structural
+  /// checks cannot detect a valid record made stale by a later ST-Link slot-0
+  /// write.
   static Uint8List payloadFromDump(List<int> dump) {
     if (dump.length < _searchEnd) {
       throw FormatException(
@@ -51,19 +59,23 @@ class Zp {
         'image is required to read the ZP length record.',
       );
     }
+
+    // Authoritative offset first: 0x1F800 on every real dump surveyed.
+    final known = _payloadLenAt(dump, _knownOffset);
+    if (known != null) return _extract(dump, known);
+
+    // Fallback: scan the page for a relocated record, requiring unanimity.
+    final lengths = <int>{};
     for (var i = _searchStart; i + _lenFieldFromMagic + 4 <= _searchEnd; i++) {
-      if (dump[i] != 0x5A || dump[i + 1] != 0x50) continue; // "ZP"
-      final encLen = _u32le(dump, i + _lenFieldFromMagic);
-      if (encLen == 0) continue;
-      final payloadLen = encLen - 4;
-      if (payloadLen % 8 != 4) continue; // decrypted fw is ≡4 (mod 8)
-      if (payloadLen < Firmware.slot0MinBytes ||
-          payloadLen > Firmware.slot0MaxBytes) {
-        continue;
-      }
-      if (slot0Offset + payloadLen > dump.length) continue;
-      return Uint8List.fromList(
-        dump.sublist(slot0Offset, slot0Offset + payloadLen),
+      final len = _payloadLenAt(dump, i);
+      if (len != null) lengths.add(len);
+    }
+    if (lengths.length == 1) return _extract(dump, lengths.first);
+    if (lengths.length > 1) {
+      throw const FormatException(
+        'Make zip3 stopped: this dump holds conflicting ZP length records, so '
+        'x3utils cannot safely determine the exact payload and refuses rather '
+        'than guessing.',
       );
     }
     throw const FormatException(
@@ -74,6 +86,25 @@ class Zp {
       'guessing.',
     );
   }
+
+  /// The payload length named by a guard-passing `ZP` record at [i], or null.
+  static int? _payloadLenAt(List<int> dump, int i) {
+    if (i + _lenFieldFromMagic + 4 > dump.length) return null;
+    if (dump[i] != 0x5A || dump[i + 1] != 0x50) return null; // "ZP"
+    final encLen = _u32le(dump, i + _lenFieldFromMagic);
+    if (encLen == 0) return null;
+    final payloadLen = encLen - 4;
+    if (payloadLen % 8 != 4) return null; // decrypted fw is ≡4 (mod 8)
+    if (payloadLen < Firmware.slot0MinBytes ||
+        payloadLen > Firmware.slot0MaxBytes) {
+      return null;
+    }
+    if (slot0Offset + payloadLen > dump.length) return null;
+    return payloadLen;
+  }
+
+  static Uint8List _extract(List<int> dump, int payloadLen) =>
+      Uint8List.fromList(dump.sublist(slot0Offset, slot0Offset + payloadLen));
 
   static int _u32le(List<int> b, int o) =>
       b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);

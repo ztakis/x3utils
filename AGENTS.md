@@ -318,10 +318,12 @@ is local and untracked; the output folder is passed as the first argument.
   pin constants and formats. Real device serials, OEM firmware keys, and the
   6-byte device rand that follows the key are identity material and must not
   be quoted in tracked files.
-- Two manifest rows intentionally pin current behavior rather than desired
-  behavior: the ZP scan's first-candidate-wins order and the exact-64-KiB
-  slot-size window edge. Update their expectations in the same change that
-  hardens those areas.
+- One manifest row intentionally pins current behavior rather than desired
+  behavior: the exact-64-KiB slot-size window edge. Update its expectation in
+  the same change that tightens the window. (The ZP scan-order pin was retired
+  when extraction was hardened: the authoritative `0x1F800` record now wins
+  outright, and a relocated record is honored only when the page's candidates
+  are unanimous — conflicts refuse rather than guess.)
 
 For hardware-facing behavior, explain what was reviewed and what still requires
 a real device to verify.
