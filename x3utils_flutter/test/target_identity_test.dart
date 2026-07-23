@@ -185,7 +185,7 @@ void main() {
       expect(tm.blocked, isTrue);
       expect(
         tm.message,
-        'the target backup has no supported SCOOTER firmware banner at 0x1400, '
+        'the target backup has no supported VCU/MCU firmware banner at 0x1400, '
         'so compatibility cannot be verified. Use Flash Only only as an expert '
         'override; it skips this protection.',
       );
@@ -240,12 +240,7 @@ void main() {
         enforceBanner: true,
       );
       expect(gate.ok, isFalse);
-      expect(
-        gate.message,
-        'Cannot verify firmware compatibility: no supported SCOOTER firmware '
-        'banner was found at 0x1400. Backup + Flash was stopped. Flash Only is '
-        'an expert override that skips this protection.',
-      );
+      expect(gate.message, 'No supported VCU/MCU firmware banner was found.');
     });
 
     test('mainstream accepts every supported VCU banner', () {
@@ -286,7 +281,7 @@ void main() {
           enforceBanner: true,
         );
         expect(gate.ok, isFalse, reason: banner);
-        expect(gate.message, contains('no supported SCOOTER firmware banner'));
+        expect(gate.message, 'No supported VCU/MCU firmware banner was found.');
       }
     });
 
@@ -297,12 +292,7 @@ void main() {
         enforceBanner: true,
       );
       expect(gate.ok, isFalse);
-      expect(
-        gate.message,
-        'Cannot verify firmware compatibility: no supported SCOOTER firmware '
-        'banner was found at 0x400. Flash slot 0 was stopped. Flash Only is an '
-        'expert override that skips this protection.',
-      );
+      expect(gate.message, 'No supported VCU/MCU firmware banner was found.');
     });
 
     test('flash_only stays permissive for missing and unknown banners', () {

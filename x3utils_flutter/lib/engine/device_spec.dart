@@ -276,7 +276,7 @@ class DeviceSpec {
       return const TargetMatch(
         blocked: true,
         message:
-            'the target backup has no supported SCOOTER firmware banner at '
+            'the target backup has no supported VCU/MCU firmware banner at '
             '0x1400, so compatibility cannot be verified. Use Flash Only only '
             'as an expert override; it skips this protection.',
       );
@@ -285,7 +285,7 @@ class DeviceSpec {
       return TargetMatch(
         blocked: true,
         message:
-            'the selected firmware has no supported SCOOTER firmware banner '
+            'the selected firmware has no supported VCU/MCU firmware banner '
             'at 0x${incomingOffset.toRadixString(16).toUpperCase()}, so '
             'compatibility cannot be verified.',
       );
@@ -324,12 +324,8 @@ class DeviceSpec {
     if (!enforceBanner) return FirmwareCheck.valid;
     final off = slotBin ? kBannerOffset : kSlotBannerOffset;
     if (_supportedBannerAt(bytes, off) == null) {
-      final guardedAction = slotBin ? 'Flash slot 0' : 'Backup + Flash';
       return FirmwareCheck.fail(
-        'Cannot verify firmware compatibility: no supported SCOOTER firmware '
-        'banner was found at 0x${off.toRadixString(16).toUpperCase()}. '
-        '$guardedAction was stopped. Flash Only is an expert override that '
-        'skips this protection.',
+        'No supported VCU/MCU firmware banner was found.',
       );
     }
     return FirmwareCheck.valid;
