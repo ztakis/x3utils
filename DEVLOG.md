@@ -1312,3 +1312,19 @@ Linux/macOS get the same code but were not rebuilt this session.
     retained in a log.
   - The stop rule applies: the exhaustive Windows matrix was not replayed.
     Linux is complete; macOS is the remaining platform.
+- Closed the Flutter v1.2.0 BETA minimum macOS validation on the macOS 15.7.7
+  Intel x86_64 workstation.
+  - The focused tests and analyzer passed. `tool/package_macos.sh` produced
+    `x3utils-1.2.0-macos-universal.zip` and passed its universal architecture,
+    deep-signature, embedded-backend, RDP-script, and Power-race cfg checks.
+  - The packaged 1024x768 smoke passed the truncated-input refusal, Make zip3
+    creation and unchanged-output Cancel check, ZIP3 round-trip import with
+    matching ZT3/VCU evidence, and prompt Finder reveal. Saved app logs confirm
+    the 58460-byte package creation, existing-package Cancel, and ZIP3 import.
+  - The packaged backend produced an evidence-backed Check connection PASS.
+    One matching guarded Backup + Flash under Default SWD then created a fresh
+    131072-byte backup, wrote 131072 bytes of genuine ZT3 VCU firmware, verified
+    131072 bytes, and completed green. The saved run log records the backup,
+    secondary copy, write, verify, and clean OpenOCD exits.
+  - The stop rule applies: the exhaustive Windows matrix was not replayed.
+    Minimum Linux and macOS validation is complete.
