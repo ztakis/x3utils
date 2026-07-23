@@ -1140,3 +1140,63 @@ Linux/macOS get the same code but were not rebuilt this session.
   in `docs/testing.md`. `AGENTS.md` now also records the strict guarded-banner,
   digest-recheck, MCU limitation, and stale-ZP/Make-zip3 safety contracts so a
   later implementation pass does not weaken them.
+
+## 2026-07-23
+
+- Byte-surveyed the private local test-bin corpus (real full dumps, cleared
+  rescue images, and the repo firmware mirror; the corpus is untracked and
+  outside the repository) to ground validation test data in hardware truth
+  rather than code assumptions. Confirmed: banner offsets and codes match the
+  app exactly; BMS/BLE bins carry no SCOOTER banner anywhere; every VCU/MCU
+  slot payload is congruent to 4 (mod 8); the ZP length record (magic plus LE
+  u32 at +8, payload = value − 4) cross-matched repo payload sizes byte-exactly.
+- New layout facts recorded from the survey:
+  - Real dumps repeat the slot-0 banner in slot 1: VCU at `0x10400`; the single
+    MCU dump shows its copy at `0x10C00`, suggesting MCU slot 1 starts at
+    `0x10800` (one-dump evidence, unresolved).
+  - The firmware key region is 16 bytes at payload offset `0x420` (`0x1420` in
+    a full image) followed by a 6-byte device rand at `0x430`; the cleared
+    state is 22 x `0xFF`. Real OEM keys are 16-char lowercase-alphanumeric
+    ASCII. The rand is device-unique identity material; like serials, real
+    key/rand values must stay out of tracked files.
+  - One old repo VCU build (G3 1.4.8) still carries a donor key+rand; some old
+    builds are believed patched not to check the key at all (the old F3 case).
+    No corpus file carries the SHU default key — only the app's own compat
+    patch produces that state.
+  - Three real ZP states exist: a valid record; magic present with length 0
+    (rescue images); and an all-`0xFF` identity page (cleared rescues).
+  - Observed slot payload sizes span 56372–61436 bytes, comfortably inside the
+    code's provisional 50–64 KiB window; the window edges have no real-file
+    coverage and tightening the window remains an open decision.
+- Policy decisions: Make zip3 refuses any firmware key that is not the SHU
+  default or blank `0xFF`, with no allowlist, even for known repo builds that
+  may in fact be BLE-flashable — Flash Only remains the warned operator
+  override, mirroring the guarded-vs-expert split used for banners. The key
+  check stays 16 bytes for now; extending to the 22-byte key+rand region would
+  need new classification rules. Make zip3 stays pass-through and never
+  rewrites the key or rand (it assumes the BLE flash of a prepared repo bin
+  already replaced the OEM key).
+- Added `x3utils_flutter/tool/gen_test_bins.dart`, a deterministic generator
+  for the validation test-bin set. Its layout constants are corpus-derived on
+  purpose and must not be refactored to import `lib/engine`: the generator is
+  an independent statement of the layout, so an engine constant that drifts
+  from hardware fails a test instead of silently agreeing with the code under
+  test. Each synthetic differs from its accept baseline by exactly one knob.
+  Output groups: degenerates, full-image identity/key/ZP/banner cases, the
+  slot-size window ladder, zip3 mutations derived from a known-good package,
+  and path/extension cases (36 files), plus `gen_manifest.csv` as the oracle
+  (knob turned, expected verdict, SHA-256; UTF-8 BOM so Excel renders the
+  umlaut path row). Synthetics carry random unbootable payloads and an ASCII
+  do-not-flash marker; unmodified real corpus files are copied in to pin
+  constants and formats. The non-ASCII path case uses a German umlaut folder
+  name, matching the most common x3utils user locale.
+- Two manifest rows intentionally pin current behavior rather than desired
+  behavior: the ZP scan's first-candidate-wins order (a plausible decoy record
+  wins today) and the exact-64-KiB slot-size window edge passing. Update those
+  expectations in the same change that hardens either area.
+- Generated output was verified structurally (banners, key states, slot-1
+  copies, and ZP records at the measured offsets) and the zip3 mutations were
+  functionally spot-checked (schemaVersion, relabeled model with still-valid
+  MD5, real MD5 mismatch, missing info.json). No hardware command ran.
+  `docs/testing.md` records the non-hardware check; `AGENTS.md` records the
+  generator contract.

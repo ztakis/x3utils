@@ -298,6 +298,31 @@ non-hardware changes, prefer dry checks:
   and avoid launching flash/dump commands without explicit user approval.
 - Validate file-list and path changes with `rg --files`.
 
+### Validation Test Bins (tool/gen_test_bins.dart)
+
+`x3utils_flutter/tool/gen_test_bins.dart` generates the deterministic
+validation test-bin set (synthetic full images, slot bins, and mutated zip3
+packages). The output lives in the maintainer's private test-bin corpus, which
+is local and untracked; the output folder is passed as the first argument.
+
+- Its layout constants are corpus-derived from real hardware dumps on purpose.
+  Do not "fix" the tool to import constants from `lib/engine`: it is an
+  independent statement of the bin layout, so an engine constant that drifts
+  from hardware makes a test fail instead of silently agreeing with the code
+  under test.
+- Each synthetic differs from its accept baseline by exactly one knob, and the
+  emitted `gen_manifest.csv` is the oracle: file, knob turned, expected
+  verdict, SHA-256.
+- Synthetic images are unflashable by construction (random payload plus an
+  ASCII do-not-flash marker); unmodified real corpus files are copied in to
+  pin constants and formats. Real device serials, OEM firmware keys, and the
+  6-byte device rand that follows the key are identity material and must not
+  be quoted in tracked files.
+- Two manifest rows intentionally pin current behavior rather than desired
+  behavior: the ZP scan's first-candidate-wins order and the exact-64-KiB
+  slot-size window edge. Update their expectations in the same change that
+  hardens those areas.
+
 For hardware-facing behavior, explain what was reviewed and what still requires
 a real device to verify.
 
