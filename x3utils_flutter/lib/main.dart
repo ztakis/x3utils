@@ -1744,16 +1744,7 @@ class _Visual extends StatelessWidget {
   Widget build(BuildContext context) {
     switch (c.stage) {
       case StageState.idle:
-        return Container(
-          width: 84,
-          height: 84,
-          decoration: BoxDecoration(
-            color: AppColors.brand.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.line2),
-          ),
-          child: Icon(Icons.bolt, color: AppColors.brand, size: 38),
-        );
+        return const _IdleShimmerPlate();
       case StageState.hold:
         return _Pad(accent: accent, pulse: pulse, release: false);
       case StageState.release:
@@ -1790,6 +1781,92 @@ class _Visual extends StatelessWidget {
       case StageState.fail:
         return _ResultBadge(accent: accent, icon: Icons.close_rounded);
     }
+  }
+}
+
+/// Idle-state plate (84×84 bolt) with a periodic diagonal "armed shimmer":
+/// a highlight crosses the plate, rests, then passes again. Variation C from
+/// the hero-visual motion study. Its own slow controller (not the shared
+/// 1400ms _pulse) so the sweep stays calm with a long rest between passes.
+class _IdleShimmerPlate extends StatefulWidget {
+  const _IdleShimmerPlate();
+
+  @override
+  State<_IdleShimmerPlate> createState() => _IdleShimmerPlateState();
+}
+
+class _IdleShimmerPlateState extends State<_IdleShimmerPlate>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 4600),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  // Horizontal position of the sweep bar across the 84px plate: a long rest
+  // off the left edge, one eased pass, then a hold off the right edge.
+  double _sweepX(double t) {
+    if (t < 0.55) return -80;
+    if (t >= 0.85) return 120;
+    final p = Curves.easeInOut.transform((t - 0.55) / 0.30);
+    return -80 + p * 200;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedBuilder(
+        animation: _shimmer,
+        builder: (context, _) {
+          return SizedBox(
+            width: 84,
+            height: 84,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.brand.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.line2),
+              ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: _sweepX(_shimmer.value),
+                    top: -20,
+                    bottom: -20,
+                    child: Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.skewX(-18 * math.pi / 180),
+                      child: Container(
+                        width: 68,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.transparent,
+                              AppColors.brand.withValues(alpha: 0.32),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: Icon(Icons.bolt, color: AppColors.brand, size: 38),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 
