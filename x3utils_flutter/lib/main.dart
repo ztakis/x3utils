@@ -1570,7 +1570,12 @@ class _HeroStageState extends State<_HeroStage>
               child: Column(
                 children: [
                   Expanded(
-                    child: Center(
+                    // Optical center: nudge the stack up from true middle so it
+                    // reads as balanced (a little more air below the button than
+                    // above the eyebrow). Only bites when there's vertical slack;
+                    // tall screens (Make zip3) still fill and scroll.
+                    child: Align(
+                      alignment: const Alignment(0, -0.08),
                       child: SingleChildScrollView(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 600),
@@ -1662,7 +1667,7 @@ class _HeroStageState extends State<_HeroStage>
                                   const SizedBox(height: 12),
                                   _MakeZip3Form(c: c),
                                 ],
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 26),
                                 _StageButtons(c: c, onStart: widget.onStart),
                               ],
                             ),
@@ -3522,13 +3527,17 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
                 ),
               ),
             ),
-            Switch(
-              value: c.secondCopy,
-              activeThumbColor: AppColors.brand,
-              onChanged: (v) {
-                c.setSecondCopy(v);
-                setState(() {});
-              },
+            Transform.scale(
+              scale: 0.8,
+              alignment: Alignment.centerRight,
+              child: Switch(
+                value: c.secondCopy,
+                activeThumbColor: AppColors.brand,
+                onChanged: (v) {
+                  c.setSecondCopy(v);
+                  setState(() {});
+                },
+              ),
             ),
           ],
         ),
