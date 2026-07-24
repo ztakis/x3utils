@@ -18,9 +18,12 @@ Validated on Windows, Linux, and macOS (Intel and Apple Silicon).
 - **Auto zip3 after SHU compatible** — an optional *Attempt to also make zip3*
   checkbox on the SHU compatible action packs the just-patched firmware into a
   BLE-loadable zip3 in the same step, saved beside the backup under one shared
-  timestamp. Turns a recovery flash straight into a re-flashable BLE package.
-  VCU only (an MCU dump can't declare its model, so it's skipped); off by
-  default, and any packaging hiccup never affects the flash result.
+  timestamp. Its real use: when a new firmware ships that the repo doesn't carry
+  yet, you can BLE-update the OEM release, ST-Link flash-compat it, and get a
+  re-flashable SHU-compatible package of that version straight away — no waiting
+  on a repo build. VCU only (an MCU dump can't declare its model, so it's
+  skipped); off by default, and any packaging hiccup never affects the flash
+  result.
 - **Four additional theme accents** in the picker.
 - **Idle "armed shimmer"** — the idle hero plate now has a slow diagonal highlight
   pass so the app reads as alive and waiting rather than hung.
