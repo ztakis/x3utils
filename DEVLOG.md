@@ -1328,3 +1328,71 @@ Linux/macOS get the same code but were not rebuilt this session.
     secondary copy, write, verify, and clean OpenOCD exits.
   - The stop rule applies: the exhaustive Windows matrix was not replayed.
     Minimum Linux and macOS validation is complete.
+- Added an optional "Attempt to also make zip3" checkbox under the Make SHU
+  compatible action (Flutter GUI, off by default).
+  - When it is ticked and the compat flash succeeds, the just-flashed patched
+    image is repackaged as a BLE-loadable zip3 via the existing packer. The
+    patched image always carries the default SHU key at 0x1420 by construction,
+    so the packer's key gate passes trivially.
+  - The package is co-located with its source run and shares the run timestamp,
+    so one compat run leaves three files together: `compat_<ts>.bin` (raw
+    backup), `compat_<ts>_patched.bin`, and `compat_<ts>_patched.zip`.
+  - VCU only: the banner declares the model, so identity is derived, not
+    guessed. An MCU compat run silently skips the zip (its dump carries no model
+    identity). Best-effort throughout: any packaging failure is swallowed and
+    can never demote the compat flash's PASS.
+  - Build/analyzer clean (`dart format`, `flutter analyze`). Hardware-validated
+    on the Windows testbed under Default SWD: a ticked compat run flashed
+    SHU-compatible firmware green and emitted the trio co-located under one
+    shared timestamp (`compat_<ts>.bin` / `_patched.bin` / `_patched.zip`), with
+    the "saved beside the backup" note shown. Full loop then closed on hardware:
+    that checkbox-produced `_patched.zip` was loaded through the BLE app's Load
+    from file, recognized as zt3/VCU, flashed (57.4 KB), and reported "Firmware
+    flashed successfully". End-to-end proven: compat flash -> auto zip3 -> BLE
+    load -> PASS.
+- BLE acceptance investigation (why a repackaged slot-0 does or does not load
+  through the BLE app), settled by byte comparisons plus real BLE flashes.
+  Supersedes an earlier same-day note in this entry that wrongly concluded "BLE
+  requires the default SHU key at 0x1420" - that conclusion was overturned.
+  - Test that started it (ZT3 VCU 1.5.8, a version NOT in the repo mirror): a
+    compat-patched dump (default SHU key written at 0x1420, real device identity
+    intact) repackaged to a zip3 BLE-flashes. The same dump with the key AND the
+    following 6 identity bytes blanked to 0xFF does NOT BLE-flash. The two
+    images differ only in those 22 bytes at 0x1420-0x1435.
+  - But blank is not the discriminator. Every repo package inspected - VCU
+    1.4.11 / 1.4.15 / 1.5.2 and MCU 1.5.2 - is blank at BOTH the key (payload
+    0x420) and the 6 identity bytes (0x430), and those BLE-flash routinely. So a
+    blank key+identity is clearly acceptable in general; the artificial "cleared"
+    1.5.8 failing is the odd one out, not the repo norm.
+  - BLE writes the payload verbatim and re-provisions nothing: the repo MCU
+    1.5.2 payload matches the post-flash dump byte-for-byte (59028/59028). Repo
+    flashing also wipes an OEM device's key region (a stock MCU carried an OEM
+    ASCII-token key there; after a repo BLE flash it is all-0xFF).
+  - Root cause found. Diffing OEM-stock 1.5.2 vs repo-Compat 1.5.2 (same
+    version, so the body delta is exactly what the repo maintainer changes),
+    after excluding the key/identity region, the slot-1 mirror, the past-payload
+    tail, and the device config page, the firmware-body difference is two ARM
+    Thumb check-neuter patches: at slot-0 body 0x5608 a `CBZ r0` is replaced by
+    `NOP`, and at 0x5AD7 a `BEQ` is forced to an unconditional `B`. The
+    maintainer clears the key AND patches out the on-device validation that would
+    otherwise reject the package. That is the "something else" beyond clearing
+    the key.
+  - Resulting model: the OTA validation is passed EITHER by presenting the real
+    SHU key (what flash_compat writes) OR by carrying the maintainer's
+    check-defeat patches (what repo packages carry). A synthetic cleared bin has
+    neither - blank key, checks still intact - so it is rejected. That is why the
+    compat/defkey repackage loads and the hand-cleared one does not.
+  - Consequences for the tools (no code change, and now for a concrete reason):
+    - The standalone Make zip3 blank-key gate stays as-is. Its intended source
+      is a fresh dump taken right after BLE-installing repo firmware, which
+      already carries the check-defeat patches, so a blank-key repackage of it
+      loads. Only a synthetic cleared bin fails. The gate cannot see the patches
+      and does not need to.
+    - The compat -> zip3 checkbox is a sound, independent recipe: it takes the
+      other road (writes the real key), so it loads whether or not the dump
+      carries the patches.
+  - Limits: one version-pair, MCU only (no repo 1.5.8 exists to diff the VCU
+    that failed); the two branches are inferred to be the acceptance check from
+    a clean 2-instruction delta in the right place, not yet confirmed in a
+    disassembler. Identity bytes and the OEM token value are kept out of this
+    file on purpose.

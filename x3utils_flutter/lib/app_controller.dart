@@ -188,6 +188,22 @@ class AppController extends ChangeNotifier {
     zip3Name = '';
   }
 
+  // ── SHU-compat: also pack a BLE zip3 of the patched image ───────────────────
+  // Opt-in checkbox under the "Make SHU compatible" action. When on and the
+  // compat flash succeeds, the patched image (default SHU key by construction,
+  // so the packer's key gate passes trivially) is repackaged as a BLE-loadable
+  // zip3. VCU only — its banner declares the model; an MCU dump carries no model
+  // identity, so an MCU compat run silently skips the zip rather than guess.
+  // Best-effort: a packaging hiccup never demotes the compat flash success.
+  // Off by default and transient (reset on every action switch).
+  bool compatMakeZip3 = false;
+
+  void setCompatMakeZip3(bool v) {
+    if (running) return;
+    compatMakeZip3 = v;
+    notifyListeners();
+  }
+
   bool get isFlashOnlySlot0 =>
       actionId == 'flash_only' && flashOnlyScope == FlashOnlyScope.slot0;
 
@@ -694,6 +710,7 @@ class AppController extends ChangeNotifier {
     actionId = id;
     if (id == 'flash_only') flashOnlyScope = FlashOnlyScope.fullImage;
     _resetZip3Form(); // the packer form is transient, per action entry
+    compatMakeZip3 = false; // the compat zip3 opt-in is transient too
     _firmwareAdvanced = null; // advanced actions don't remember loaded bins
     _firmwareAdvancedDigest = null;
     _firmwareNote = null;
@@ -1858,15 +1875,71 @@ class AppController extends ChangeNotifier {
     if (f == null) return;
     _showOpenOcdProgress(eyebrow: 'Validating');
     final flashOk = _flashConfirmed(f);
+    const okMsg =
+        'SHU-compatible firmware flashed and verified. The original backup was saved.';
+    String? zipNote;
     if (flashOk) {
       _setInstruction('SHU-compatible firmware verified.');
+      // Optional, best-effort: repack the just-flashed patched image as a
+      // BLE-loadable zip3. Never lets a packaging problem demote the success.
+      if (compatMakeZip3) zipNote = _maybeCompatZip3(patched);
     }
     await _finishRealAfterHold(
       flashOk,
-      'SHU-compatible firmware flashed and verified. The original backup was saved.',
+      okMsg,
       '${_flashFailMessage(f)} The original backup was saved.',
       outputPath: raw,
+      outputNote: zipNote,
     );
+  }
+
+  /// Repack the compat [patchedPath] image (a full 128 KB dump with the SHU key
+  /// written at 0x1420) into a BLE-loadable zip3, and return a one-line location
+  /// note for the success screen — or null when it is skipped or fails.
+  ///
+  /// VCU only: the banner declares the model, so identity is derived, not
+  /// guessed. An MCU dump carries no model identity (banner `SCOOTER_MCU_0001`,
+  /// generic part serial), so an MCU compat run silently skips — the maintainer's
+  /// call, since MCU compat is rare and its model can't be self-declared. Every
+  /// failure is swallowed: the compat flash already succeeded, and this extra is
+  /// strictly best-effort.
+  String? _maybeCompatZip3(String patchedPath) {
+    try {
+      final bytes = File(patchedPath).readAsBytesSync();
+      final det = PackV3.detect(bytes);
+      if (det.type != 'VCU' || det.model == null) {
+        _log('== compat zip3 skipped: not a VCU (no model to declare) ==');
+        return null;
+      }
+      // Co-locate the package with its source run: same folder, same timestamp
+      // as the compat .bin/_patched.bin, so the three artifacts of one run stay
+      // together (compat_<ts>.bin, _patched.bin, _patched.zip). The filename
+      // carries lineage; the internal info.json displayName stays the clean
+      // "<model>_<TYPE>" the BLE app shows.
+      // enforceModel matches the packer form default; the key gate passes by
+      // construction because the compat patch just wrote the default SHU key.
+      final result = PackV3.buildZip3FromDump(
+        bytes,
+        type: det.type!,
+        model: det.model!,
+        enforceModel: true,
+      );
+      // Swap .bin → .zip on the patched path to inherit its exact timestamp and
+      // prefix, rather than minting a fresh stamp that could desync the trio.
+      final outPath = patchedPath.replaceFirst(RegExp(r'\.bin$'), '.zip');
+      File(outPath).writeAsBytesSync(result.zipBytes);
+      _log(
+        '== compat zip3: ${result.model}/${result.type} · '
+        '${result.payloadLength} B payload → $outPath ==',
+      );
+      final file = outPath.split(RegExp(r'[\\/]')).last;
+      return 'A BLE-loadable zip3 was saved beside the backup: $file. '
+          'Test it through the BLE app’s Load from file before relying on it.';
+    } catch (e) {
+      // Best-effort only — the compat flash succeeded regardless.
+      _log('== compat zip3 skipped: $e ==');
+      return null;
+    }
   }
 
   /// Offline "Make zip3": read a full 128 KB backup dump, recover the exact
