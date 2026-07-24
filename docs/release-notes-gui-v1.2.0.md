@@ -1,12 +1,10 @@
 # x3utils GUI v1.2.0
 
-> **Draft** — subject to edit before release. Open item: Apple-Silicon validation
-> pass on macOS still pending (all macOS testing to date is Intel; the universal
-> build's arm64 slice is verified to exist but not yet run on Apple Silicon).
+> **Draft** — subject to edit before release.
 
 **The BLE-loop release.** v1.2.0 adds the *Make zip3* firmware packer, hardens every
 firmware-write path with model/banner validation, and graduates the GUI out of BETA.
-Validated on Windows and Linux; macOS pending final Apple-Silicon sign-off.
+Validated on Windows, Linux, and macOS (Intel and Apple Silicon).
 
 ## New
 
@@ -42,10 +40,9 @@ Validated on Windows and Linux; macOS pending final Apple-Silicon sign-off.
 ## Platform
 
 - First stable (non-BETA) build for **Windows, Linux, and macOS**.
-- Minimum hardware/build validation closed on Linux (AppImage) and macOS Intel
-  (universal build) as documented in
+- Minimum hardware/build validation closed on Linux (AppImage) and macOS
+  (universal build, both Intel and Apple Silicon) as documented in
   `docs/flutter-v1.2.0-minimum-macos-linux-validation.md`.
-- **Pending:** Apple-Silicon (arm64) validation pass before macOS is signed off.
 
 ## Notes
 
