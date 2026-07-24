@@ -1,7 +1,5 @@
 # x3utils GUI v1.2.0
 
-> **Draft** — subject to edit before release.
-
 **The BLE-loop release.** v1.2.0 adds the *Make zip3* firmware packer, hardens every
 firmware-write path with model/banner validation, and graduates the GUI out of BETA.
 Validated on Windows, Linux, and macOS (Intel and Apple Silicon).
