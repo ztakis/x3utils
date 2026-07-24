@@ -47,8 +47,8 @@ Default to discussion/review mode for this repo.
 - `x3utils_mac/` - macOS shell implementation and bundled xPack OpenOCD.
 - `docs/testing.md` - manual hardware test matrix, checklists, and regression
   notes.
-- `DEVLOG.md` - short chronological development memory for decisions, handoffs,
-  and test notes.
+- `docs/DEVLOG.md` - short chronological development memory for decisions,
+  handoffs, and test notes.
 - `*/special/` - special-purpose firmware files and flashing scripts.
 - `*/backup/` and `*/compat/` - runtime output locations. These should
   generally stay ignored except for their existing `.gitignore` files.
@@ -337,8 +337,8 @@ files instead of relying on conversation history.
 
 - Use `docs/testing.md` for real hardware testbed boards, workstation coverage,
   manual checklists, and regression notes.
-- Use `DEVLOG.md` for short chronological notes about decisions, test results,
-  and why a change was made.
+- Use `docs/DEVLOG.md` for short chronological notes about decisions, test
+  results, and why a change was made.
 
 The maintainer has real testbed boards that have been reflashed many times. Do
 not assume that lack of CI means lack of testing; hardware validation is manual
