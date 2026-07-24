@@ -15,6 +15,12 @@ Validated on Windows, Linux, and macOS (Intel and Apple Silicon).
   model so it won't load on the wrong hardware.
 - **zip3 firmware import** — load a `.zip3` package directly; it's validated by
   model and firmware banner before anything is written.
+- **Auto zip3 after SHU compatible** — an optional *Attempt to also make zip3*
+  checkbox on the SHU compatible action packs the just-patched firmware into a
+  BLE-loadable zip3 in the same step, saved beside the backup under one shared
+  timestamp. Turns a recovery flash straight into a re-flashable BLE package.
+  VCU only (an MCU dump can't declare its model, so it's skipped); off by
+  default, and any packaging hiccup never affects the flash result.
 - **Four additional theme accents** in the picker.
 - **Idle "armed shimmer"** — the idle hero plate now has a slow diagonal highlight
   pass so the app reads as alive and waiting rather than hung.

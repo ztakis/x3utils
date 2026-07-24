@@ -1669,6 +1669,13 @@ class _HeroStageState extends State<_HeroStage>
                                 ],
                                 const SizedBox(height: 26),
                                 _StageButtons(c: c, onStart: widget.onStart),
+                                // A faint opt-in under the compat pill: also pack
+                                // a BLE zip3 of the patched image once it flashes.
+                                if (c.stage == StageState.idle &&
+                                    c.actionId == 'flash_compat') ...[
+                                  const SizedBox(height: 14),
+                                  _CompatZip3Toggle(c: c),
+                                ],
                               ],
                             ),
                           ),
@@ -3222,6 +3229,45 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
               DropdownMenuItem(value: it, child: Text(labelOf?.call(it) ?? it)),
           ],
           onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+/// Faint opt-in under the "Make SHU compatible" pill: after the patched image
+/// flashes, also repackage it as a BLE-loadable zip3. Off by default; VCU only
+/// (an MCU compat run silently skips — see AppController.compatMakeZip3).
+class _CompatZip3Toggle extends StatelessWidget {
+  const _CompatZip3Toggle({required this.c});
+  final AppController c;
+  @override
+  Widget build(BuildContext context) {
+    final on = c.compatMakeZip3;
+    return InkWell(
+      onTap: () => c.setCompatMakeZip3(!on),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              on
+                  ? Icons.check_box_rounded
+                  : Icons.check_box_outline_blank_rounded,
+              size: 16,
+              color: on ? AppColors.brand : AppColors.mut,
+            ),
+            const SizedBox(width: 7),
+            Text(
+              'Attempt to also make zip3',
+              style: TextStyle(
+                fontSize: 12,
+                color: on ? AppColors.txt : AppColors.dim,
+              ),
+            ),
+          ],
         ),
       ),
     );
