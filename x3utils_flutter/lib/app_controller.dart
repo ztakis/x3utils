@@ -158,6 +158,24 @@ class AppController extends ChangeNotifier {
   bool zip3EnforceModel = true; // info.json enforceModel checkbox
   String zip3Name = ''; // editable displayName; blank → defaultZip3Name
 
+  // Standalone ZIP3 unpack state. Selection validates and decrypts in memory
+  // for the details preview; Start re-reads and re-validates the source before
+  // writing the requested local .bin.
+  String? _unpackZip3Path;
+  String? _unpackZip3Digest;
+  UnpackedV3? _unpackZip3Package;
+  String unpackOutputName = '';
+
+  String? get unpackZip3Path => _unpackZip3Path;
+  String? get unpackZip3FileName =>
+      _unpackZip3Path?.split(RegExp(r'[\\/]')).last;
+  String? get unpackDisplayName => _unpackZip3Package?.displayName;
+  String? get unpackModel => _unpackZip3Package?.model;
+  String? get unpackType => _unpackZip3Package?.type;
+  int? get unpackPayloadLength => _unpackZip3Package?.firmware.length;
+  bool? get unpackEnforceModel => _unpackZip3Package?.enforceModel;
+  String? get unpackEncryption => _unpackZip3Package?.encryption;
+
   void setZip3Type(String? t) {
     if (running) return;
     zip3Type = t;
@@ -181,11 +199,20 @@ class AppController extends ChangeNotifier {
   // reload / action switch) DO notify, and the form re-syncs from zip3Name then.
   void setZip3Name(String v) => zip3Name = v;
 
+  void setUnpackOutputName(String v) {
+    unpackOutputName = v;
+    notifyListeners();
+  }
+
   void _resetZip3Form() {
     zip3Type = null;
     zip3Model = null;
     zip3EnforceModel = true;
     zip3Name = '';
+    _unpackZip3Path = null;
+    _unpackZip3Digest = null;
+    _unpackZip3Package = null;
+    unpackOutputName = '';
   }
 
   // ── SHU-compat: also pack a BLE zip3 of the patched image ───────────────────
@@ -197,10 +224,17 @@ class AppController extends ChangeNotifier {
   // Best-effort: a packaging hiccup never demotes the compat flash success.
   // Off by default and transient (reset on every action switch).
   bool compatMakeZip3 = false;
+  Zip3WorkspacePage zip3WorkspacePage = Zip3WorkspacePage.pack;
 
   void setCompatMakeZip3(bool v) {
     if (running) return;
     compatMakeZip3 = v;
+    notifyListeners();
+  }
+
+  void setZip3WorkspacePage(Zip3WorkspacePage page) {
+    if (running || zip3WorkspacePage == page) return;
+    zip3WorkspacePage = page;
     notifyListeners();
   }
 
@@ -222,11 +256,65 @@ class AppController extends ChangeNotifier {
   /// actions need a loaded file; Make zip3 additionally needs both dropdowns
   /// chosen (an MCU dump can't preselect its model).
   bool get canStart {
+    if (actionId == 'make_zip3' &&
+        zip3WorkspacePage == Zip3WorkspacePage.unpack) {
+      return _unpackZip3Path != null &&
+          _unpackZip3Package != null &&
+          Firmware.validateUnpackedFilename(unpackOutputName).ok;
+    }
     if (action.needsFirmware && firmwarePath == null) return false;
     if (actionId == 'make_zip3' && (zip3Type == null || zip3Model == null)) {
       return false;
     }
     return true;
+  }
+
+  /// Inspect a ZIP3 for standalone unpack. No output is written here: the
+  /// package details and default filename are only armed after container,
+  /// cryptographic, metadata, banner, and slot-size validation all pass.
+  Future<FirmwareCheck> selectZip3ForUnpack(String path) async {
+    if (running ||
+        actionId != 'make_zip3' ||
+        zip3WorkspacePage != Zip3WorkspacePage.unpack) {
+      return FirmwareCheck.fail('Standalone ZIP3 unpack is not active.');
+    }
+    _unpackZip3Path = null;
+    _unpackZip3Digest = null;
+    _unpackZip3Package = null;
+    unpackOutputName = '';
+    notifyListeners();
+
+    final containerCheck = Firmware.validateZip3Container(
+      path,
+      enforceFlashSizeLimit: false,
+    );
+    if (!containerCheck.ok) return containerCheck;
+    try {
+      final bytes = await File(path).readAsBytes();
+      final pkg = PackV3.unpackV3(bytes, policy: Zip3UnpackPolicy.extract);
+      _unpackZip3Path = path;
+      _unpackZip3Digest = crypto.sha256.convert(bytes).toString();
+      _unpackZip3Package = pkg;
+      unpackOutputName = Firmware.defaultUnpackedFilename(
+        model: pkg.model,
+        type: pkg.type,
+        sourceFilename: path.split(RegExp(r'[\\/]')).last,
+      );
+      _log(
+        '== zip3 inspected: ${pkg.displayName} · ${pkg.model}/${pkg.type} · '
+        '${pkg.firmware.length} bytes ==',
+      );
+      notifyListeners();
+      return FirmwareCheck(
+        true,
+        'Ready to unpack ${pkg.displayName} '
+        '(${pkg.model.toUpperCase()} ${pkg.type.toUpperCase()}).',
+      );
+    } on FormatException catch (e) {
+      return FirmwareCheck.fail(e.message);
+    } catch (e) {
+      return FirmwareCheck.fail('Could not read package: $e');
+    }
   }
 
   /// The header owns the stable action explanation. While idle, the hero shows
@@ -708,6 +796,7 @@ class AppController extends ChangeNotifier {
   void selectAction(String id) {
     if (running) return;
     actionId = id;
+    zip3WorkspacePage = Zip3WorkspacePage.pack;
     if (id == 'flash_only') flashOnlyScope = FlashOnlyScope.fullImage;
     _resetZip3Form(); // the packer form is transient, per action entry
     compatMakeZip3 = false; // the compat zip3 opt-in is transient too
@@ -906,10 +995,14 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _dispatch({ConfirmFileReplace? confirmFileReplace}) async {
-    // Make zip3 is offline — a pure file→file repack that never talks to the
-    // controller, so it runs before (and independent of) the OpenOCD runner.
+    // Pack / Unpack zip3 is offline — pure file→file work that never talks to
+    // the controller, so it runs before (and independent of) OpenOCD.
     if (actionId == 'make_zip3') {
-      await _runMakeZip3(confirmFileReplace: confirmFileReplace);
+      if (zip3WorkspacePage == Zip3WorkspacePage.unpack) {
+        await _runUnpackZip3(confirmFileReplace: confirmFileReplace);
+      } else {
+        await _runMakeZip3(confirmFileReplace: confirmFileReplace);
+      }
       return;
     }
     final runner = _runner;
@@ -2022,6 +2115,85 @@ class AppController extends ChangeNotifier {
     } catch (e) {
       _log('== make zip3 error: $e ==');
       _finishReal(false, '', 'Could not create the package: $e', reseat: false);
+    }
+  }
+
+  /// Offline standalone ZIP3 unpack: re-read the selected package, prove it is
+  /// unchanged and still valid, then write its decrypted slot-0 firmware under
+  /// the operator's filename. Existing files are never silently overwritten.
+  Future<void> _runUnpackZip3({ConfirmFileReplace? confirmFileReplace}) async {
+    final src = _unpackZip3Path;
+    if (src == null || _unpackZip3Package == null) {
+      _setInputFailure(
+        'No package',
+        'Choose a zip3 package first',
+        'Pick an encrypted zip3 package, then choose its output filename.',
+      );
+      return;
+    }
+    final nameCheck = Firmware.validateUnpackedFilename(unpackOutputName);
+    if (!nameCheck.ok) {
+      _setInputFailure(
+        'Filename invalid',
+        'Choose a valid output filename',
+        nameCheck.message,
+      );
+      return;
+    }
+    final containerCheck = Firmware.validateZip3Container(
+      src,
+      enforceFlashSizeLimit: false,
+    );
+    if (!containerCheck.ok) {
+      _setInputFailure(
+        'Package invalid',
+        'Package invalid',
+        containerCheck.message,
+      );
+      return;
+    }
+
+    try {
+      final bytes = await File(src).readAsBytes();
+      final digest = crypto.sha256.convert(bytes).toString();
+      if (_unpackZip3Digest == null || digest != _unpackZip3Digest) {
+        _setInputFailure(
+          'Package changed',
+          'Choose the package again',
+          'The selected ZIP3 changed after it was inspected.',
+        );
+        return;
+      }
+      final pkg = PackV3.unpackV3(bytes, policy: Zip3UnpackPolicy.extract);
+      final outPath = Firmware.unpackedBinPath(unpackOutputName);
+      _log(
+        '== unpack zip3: ${pkg.model}/${pkg.type} · '
+        '${pkg.firmware.length} bytes → $outPath ==',
+      );
+      final writeResult = await writeBytesWithConfirmation(
+        File(outPath),
+        pkg.firmware,
+        confirmReplace: confirmFileReplace,
+      );
+      if (writeResult == ConfirmedWriteResult.cancelled) {
+        _log('== unpack zip3 cancelled: existing file kept → $outPath ==');
+        return;
+      }
+      _log('== unpacked ${pkg.displayName} → $outPath ==');
+      _finishReal(
+        true,
+        'Firmware unpacked · ${pkg.model.toUpperCase()} · '
+            '${pkg.type.toUpperCase()} · ${pkg.firmware.length} bytes',
+        '',
+        reseat: false,
+        outputPath: outPath,
+      );
+    } on FormatException catch (e) {
+      _log('== unpack zip3 failed: ${e.message} ==');
+      _finishReal(false, '', e.message, reseat: false);
+    } catch (e) {
+      _log('== unpack zip3 error: $e ==');
+      _finishReal(false, '', 'Could not unpack the package: $e', reseat: false);
     }
   }
 }

@@ -81,6 +81,43 @@ Map<String, dynamic> _fw(Uint8List zip) {
 }
 
 void main() {
+  group('standalone unpack output', () {
+    test('uses the package display name and adds .bin automatically', () {
+      expect(
+        Firmware.defaultUnpackedFilename(
+          model: 'zt3',
+          type: 'VCU',
+          sourceFilename: '1.5.15 (Compat).zip',
+        ),
+        'zt3_vcu_1.5.15_Compat.bin',
+      );
+      expect(Firmware.normalizeUnpackedFilename('edited'), 'edited.bin');
+      expect(Firmware.normalizeUnpackedFilename('edited.BIN'), 'edited.BIN');
+    });
+
+    test('refuses path components and invalid filenames', () {
+      expect(Firmware.validateUnpackedFilename('firmware').ok, isTrue);
+      expect(Firmware.validateUnpackedFilename('firmware.bin').ok, isTrue);
+      expect(Firmware.validateUnpackedFilename('../firmware').ok, isFalse);
+      expect(Firmware.validateUnpackedFilename(r'folder\firmware').ok, isFalse);
+      expect(Firmware.validateUnpackedFilename('CON').ok, isFalse);
+    });
+
+    test('validates decrypted slot bytes before writing output', () {
+      expect(
+        Firmware.validateSlotBytes(
+          List<int>.generate(_len, (i) => i & 0xFF),
+        ).ok,
+        isTrue,
+      );
+      expect(
+        Firmware.validateSlotBytes(List<int>.filled(_len, 0xFF)).ok,
+        isFalse,
+      );
+      expect(Firmware.validateSlotBytes(List<int>.filled(100, 1)).ok, isFalse);
+    });
+  });
+
   group('Zp.payloadFromDump', () {
     test('extracts the exact slot-0 payload named by the ZP record', () {
       final dump = _dump();

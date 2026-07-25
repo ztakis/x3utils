@@ -69,6 +69,22 @@ class Firmware {
     final base = validate(path, requireSize: false);
     if (!base.ok) return base;
     final len = File(path).lengthSync();
+    return _validateSlotLength(len);
+  }
+
+  /// Validate a decrypted slot-0 payload before it is written to disk.
+  /// ZIP3 unpack uses this so an invalid package can never create or replace
+  /// the requested output file.
+  static FirmwareCheck validateSlotBytes(List<int> bytes) {
+    if (bytes.isEmpty || _singleRepeatedBytes(bytes)) {
+      return FirmwareCheck.fail(
+        'Bin contains only zeros or a single repeated byte.',
+      );
+    }
+    return _validateSlotLength(bytes.length);
+  }
+
+  static FirmwareCheck _validateSlotLength(int len) {
     if (len == expectedSize) {
       return FirmwareCheck.fail(
         'That’s a full 128 KB image — slot 0 needs a smaller slot bin.',
@@ -89,10 +105,14 @@ class Firmware {
     return FirmwareCheck.valid;
   }
 
-  /// Cheap ZIP3 container gate. This intentionally runs before loading the
-  /// archive into memory so an accidentally selected huge ZIP cannot crash the
-  /// app. The decrypted payload still receives the normal slot validation.
-  static FirmwareCheck validateZip3Container(String path) {
+  /// Cheap ZIP3 container gate. Flash import retains the 70 KiB cap because it
+  /// only accepts slot-sized VCU/MCU payloads. Standalone extraction passes
+  /// [enforceFlashSizeLimit] false because legitimate BLE packages are much
+  /// larger and their encrypted member is integrity-checked by MD5.
+  static FirmwareCheck validateZip3Container(
+    String path, {
+    bool enforceFlashSizeLimit = true,
+  }) {
     if (path.trim().isEmpty) {
       return FirmwareCheck.fail('No ZIP3 package selected.');
     }
@@ -104,7 +124,7 @@ class Firmware {
       return FirmwareCheck.fail('Invalid file type. Only .zip is allowed.');
     }
     final len = f.lengthSync();
-    if (len > maxZip3Bytes) {
+    if (enforceFlashSizeLimit && len > maxZip3Bytes) {
       return FirmwareCheck.fail(
         'ZIP is too large ($len bytes). ZIP3 firmware packages must be '
         '$maxZip3Bytes bytes or smaller.',
@@ -115,6 +135,10 @@ class Firmware {
 
   static bool _singleRepeatedByte(File f) {
     final bytes = f.readAsBytesSync();
+    return _singleRepeatedBytes(bytes);
+  }
+
+  static bool _singleRepeatedBytes(List<int> bytes) {
     if (bytes.isEmpty) return true;
     final first = bytes[0];
     for (final b in bytes) {
@@ -143,6 +167,92 @@ class Firmware {
     final clean = name.trim().replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     final label = clean.isEmpty ? 'firmware' : clean;
     return p.join(dir, '${_pre(prefix)}${label}_${_stamp()}.bin');
+  }
+
+  /// Suggested editable filename for standalone ZIP3 unpack:
+  /// `<model>_<type>_<normalised source ZIP basename>.bin`.
+  static String defaultUnpackedFilename({
+    required String model,
+    required String type,
+    required String sourceFilename,
+  }) {
+    final sourceBase = p.basenameWithoutExtension(sourceFilename).trim();
+    final source = sourceBase
+        .replaceAll(RegExp(r'[^A-Za-z0-9.-]+'), '_')
+        .replaceAll(RegExp(r'^[_\-.]+|[_\-.]+$'), '');
+    final suffix = source.isEmpty ? 'firmware' : source;
+    return normalizeUnpackedFilename(
+      '${model.toLowerCase()}_${type.toLowerCase()}_$suffix',
+    );
+  }
+
+  /// Validate an operator-edited output filename for the fixed
+  /// `Documents/x3utils/unpacked_zip3` folder. Path components are deliberately
+  /// refused: this field names one local `.bin`, not an arbitrary destination.
+  static FirmwareCheck validateUnpackedFilename(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
+      return FirmwareCheck.fail('Choose an output filename.');
+    }
+    if (trimmed.length > 240) {
+      return FirmwareCheck.fail('Output filename is too long.');
+    }
+    if (trimmed.codeUnits.any((c) => c < 32) ||
+        RegExp(r'[<>:"/\\|?*]').hasMatch(trimmed)) {
+      return FirmwareCheck.fail(
+        'Output filename contains an unsupported character.',
+      );
+    }
+    final withoutSuffix = trimmed.toLowerCase().endsWith('.bin')
+        ? trimmed.substring(0, trimmed.length - 4)
+        : trimmed;
+    if (withoutSuffix.isEmpty ||
+        withoutSuffix == '.' ||
+        withoutSuffix == '..' ||
+        withoutSuffix.endsWith('.') ||
+        withoutSuffix.endsWith(' ')) {
+      return FirmwareCheck.fail('Choose a valid output filename.');
+    }
+    final stem = withoutSuffix.split('.').first.toUpperCase();
+    const reserved = {
+      'CON',
+      'PRN',
+      'AUX',
+      'NUL',
+      'COM1',
+      'COM2',
+      'COM3',
+      'COM4',
+      'COM5',
+      'COM6',
+      'COM7',
+      'COM8',
+      'COM9',
+      'LPT1',
+      'LPT2',
+      'LPT3',
+      'LPT4',
+      'LPT5',
+      'LPT6',
+      'LPT7',
+      'LPT8',
+      'LPT9',
+    };
+    if (reserved.contains(stem)) {
+      return FirmwareCheck.fail('That output filename is reserved by Windows.');
+    }
+    return FirmwareCheck.valid;
+  }
+
+  static String normalizeUnpackedFilename(String input) {
+    final trimmed = input.trim();
+    return trimmed.toLowerCase().endsWith('.bin') ? trimmed : '$trimmed.bin';
+  }
+
+  static String unpackedBinPath(String filename) {
+    final check = validateUnpackedFilename(filename);
+    if (!check.ok) throw ArgumentError(check.message);
+    return p.join(_dir('unpacked_zip3'), normalizeUnpackedFilename(filename));
   }
 
   /// Default editable name the "Make zip3" tool offers for a package:
@@ -232,6 +342,8 @@ class Firmware {
       _homeLabel(p.join('Documents', 'x3utils', 'backup'));
   static String get packedZip3DirLabel =>
       _homeLabel(p.join('Documents', 'x3utils', 'packed_zip3'));
+  static String get unpackedZip3DirLabel =>
+      _homeLabel(p.join('Documents', 'x3utils', 'unpacked_zip3'));
   static String get logsDirLabel =>
       _homeLabel(p.join('Documents', 'x3utils', 'logs'));
   static String get secondCopyLabel {

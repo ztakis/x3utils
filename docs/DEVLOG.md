@@ -1390,3 +1390,30 @@ Linux/macOS get the same code but were not rebuilt this session.
   - Limits: characterized on one version-pair (MCU); no repo 1.5.8 exists to
     diff the VCU that failed, so the VCU specifics are not established. Identity
     bytes and the OEM token value are kept out of this file on purpose.
+
+## 2026-07-25
+
+- Prepared Flutter GUI v1.2.1 and refactored Make zip3 into the offline
+  Pack / Unpack zip3 workspace.
+  - Pack retains the existing working dump-to-ZIP3 flow. Unpack now inspects a
+    selected package, suggests
+    `<model>_<type>_<normalized-source-filename>.bin`, permits editing that
+    filename, and writes through the existing Cancel/Replace confirmation flow
+    to `Documents/x3utils/unpacked_zip3`.
+  - Unpack rechecks the selected ZIP digest at Start and validates the package
+    again before writing. It accepts internally consistent X3 VCU, MCU, BMS,
+    and BLE packages without the flash path's archive or slot-size limits.
+    Schema 1, `FIRM.bin.enc`, `md5.enc`, TEA checksum, supported model,
+    compatible-board consistency, and VCU/MCU payload-banner checks remain
+    mandatory. Flash ZIP import remains VCU/MCU-only and size-gated.
+  - Package details now show Model, Type, JSON `displayName`, payload size,
+    `enforceModel`, and encryption. The editable output field has increased
+    height and the details panel uses balanced spacing.
+  - Offline verification passed: `flutter analyze` was clean and the focused
+    ZIP3, confirmed-write, and widget suite passed 65/65. A temporary private
+    corpus probe passed 3/3: real BMS and BLE packages (including a roughly
+    1.85 MB BLE archive) decrypted, 13 malformed packages failed at their
+    intended validation gates, and a valid VCU package with an extra padding
+    member remained acceptable to the extraction-only path.
+  - No packaged-app build, BLE operation, or hardware command was run for this
+    v1.2.1 change.

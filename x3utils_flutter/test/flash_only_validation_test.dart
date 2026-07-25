@@ -86,6 +86,13 @@ void main() {
       final rejected = Firmware.validateZip3Container(aboveLimit.path);
       expect(rejected.ok, isFalse);
       expect(rejected.message, contains('too large'));
+      expect(
+        Firmware.validateZip3Container(
+          aboveLimit.path,
+          enforceFlashSizeLimit: false,
+        ).ok,
+        isTrue,
+      );
     });
   });
 
@@ -112,7 +119,7 @@ void main() {
       );
     });
 
-    test('every ZIP import rejects BLE and BMS', () {
+    test('flash ZIP import still rejects BLE and BMS', () {
       for (final type in ['BLE', 'BMS']) {
         final zip = _zip3(
           _payloadWithBanner('SCOOTER_MCU_0001'),
@@ -129,6 +136,46 @@ void main() {
                 'This package contains $type firmware. '
                 'x3utils flashes only VCU/MCU firmware.',
               ),
+            ),
+          ),
+          reason: type,
+        );
+      }
+    });
+
+    test('extraction accepts internally consistent BMS and BLE packages', () {
+      for (final (type, length) in [('BMS', 64028), ('BLE', 500000)]) {
+        final payload = Uint8List.fromList(
+          List<int>.generate(length, (i) => (i * 31 + 7) & 0xff),
+        );
+        final zip = _zip3(payload, model: 'zt3', type: type);
+
+        final unpacked = PackV3.unpackV3(zip, policy: Zip3UnpackPolicy.extract);
+
+        expect(unpacked.model, 'zt3', reason: type);
+        expect(unpacked.type, type, reason: type);
+        expect(unpacked.firmware.length, greaterThanOrEqualTo(length));
+      }
+    });
+
+    test('extraction rejects BMS/BLE with VCU compatible metadata', () {
+      for (final type in ['BMS', 'BLE']) {
+        final zip = _zip3(
+          Uint8List.fromList(
+            List<int>.generate(64028, (i) => (i * 31 + 7) & 0xff),
+          ),
+          model: 'zt3',
+          type: type,
+          compatible: const ['zt3_VCU_AT32'],
+        );
+
+        expect(
+          () => PackV3.unpackV3(zip, policy: Zip3UnpackPolicy.extract),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('Inconsistent JSON'),
             ),
           ),
           reason: type,
@@ -265,6 +312,80 @@ void main() {
           ),
         ),
       );
+      expect(
+        () => PackV3.unpackV3(zip, policy: Zip3UnpackPolicy.extract),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('MD5'),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'standalone Unpack inspects a valid package without writing',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final temp = Directory.systemTemp.createTempSync(
+          'x3utils_unpack_pick_',
+        );
+        addTearDown(() => temp.deleteSync(recursive: true));
+        final zipFile = File(p.join(temp.path, 'valid.zip'))
+          ..writeAsBytesSync(
+            _zip3(
+              _payloadWithBanner('SCOOTER_VCU_xxU2'),
+              model: 'zt3',
+              type: 'VCU',
+            ),
+          );
+        final controller = AppController();
+        addTearDown(controller.dispose);
+
+        controller.selectAction('make_zip3');
+        controller.setZip3WorkspacePage(Zip3WorkspacePage.unpack);
+        expect(controller.canStart, isFalse);
+
+        final result = await controller.selectZip3ForUnpack(zipFile.path);
+
+        expect(result.ok, isTrue);
+        expect(controller.unpackZip3Path, zipFile.path);
+        expect(controller.unpackDisplayName, 'test package');
+        expect(controller.unpackModel, 'zt3');
+        expect(controller.unpackType, 'VCU');
+        expect(controller.unpackPayloadLength, Firmware.slot0MinBytes + 4);
+        expect(controller.unpackEnforceModel, isTrue);
+        expect(controller.unpackEncryption, 'encrypted');
+        expect(controller.unpackOutputName, 'zt3_vcu_valid.bin');
+        expect(controller.canStart, isTrue);
+        expect(temp.listSync().map((e) => p.basename(e.path)), ['valid.zip']);
+      },
+    );
+
+    test('standalone Unpack accepts a large BLE package', () async {
+      SharedPreferences.setMockInitialValues({});
+      final temp = Directory.systemTemp.createTempSync('x3utils_unpack_ble_');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final payload = Uint8List.fromList(
+        List<int>.generate(500000, (i) => (i * 31 + 7) & 0xff),
+      );
+      final zipFile = File(p.join(temp.path, '2.1.12.zip'))
+        ..writeAsBytesSync(_zip3(payload, model: 'zt3', type: 'BLE'));
+      expect(zipFile.lengthSync(), greaterThan(Firmware.maxZip3Bytes));
+      final controller = AppController();
+      addTearDown(controller.dispose);
+
+      controller.selectAction('make_zip3');
+      controller.setZip3WorkspacePage(Zip3WorkspacePage.unpack);
+      final result = await controller.selectZip3ForUnpack(zipFile.path);
+
+      expect(result.ok, isTrue);
+      expect(controller.unpackModel, 'zt3');
+      expect(controller.unpackType, 'BLE');
+      expect(controller.unpackPayloadLength, greaterThanOrEqualTo(500000));
+      expect(controller.unpackOutputName, 'zt3_ble_2.1.12.bin');
+      expect(controller.canStart, isTrue);
     });
 
     test('Flash Only controller rejects a bad ZIP before loading it', () async {
@@ -554,19 +675,21 @@ Uint8List _zip3(
   List<String>? compatible,
 }) {
   final encrypted = NinebotTea().encrypt(payload);
-  final boards =
-      compatible ??
-      [
-        type.toUpperCase() == 'MCU'
-            ? 'x3_MCU_AT32'
-            : '${model.toLowerCase()}_VCU_AT32',
-      ];
+  final expectedBoard = switch (type.toUpperCase()) {
+    'MCU' => 'x3_MCU_AT32',
+    'BMS' => 'x3_BMS',
+    'BLE' => '${model.toLowerCase()}_BLE',
+    _ => '${model.toLowerCase()}_VCU_AT32',
+  };
+  final boards = compatible ?? [expectedBoard];
   final info = <String, dynamic>{
     'schemaVersion': 1,
     'firmware': <String, dynamic>{
       'displayName': 'test package',
       'model': model,
       'type': type,
+      'enforceModel': true,
+      'encryption': 'encrypted',
       'compatible': boards,
       'md5': <String, String>{'enc': md5Override ?? PackV3.md5Hex(encrypted)},
     },

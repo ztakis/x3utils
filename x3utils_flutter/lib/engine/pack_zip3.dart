@@ -10,6 +10,16 @@ import 'firmware.dart';
 import 'ninebot_tea.dart';
 import 'zp_extract.dart';
 
+enum Zip3UnpackPolicy {
+  /// Firmware is being armed for a controller write: VCU/MCU only, with the
+  /// existing X3 model, board, and payload-banner checks.
+  flash,
+
+  /// Firmware is only being decrypted to a local file: additionally accepts
+  /// X3 BMS/BLE packages and does not infer flashability from payload size.
+  extract,
+}
+
 /// Dart port of ScooterHacking's fw-zip-package-v3 `Python/pack.py`:
 /// https://github.com/scooterhacking/fw-zip-package-v3
 ///
@@ -286,19 +296,23 @@ class PackV3 {
   /// flash. A zip3 is defined as **encrypted and MD5'd**, so this is strict:
   ///
   /// 1. readable ZIP with `info.json`, `schemaVersion == 1`;
-  /// 2. supported VCU/MCU metadata whose `compatible` board agrees with its
-  ///    model/type;
+  /// 2. metadata whose `compatible` board agrees with its model/type and the
+  ///    selected [policy];
   /// 3. a `FIRM.bin.enc` member (a plain `FIRM.bin` alone is not a zip3 and is
   ///    rejected — the point of zip3 is the encryption);
   /// 4. a matching `md5.enc` in `info.json` — the payload is hashed and checked
   ///    before it is decrypted;
   /// 5. NinebotTEA decrypt, whose internal checksum guards the plaintext;
-  /// 6. a firmware banner that agrees with the package metadata.
+  /// 6. for VCU/MCU, a firmware banner that agrees with package metadata.
   ///
   /// The decrypted bytes are returned as-is (identical to `ninebottea decrypt`),
   /// including NinebotTEA's canonical trailing pad. Throws [FormatException] for
   /// anything that fails the above.
-  static UnpackedV3 unpackV3(List<int> zipBytes, {List<int>? key}) {
+  static UnpackedV3 unpackV3(
+    List<int> zipBytes, {
+    List<int>? key,
+    Zip3UnpackPolicy policy = Zip3UnpackPolicy.flash,
+  }) {
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(zipBytes);
@@ -332,20 +346,29 @@ class PackV3 {
       throw const FormatException('info.json has no firmware.model.');
     }
     final type = fw['type']?.toString().trim().toUpperCase();
-    if (type != 'VCU' && type != 'MCU') {
+    final allowedTypes = policy == Zip3UnpackPolicy.flash
+        ? const {'VCU', 'MCU'}
+        : const {'VCU', 'MCU', 'BMS', 'BLE'};
+    if (!allowedTypes.contains(type)) {
       throw FormatException(
         'This package contains ${type ?? 'unknown'} firmware. '
-        'x3utils flashes only VCU/MCU firmware.',
+        '${policy == Zip3UnpackPolicy.flash ? 'x3utils flashes only VCU/MCU firmware.' : 'Standalone Unpack supports VCU, MCU, BMS, and BLE.'}',
       );
     }
 
-    // ZIP3 is an integrity-bearing package. Every import path, including Flash
-    // Only, must reject unsupported or internally inconsistent metadata. An
-    // operator who intentionally wants to bypass package identity can decrypt
-    // it separately and select the raw slot-0 .bin instead.
-    final verdict = DeviceSpec.evaluateZip3(model, type);
-    if (!verdict.ok) {
-      throw FormatException(verdict.reason);
+    if (policy == Zip3UnpackPolicy.flash) {
+      // A package armed for flashing stays on the strict VCU/MCU allow-list.
+      final verdict = DeviceSpec.evaluateZip3(model, type);
+      if (!verdict.ok) {
+        throw FormatException(verdict.reason);
+      }
+    } else if (!kSupportedDevices.any(
+      (device) => device.model == model.toLowerCase(),
+    )) {
+      throw FormatException(
+        'This package is for ${model.toUpperCase()}. '
+        'x3utils supports ${DeviceSpec.modelList()} only.',
+      );
     }
 
     final compatibleValue = fw['compatible'];
@@ -362,9 +385,12 @@ class PackV3 {
         .cast<String>()
         .map((value) => value.trim())
         .toList(growable: false);
-    final expectedBoard = type == 'MCU'
-        ? 'x3_MCU_AT32'
-        : '${model.toLowerCase()}_VCU_AT32';
+    final expectedBoard = switch (type) {
+      'MCU' => 'x3_MCU_AT32',
+      'BMS' => 'x3_BMS',
+      'BLE' => '${model.toLowerCase()}_BLE',
+      _ => '${model.toLowerCase()}_VCU_AT32',
+    };
     if (compatible.length != 1 ||
         compatible.single.toLowerCase() != expectedBoard.toLowerCase()) {
       final boards = compatible.join(', ');
@@ -403,11 +429,13 @@ class PackV3 {
       key: key,
     ).decrypt(encBytes); // TEA checksum inside
 
-    // The decrypted payload must agree with the package claim. This checks the
-    // package itself; it does not claim that the connected controller matches.
-    final banner = DeviceSpec.verifyBanner(firmware, model, type!);
-    if (!banner.consistent) {
-      throw FormatException(banner.message);
+    // VCU/MCU carry the known X3 banner. BMS/BLE use different image formats,
+    // so extraction relies on package metadata + MD5 + TEA checksum instead.
+    if (type == 'VCU' || type == 'MCU') {
+      final banner = DeviceSpec.verifyBanner(firmware, model, type!);
+      if (!banner.consistent) {
+        throw FormatException(banner.message);
+      }
     }
 
     return UnpackedV3(
@@ -484,4 +512,17 @@ class UnpackedV3 {
 
   /// `info.json` firmware.type (accepted by [DeviceSpec] during unpack).
   String get type => (info['firmware'] as Map?)?['type']?.toString() ?? '';
+
+  /// Informational `info.json` firmware.enforceModel value. It is displayed but
+  /// deliberately not used as an extraction acceptance gate.
+  bool? get enforceModel {
+    final value = (info['firmware'] as Map?)?['enforceModel'];
+    return value is bool ? value : null;
+  }
+
+  /// Declared `info.json` firmware.encryption mode.
+  String? get encryption {
+    final value = (info['firmware'] as Map?)?['encryption'];
+    return value is String && value.trim().isNotEmpty ? value.trim() : null;
+  }
 }
