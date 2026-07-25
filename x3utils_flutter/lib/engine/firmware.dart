@@ -26,6 +26,15 @@ class Firmware {
   static const int slot0MaxBytes =
       0x10000; // 64 KB (65536) — TODO: confirm spec
 
+  /// Exact per-type slot-0 payload ceilings, measured over the local corpus
+  /// (docs/plan-zip3-inputs.md): the region's last 4-byte word is at
+  /// 0x0800FFFC (VCU) / 0x0800F7FC (MCU), so `payload + 4` fills the region
+  /// exactly. Used by the sliced-bin packer path, which knows the declared
+  /// type; the flash-path window above is a separate, deliberately unchanged
+  /// gate (its 64 KiB edge is pinned by the gen_test_bins manifest).
+  static const int slot0MaxPayloadVcu = 61436;
+  static const int slot0MaxPayloadMcu = 59388;
+
   static FirmwareCheck validate(String path, {bool requireSize = true}) {
     if (path.trim().isEmpty) {
       return FirmwareCheck.fail('No firmware file selected.');
@@ -176,15 +185,33 @@ class Firmware {
     required String type,
     required String sourceFilename,
   }) {
+    return normalizeUnpackedFilename(
+      '${model.toLowerCase()}_${type.toLowerCase()}_'
+      '${_sourceStem(sourceFilename)}',
+    );
+  }
+
+  /// A source filename reduced to a safe suggestion stem: basename without
+  /// extension, unsafe characters collapsed to `_`, edges trimmed.
+  static String _sourceStem(String sourceFilename) {
     final sourceBase = p.basenameWithoutExtension(sourceFilename).trim();
     final source = sourceBase
         .replaceAll(RegExp(r'[^A-Za-z0-9.-]+'), '_')
         .replaceAll(RegExp(r'^[_\-.]+|[_\-.]+$'), '');
-    final suffix = source.isEmpty ? 'firmware' : source;
-    return normalizeUnpackedFilename(
-      '${model.toLowerCase()}_${type.toLowerCase()}_$suffix',
-    );
+    return source.isEmpty ? 'firmware' : source;
   }
+
+  /// Default editable name for a package built from a complete payload bin:
+  /// `<model>_<TYPE>_<normalised source .bin basename>` — the same shape as
+  /// the Unpack suggestion, so the unpack → patch → repack round trip keeps
+  /// its lineage readable. Slice keeps the timestamp default
+  /// ([defaultZip3Name]): a dump filename is already a timestamp, while the
+  /// source payload's filename is useful package identity.
+  static String defaultZip3NameForPayload({
+    required String model,
+    required String type,
+    required String sourceFilename,
+  }) => '${model}_${type}_${_sourceStem(sourceFilename)}';
 
   /// Validate an operator-edited output filename for the fixed
   /// `Documents/x3utils/unpacked_zip3` folder. Path components are deliberately
@@ -413,12 +440,16 @@ class CompatPatch {
   /// (a backup dump). Used to gate "Make zip3": only [FwKeyState.bleFlashable]
   /// dumps — repo/Compat (default key) or newer repo default (blank) — can be
   /// repackaged; OEM firmware is refused. See flash_compat's 0x1420 patch.
-  static FwKeyState keyState(List<int> image) {
-    if (image.length < offset + signature.length) return FwKeyState.oem;
+  /// [slotBin] reads the slot-relative 0x420 instead (a sliced slot-0 payload
+  /// starts at dump offset 0x1000, so the same region sits 0x1000 earlier);
+  /// there the state is advisory, never a gate.
+  static FwKeyState keyState(List<int> image, {bool slotBin = false}) {
+    final base = slotBin ? offset - 0x1000 : offset;
+    if (image.length < base + signature.length) return FwKeyState.oem;
     var isKey = true;
     var isBlank = true;
     for (var i = 0; i < signature.length; i++) {
-      final b = image[offset + i];
+      final b = image[base + i];
       if (b != signature[i]) isKey = false;
       if (b != 0xFF) isBlank = false;
     }

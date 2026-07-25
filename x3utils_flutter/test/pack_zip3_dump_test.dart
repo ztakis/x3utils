@@ -74,6 +74,39 @@ Uint8List _dump({
   return b;
 }
 
+/// The MCU banner as it appears in a sliced slot bin (same string, 0x400).
+const _mcuSlot = _mcu;
+
+/// A deterministic hand-sliced slot-0 payload: vector table at 0 (SP in RAM,
+/// thumb reset vector inside the payload), banner at 0x400, firmware key at
+/// the slot-relative 0x420. Defaults describe a clean g3 VCU slice.
+Uint8List _slotBin({
+  int len = _len,
+  String? banner = _g3Vcu,
+  List<int>? keyAt420, // 16 bytes at 0x420; default = the SHU key (repo fw)
+  int? sp,
+  int? reset,
+}) {
+  final b = Uint8List(len);
+  for (var i = 0; i < len; i++) {
+    b[i] = (i * 31 + 7) & 0xFF;
+  }
+  void w32(int off, int v) {
+    b[off] = v & 0xFF;
+    b[off + 1] = (v >> 8) & 0xFF;
+    b[off + 2] = (v >> 16) & 0xFF;
+    b[off + 3] = (v >> 24) & 0xFF;
+  }
+
+  w32(0, sp ?? 0x20008000);
+  w32(4, reset ?? 0x08001101);
+  if (banner != null) {
+    b.setRange(0x400, 0x400 + banner.length, banner.codeUnits);
+  }
+  b.setRange(0x420, 0x420 + 16, keyAt420 ?? _defaultKey);
+  return b;
+}
+
 Map<String, dynamic> _fw(Uint8List zip) {
   final a = ZipDecoder().decodeBytes(zip);
   final info = jsonDecode(utf8.decode(a.findFile('info.json')!.content));
@@ -403,6 +436,345 @@ void main() {
           ),
         );
       });
+    });
+  });
+
+  group('PackV3.inspectSlotBinForPack (advisory, never refuses)', () {
+    test('a clean sliced bin produces no findings', () {
+      expect(
+        PackV3.inspectSlotBinForPack(_slotBin(), type: 'VCU', model: 'g3'),
+        isEmpty,
+      );
+    });
+
+    test('length not ≡4 (mod 8) — not an exact cut', () {
+      final f = PackV3.inspectSlotBinForPack(
+        _slotBin(len: 51200),
+        type: 'VCU',
+        model: 'g3',
+      );
+      expect(f.map((e) => e.code), contains('slice_not_exact_cut'));
+    });
+
+    test('below the observed window', () {
+      final f = PackV3.inspectSlotBinForPack(
+        _slotBin(len: 51196),
+        type: 'VCU',
+        model: 'g3',
+      );
+      expect(f.map((e) => e.code), contains('slice_below_window'));
+    });
+
+    test('over the unconfirmed MCU ceiling warns for MCU only', () {
+      // 59396 > MCU 59388 but ≤ VCU 61436; ≡4 (mod 8).
+      final mcu = PackV3.inspectSlotBinForPack(
+        _slotBin(len: 59396, banner: _mcuSlot),
+        type: 'MCU',
+        model: 'g3',
+      );
+      expect(mcu.map((e) => e.code), contains('slice_over_mcu_region'));
+      final vcu = PackV3.inspectSlotBinForPack(
+        _slotBin(len: 59396),
+        type: 'VCU',
+        model: 'g3',
+      );
+      expect(vcu, isEmpty);
+    });
+
+    test('banner disagreement with the declared identity', () {
+      // g3 banner declared as zt3, VCU banner declared as MCU, and no banner.
+      for (final (type, model, banner) in [
+        ('VCU', 'zt3', _g3Vcu),
+        ('MCU', 'g3', _g3Vcu),
+        ('VCU', 'g3', null),
+      ]) {
+        final f = PackV3.inspectSlotBinForPack(
+          _slotBin(banner: banner),
+          type: type,
+          model: model,
+        );
+        expect(f.map((e) => e.code), contains('slice_banner'));
+      }
+    });
+
+    test('vector-table sanity: bad SP, even reset, reset outside payload', () {
+      for (final (sp, reset) in [
+        (0x08001000, 0x08001101), // SP not in RAM
+        (0x20008000, 0x08001100), // reset not thumb
+        (0x20008000, 0x08040001), // reset outside the payload
+      ]) {
+        final f = PackV3.inspectSlotBinForPack(
+          _slotBin(sp: sp, reset: reset),
+          type: 'VCU',
+          model: 'g3',
+        );
+        expect(f.map((e) => e.code), contains('slice_vector_table'));
+      }
+    });
+
+    test('missing SHU key warns instead of refusing', () {
+      final f = PackV3.inspectSlotBinForPack(
+        _slotBin(keyAt420: List.filled(16, 0xAB)),
+        type: 'VCU',
+        model: 'g3',
+      );
+      expect(f.map((e) => e.code), contains('slice_no_shu_key'));
+      // Blank (newer repo default) stays clean.
+      expect(
+        PackV3.inspectSlotBinForPack(
+          _slotBin(keyAt420: List.filled(16, 0xFF)),
+          type: 'VCU',
+          model: 'g3',
+        ),
+        isEmpty,
+      );
+    });
+  });
+
+  group('PackV3.buildZip3FromSlotBin (packs as-is)', () {
+    test('packs the exact bytes and round-trips through unpackV3', () {
+      final bin = _slotBin();
+      final r = PackV3.buildZip3FromSlotBin(
+        bin,
+        type: 'VCU',
+        model: 'g3',
+        enforceModel: true,
+      );
+      expect(r.payloadLength, bin.length);
+      expect(_fw(r.zipBytes)['compatible'], ['g3_VCU_AT32']);
+      final back = PackV3.unpackV3(r.zipBytes);
+      expect(back.firmware, bin);
+    });
+
+    test('still packs a bin that carries findings (operator decided)', () {
+      // OEM key + no banner: two findings, zero refusals.
+      final bin = _slotBin(banner: null, keyAt420: List.filled(16, 0xAB));
+      final r = PackV3.buildZip3FromSlotBin(
+        bin,
+        type: 'MCU',
+        model: 'g3',
+        enforceModel: false,
+      );
+      expect(r.payloadLength, bin.length);
+      expect(_fw(r.zipBytes)['compatible'], ['x3_MCU_AT32']);
+    });
+
+    test('hard stop: larger than the physical slot-0 region', () {
+      expect(
+        () => PackV3.buildZip3FromSlotBin(
+          _slotBin(len: 61444), // > 61436, ≡4 (mod 8)
+          type: 'VCU',
+          model: 'g3',
+          enforceModel: true,
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('larger than the slot-0 region'),
+          ),
+        ),
+      );
+    });
+
+    test('hard stop: unsupported identity selection', () {
+      expect(
+        () => PackV3.buildZip3FromSlotBin(
+          _slotBin(),
+          type: 'BLE',
+          model: 'g3',
+          enforceModel: true,
+        ),
+        throwsFormatException,
+      );
+    });
+  });
+
+  group('PackV3.validatePayloadForPack', () {
+    test('rejects a full 128 KB controller dump and points to Slice', () {
+      expect(
+        () => PackV3.validatePayloadForPack(_dump()),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('Use Slice instead of Pack'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects a payload that would gain NinebotTEA zero padding', () {
+      expect(
+        () => PackV3.validatePayloadForPack(_slotBin(len: _len + 1)),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('exact NinebotTEA round trip'),
+          ),
+        ),
+      );
+    });
+
+    test('uses the detected VCU and MCU physical ceilings', () {
+      final cases = [
+        (
+          payload: _slotBin(len: Firmware.slot0MaxPayloadVcu + 8),
+          type: 'VCU',
+          max: Firmware.slot0MaxPayloadVcu,
+        ),
+        (
+          payload: _slotBin(
+            len: Firmware.slot0MaxPayloadMcu + 8,
+            banner: _mcuSlot,
+          ),
+          type: 'MCU',
+          max: Firmware.slot0MaxPayloadMcu,
+        ),
+      ];
+      for (final item in cases) {
+        expect(
+          () => PackV3.validatePayloadForPack(item.payload),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('${item.type} payload is'),
+            ),
+          ),
+          reason: '${item.type} ceiling ${item.max}',
+        );
+      }
+    });
+
+    test('rejects unsupported, missing, and contradictory banner evidence', () {
+      final cases = [
+        (
+          payload: _slotBin(banner: 'SCOOTER_VCU_BAD!'),
+          type: null,
+          model: null,
+          message: 'Unsupported VCU/MCU firmware banner',
+        ),
+        (
+          payload: _slotBin(banner: null),
+          type: 'VCU',
+          model: 'g3',
+          message: 'declared VCU type requires',
+        ),
+        (
+          payload: _slotBin(),
+          type: 'BLE',
+          model: 'g3',
+          message: 'JSON says BLE',
+        ),
+        (
+          payload: _slotBin(),
+          type: 'VCU',
+          model: 'zt3',
+          message: 'JSON says ZT3 VCU',
+        ),
+      ];
+      for (final item in cases) {
+        expect(
+          () => PackV3.validatePayloadForPack(
+            item.payload,
+            type: item.type,
+            model: item.model,
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains(item.message),
+            ),
+          ),
+          reason: item.message,
+        );
+      }
+    });
+  });
+
+  group('PackV3.buildZip3FromPayload', () {
+    test(
+      'round-trips all supported component types with corpus board names',
+      () {
+        final cases = [
+          (type: 'VCU', model: 'g3', board: 'g3_VCU_AT32', payload: _slotBin()),
+          (
+            type: 'MCU',
+            model: 'zt3',
+            board: 'x3_MCU_AT32',
+            payload: _slotBin(banner: _mcuSlot),
+          ),
+          (
+            type: 'BMS',
+            model: 'gt3',
+            board: 'x3_BMS',
+            payload: _slotBin(banner: null),
+          ),
+          (
+            type: 'BLE',
+            model: 'f3',
+            board: 'f3_BLE',
+            payload: _slotBin(banner: null),
+          ),
+        ];
+
+        for (final item in cases) {
+          final result = PackV3.buildZip3FromPayload(
+            item.payload,
+            type: item.type,
+            model: item.model,
+            enforceModel: true,
+            displayName: '${item.model}_${item.type}_test',
+          );
+          final metadata = _fw(result.zipBytes);
+          expect(metadata['compatible'], [item.board], reason: item.type);
+          expect(metadata['type'], item.type, reason: item.type);
+          expect(metadata['model'], item.model, reason: item.type);
+          expect(metadata['enforceModel'], isTrue, reason: item.type);
+          expect(metadata['encryption'], 'encrypted', reason: item.type);
+
+          final unpacked = PackV3.unpackV3(
+            result.zipBytes,
+            policy: Zip3UnpackPolicy.extract,
+          );
+          expect(unpacked.firmware, item.payload, reason: item.type);
+        }
+      },
+    );
+  });
+
+  group('slot-relative helpers', () {
+    test('detect(slotBin: true) preselects from the 0x400 banner', () {
+      final d = PackV3.detect(_slotBin(), slotBin: true);
+      expect(d.type, 'VCU');
+      expect(d.model, 'g3');
+      final m = PackV3.detect(_slotBin(banner: _mcuSlot), slotBin: true);
+      expect(m.type, 'MCU');
+      expect(m.model, isNull);
+    });
+
+    test('keyState(slotBin: true) reads 0x420', () {
+      expect(
+        CompatPatch.keyState(_slotBin(), slotBin: true),
+        FwKeyState.defaultKey,
+      );
+      expect(
+        CompatPatch.keyState(
+          _slotBin(keyAt420: List.filled(16, 0xFF)),
+          slotBin: true,
+        ),
+        FwKeyState.blank,
+      );
+      expect(
+        CompatPatch.keyState(
+          _slotBin(keyAt420: List.filled(16, 0x00)),
+          slotBin: true,
+        ),
+        FwKeyState.oem,
+      );
     });
   });
 

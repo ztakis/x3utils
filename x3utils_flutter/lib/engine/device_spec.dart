@@ -518,18 +518,30 @@ class BinIdentity {
       serial?.state == SerialState.cleared ||
       serialModelClash;
 
+  /// The banner half of [summary] on its own, or null when no banner is
+  /// readable. Make zip3 shows this instead of the full summary: it packs
+  /// slot 0 only, and the serial pair at [kSerialOffset] sits outside that
+  /// payload, so serial state cannot affect the package. Showing it there
+  /// raised an amber warning about something the action cannot change (and
+  /// a three-line one, which pushed the CTA off a 768px window). Serial facts
+  /// stay in [logLine] for the run log.
+  String? get bannerSummary {
+    if (bannerType == 'VCU') {
+      return bannerModel != null
+          ? '${bannerModel!.toUpperCase()} · VCU'
+          : 'VCU ($banner)';
+    }
+    if (bannerType == 'MCU') return 'MCU';
+    return null;
+  }
+
   /// One line for the firmware-bar strip (caller adds the "Firmware says:"
   /// label), or null when nothing identity-readable is worth showing.
   String? get summary {
     final parts = <String>[];
-    if (bannerType == 'VCU') {
-      parts.add(
-        bannerModel != null
-            ? '${bannerModel!.toUpperCase()} · VCU'
-            : 'VCU ($banner)',
-      );
-    } else if (bannerType == 'MCU') {
-      parts.add('MCU');
+    final bannerPart = bannerSummary;
+    if (bannerPart != null) {
+      parts.add(bannerPart);
     } else if (serial != null) {
       parts.add('no firmware banner');
     }

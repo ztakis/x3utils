@@ -144,19 +144,24 @@ class AppController extends ChangeNotifier {
   FirmwareInspection? _firmwareInspection;
   FlashOnlyScope flashOnlyScope = FlashOnlyScope.fullImage;
 
-  // ── Make zip3 (offline packer) form state ──────────────────────────────────
-  // Operator-declared identity, ninebottea-style. detect() PRESELECTS from the
-  // loaded dump's banner (type always; VCU model from its code), but the
-  // operator's dropdown choices are what buildZip3FromDump actually uses. MCU
-  // has no model identity, so its model dropdown starts empty and the operator
-  // picks it. All transient — reset on every action switch.
-  static const List<String> zip3Types = ['VCU', 'MCU'];
+  // ── ZIP3 tools (offline slice / pack / unpack) form state ──────────────────
+  // Slice keeps the guarded X3 VCU/MCU full-dump workflow. Pack is the generic
+  // payload-to-package path and also supports the BMS/BLE component types found
+  // in the firmware corpus. Flash ZIP import remains independently restricted
+  // to VCU/MCU.
+  static const List<String> zip3SliceTypes = ['VCU', 'MCU'];
+  static const List<String> zip3PackTypes = ['VCU', 'MCU', 'BMS', 'BLE'];
   static const List<String> zip3Models = ['zt3', 'g3', 'gt3', 'f3'];
-  String? zip3Type; // 'VCU' | 'MCU' (null = operator hasn't chosen)
+  String? zip3Type; // null = operator has not chosen
   String?
   zip3Model; // 'zt3' | 'g3' | 'gt3' | 'f3' (null = operator hasn't chosen)
   bool zip3EnforceModel = true; // info.json enforceModel checkbox
   String zip3Name = ''; // editable displayName; blank → defaultZip3Name
+
+  List<String> get zip3TypeOptions =>
+      zip3WorkspacePage == Zip3WorkspacePage.pack
+      ? zip3PackTypes
+      : zip3SliceTypes;
 
   // Standalone ZIP3 unpack state. Selection validates and decrypts in memory
   // for the details preview; Start re-reads and re-validates the source before
@@ -199,6 +204,26 @@ class AppController extends ChangeNotifier {
   // reload / action switch) DO notify, and the form re-syncs from zip3Name then.
   void setZip3Name(String v) => zip3Name = v;
 
+  /// The package name Start uses when the name field is blank — also the hint
+  /// the form shows, so the two can never disagree. A raw Pack source inherits
+  /// its filename (same shape as the Unpack suggestion, keeping round-trip
+  /// lineage readable); a Slice dump gets the timestamp default. Null until
+  /// both dropdowns are chosen.
+  String? get zip3DefaultName {
+    final type = zip3Type;
+    final model = zip3Model;
+    if (type == null || model == null) return null;
+    final src = firmwarePath;
+    if (zip3WorkspacePage == Zip3WorkspacePage.pack && src != null) {
+      return Firmware.defaultZip3NameForPayload(
+        model: model,
+        type: type,
+        sourceFilename: src.split(RegExp(r'[\\/]')).last,
+      );
+    }
+    return Firmware.defaultZip3Name(model: model, type: type);
+  }
+
   void setUnpackOutputName(String v) {
     unpackOutputName = v;
     notifyListeners();
@@ -224,7 +249,7 @@ class AppController extends ChangeNotifier {
   // Best-effort: a packaging hiccup never demotes the compat flash success.
   // Off by default and transient (reset on every action switch).
   bool compatMakeZip3 = false;
-  Zip3WorkspacePage zip3WorkspacePage = Zip3WorkspacePage.pack;
+  Zip3WorkspacePage zip3WorkspacePage = Zip3WorkspacePage.slice;
 
   void setCompatMakeZip3(bool v) {
     if (running) return;
@@ -235,7 +260,13 @@ class AppController extends ChangeNotifier {
   void setZip3WorkspacePage(Zip3WorkspacePage page) {
     if (running || zip3WorkspacePage == page) return;
     zip3WorkspacePage = page;
-    notifyListeners();
+    // Slice and Pack interpret a .bin differently and have different component
+    // choices. Their shared form is transient across every page change, while
+    // the independent Unpack selection/details remain untouched.
+    zip3Type = null;
+    zip3Model = null;
+    zip3Name = '';
+    setFirmware(null);
   }
 
   bool get isFlashOnlySlot0 =>
@@ -324,9 +355,12 @@ class AppController extends ChangeNotifier {
   String get heroTitle {
     if (stage != StageState.idle) return title;
     if (action.needsFirmware && firmwarePath == null) {
-      return actionId == 'make_zip3'
-          ? 'Choose a backup dump'
-          : 'Choose firmware';
+      if (actionId == 'make_zip3') {
+        return zip3WorkspacePage == Zip3WorkspacePage.slice
+            ? 'Choose a backup dump'
+            : 'Choose a firmware payload';
+      }
+      return 'Choose firmware';
     }
     if (actionId == 'make_zip3' && (zip3Type == null || zip3Model == null)) {
       return 'Complete package identity';
@@ -338,7 +372,10 @@ class AppController extends ChangeNotifier {
     if (stage != StageState.idle) return sub;
     if (action.needsFirmware && firmwarePath == null) {
       if (actionId == 'make_zip3') {
-        return 'Choose a full 128 KB backup .bin below.';
+        if (zip3WorkspacePage == Zip3WorkspacePage.slice) {
+          return 'Choose a full 128 KB backup .bin below.';
+        }
+        return 'Choose the complete firmware .bin to package below.';
       }
       if (isSlotAction) {
         return 'Choose a slot-sized .bin or encrypted zip3 package below.';
@@ -508,13 +545,27 @@ class AppController extends ChangeNotifier {
   /// becomes the firmware-bar note; generic/cleared serials show amber.
   FirmwareCheck selectFirmwareBin(String path) {
     final makeZip3 = actionId == 'make_zip3';
-    // Make zip3 takes a full 128 KB dump (like the mainstream full-image path),
-    // never a slot bin.
-    final check = _validateFirmwareFile(
-      path,
-      slot0: isSlotAction,
-      enforceBanner: actionId != 'flash_only' && !makeZip3,
-    );
+    final sliceZip3 = makeZip3 && zip3WorkspacePage == Zip3WorkspacePage.slice;
+    if (makeZip3 && zip3WorkspacePage == Zip3WorkspacePage.unpack) {
+      return FirmwareCheck.fail(
+        'Choose Slice or Pack before selecting a .bin.',
+      );
+    }
+    final FirmwareCheck check;
+    if (sliceZip3) {
+      check = _validateFirmwareFile(path, slot0: false, enforceBanner: false);
+    } else if (makeZip3) {
+      // Pack treats the selected .bin as the complete component payload.
+      // Component formats and sizes differ (especially BMS/BLE), so it applies
+      // only the common readable-bin structural checks here.
+      check = Firmware.validate(path, requireSize: false);
+    } else {
+      check = _validateFirmwareFile(
+        path,
+        slot0: isSlotAction,
+        enforceBanner: actionId != 'flash_only' && !makeZip3,
+      );
+    }
     if (!check.ok) {
       // A rejected pick leaves no confirmed-good selection for this kind —
       // clear it so Start doesn't stay lit on a stale/invalid file.
@@ -522,25 +573,43 @@ class AppController extends ChangeNotifier {
       return check;
     }
     final bytes = File(path).readAsBytesSync();
+    if (makeZip3 && !sliceZip3) {
+      try {
+        PackV3.validatePayloadForPack(bytes);
+      } on FormatException catch (e) {
+        setFirmware(null);
+        return FirmwareCheck.fail(e.message);
+      }
+    }
     if (makeZip3) {
-      // Preselect the dropdowns from the dump's banner (a suggestion only —
-      // type reliably, VCU model from its code; MCU/unknown leaves the model
-      // empty for the operator). A fresh dump gets a fresh default name.
-      final d = PackV3.detect(bytes);
+      // Preselect the dropdowns from the banner (a suggestion only — type
+      // reliably, VCU model from its code; MCU/unknown leaves the model empty
+      // for the operator). A fresh pick gets a fresh default name.
+      final d = PackV3.detect(
+        bytes,
+        slotBin: zip3WorkspacePage == Zip3WorkspacePage.pack,
+      );
       zip3Type = d.type;
       zip3Model = d.model;
       zip3Name = '';
     }
-    final inspection = FirmwareInspector.inspect(bytes, slotBin: isSlotAction);
+    final inspection = FirmwareInspector.inspect(
+      bytes,
+      slotBin: makeZip3 && zip3WorkspacePage == Zip3WorkspacePage.pack
+          ? true
+          : isSlotAction,
+    );
     final id = inspection.identity;
-    final summary = id.summary;
+    // ZIP3 tools use any readable banner only as an optional preselection hint.
+    final summary = makeZip3 ? id.bannerSummary : id.summary;
+    if (makeZip3) _log('== source identity: ${id.logLine} ==');
     setFirmware(
       path,
       note: summary == null ? null : 'Firmware says: $summary',
       // Flash Only uses the persistent eyebrow + confirmation modal for its
-      // findings. Guarded/packer identity notes keep their existing amber
-      // presentation.
-      warn: actionId == 'flash_only' ? false : id.warn,
+      // findings. Guarded identity notes keep their existing amber
+      // presentation; the packer has nothing amber left to show.
+      warn: actionId == 'flash_only' || makeZip3 ? false : id.warn,
       inspection: inspection,
     );
     return FirmwareCheck.valid;
@@ -796,7 +865,7 @@ class AppController extends ChangeNotifier {
   void selectAction(String id) {
     if (running) return;
     actionId = id;
-    zip3WorkspacePage = Zip3WorkspacePage.pack;
+    zip3WorkspacePage = Zip3WorkspacePage.slice;
     if (id == 'flash_only') flashOnlyScope = FlashOnlyScope.fullImage;
     _resetZip3Form(); // the packer form is transient, per action entry
     compatMakeZip3 = false; // the compat zip3 opt-in is transient too
@@ -2035,17 +2104,21 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  /// Offline "Make zip3": read a full 128 KB backup dump, recover the exact
-  /// slot-0 payload via the device's own ZP length record, and repack it as a
-  /// BLE-loadable v3 package with the operator-declared identity. No hardware —
-  /// a file→file transform, so it just validates, packs, writes, and reports.
+  /// Offline ZIP3 Slice/Pack. Slice extracts the exact slot-0 payload from a
+  /// strict 128 KB backup via its ZP record. Pack treats the chosen .bin as the
+  /// complete component payload, with no dump/slot/banner assumptions.
   Future<void> _runMakeZip3({ConfirmFileReplace? confirmFileReplace}) async {
+    final sliceMode = zip3WorkspacePage == Zip3WorkspacePage.slice;
     final src = firmwarePath;
     if (src == null) {
       _setInputFailure(
-        'No dump',
-        'Choose a 128 KB dump first',
-        'Pick a full backup .bin, then make the package.',
+        'No input',
+        sliceMode
+            ? 'Choose a 128 KB backup dump first'
+            : 'Choose a firmware payload first',
+        sliceMode
+            ? 'Pick a full 128 KB backup .bin, then make the package.'
+            : 'Pick the complete firmware .bin, then make the package.',
       );
       return;
     }
@@ -2059,30 +2132,44 @@ class AppController extends ChangeNotifier {
       );
       return;
     }
-    // Re-validate the dump at run time (the picker already did, but the file
-    // could have changed on disk).
-    final v = Firmware.validate(src, requireSize: true);
+    // Re-validate at run time (the picker already did, but the file could
+    // have changed on disk). Slice always requires the exact full dump; Pack
+    // accepts the differing payload sizes used by VCU, MCU, BMS, and BLE.
+    final v = Firmware.validate(src, requireSize: sliceMode);
     if (!v.ok) {
-      _setInputFailure('Dump invalid', 'Dump invalid', v.message);
+      _setInputFailure('Input invalid', 'Input invalid', v.message);
       return;
     }
 
     final name = zip3Name.trim().isEmpty
-        ? Firmware.defaultZip3Name(model: model, type: type)
+        ? (zip3DefaultName ??
+              Firmware.defaultZip3Name(model: model, type: type))
         : zip3Name.trim();
-    _log(
-      '== make zip3: $model/$type · enforceModel=$zip3EnforceModel · '
-      'name="$name" ==',
-    );
     try {
       final bytes = File(src).readAsBytesSync();
-      final result = PackV3.buildZip3FromDump(
-        bytes,
-        type: type,
-        model: model,
-        enforceModel: zip3EnforceModel,
-        displayName: name,
+      _log(
+        '== make zip3: $model/$type · '
+        '${sliceMode ? 'full dump' : 'payload bin'} '
+        '· enforceModel=$zip3EnforceModel · name="$name" ==',
       );
+      final Zip3BuildResult result;
+      if (sliceMode) {
+        result = PackV3.buildZip3FromDump(
+          bytes,
+          type: type,
+          model: model,
+          enforceModel: zip3EnforceModel,
+          displayName: name,
+        );
+      } else {
+        result = PackV3.buildZip3FromPayload(
+          bytes,
+          type: type,
+          model: model,
+          enforceModel: zip3EnforceModel,
+          displayName: name,
+        );
+      }
       final outPath = Firmware.packedZip3Path(
         result.displayName,
         prefix: backupPrefix,
@@ -2109,7 +2196,8 @@ class AppController extends ChangeNotifier {
         outputPath: outPath,
       );
     } on FormatException catch (e) {
-      // The ZP guard fails closed on a dump whose exact length can't be read.
+      // Slice's ZP/SHU-key guards and Pack's metadata validation fail closed
+      // through here.
       _log('== make zip3 failed: ${e.message} ==');
       _finishReal(false, '', e.message, reseat: false);
     } catch (e) {

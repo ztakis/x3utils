@@ -1,11 +1,26 @@
 # Plan: Make zip3 input policy (v1.2.1 or later)
 
-Status: **PARKED — gated on v1.2.0 field feedback about zip3.**
+Status: **SUPERSEDED BY THE THREE-WAY ZIP3 WORKSPACE (2026-07-26).**
 
-Nothing here is scheduled. The offline analysis below is done and the findings
-are durable, but no code change should land until real v1.2.0 users have
-exercised Make zip3 and reported what they actually hit. Two candidate features
-are specified so the work can start cold when the feedback justifies it.
+The implementation now separates the previously mixed input policies:
+
+- **Slice** keeps the strict v1.2.0 full-dump workflow: exactly 128 KB, guarded
+  ZP extraction, and the existing SHU-key filter.
+- **Pack** accepts one complete payload `.bin` and emits X3 VCU, MCU, BMS, or
+  BLE ZIP3 metadata. It does not slice, read ZP, or inspect the SHU key.
+- **Unpack** remains the extraction-only workflow for internally consistent X3
+  VCU, MCU, BMS, and BLE packages.
+
+Pack now hard-rejects objective mistakes: a detected 128 KB controller dump,
+non-`8n + 4` input that NinebotTEA would zero-pad, unsupported or contradictory
+VCU/MCU banners, and VCU/MCU payloads beyond their 61436/59388-byte physical
+ceilings. BMS/BLE have no known equivalent banner; their Type and Model remain
+manual rather than guessed from corpus size.
+
+The analysis below is retained as historical evidence and rationale. Its
+Candidate A routing, advisory-findings modal, and parked implementation status
+do not describe the current code. Final behavior is recorded in DEVLOG
+2026-07-26.
 
 Recorded 2026-07-25.
 

@@ -65,7 +65,7 @@ void main() {
     );
   });
 
-  testWidgets('Pack / Unpack zip3 uses a locked two-page workspace', (
+  testWidgets('ZIP3 tools use a locked three-page workspace', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -81,34 +81,30 @@ void main() {
     }
     await tester.tap(find.text('ADVANCED'));
     await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('slice · pack · unpack'), findsOneWidget);
+    expect(find.text('slice · pack · unpack · offline'), findsNothing);
     final zip3Tile = tester.widget<InkWell>(
       find
-          .ancestor(
-            of: find.text('Pack / Unpack zip3'),
-            matching: find.byType(InkWell),
-          )
+          .ancestor(of: find.text('ZIP3 tools'), matching: find.byType(InkWell))
           .first,
     );
-    // Opening the zip3 workspace shows an untimed "what is this for" intro;
-    // Continue enters the action (no countdown, unlike the Flash Only gate).
+    // ZIP3 tools currently opens directly; its intro modal is disabled pending
+    // a rewrite for the three distinct Slice / Pack / Unpack workflows.
     zip3Tile.onTap!();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('What Pack zip3 is for'), findsOneWidget);
-    final continueButton = tester.widget<InkWell>(
-      find
-          .ancestor(of: find.text('Continue'), matching: find.byType(InkWell))
-          .first,
-    );
-    continueButton.onTap!();
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('What Pack zip3 is for'), findsNothing);
 
     // The identity form and its controls are present.
     expect(find.text('PACKAGE IDENTITY'), findsOneWidget);
     expect(find.text('Type'), findsOneWidget);
     expect(find.text('Model'), findsOneWidget);
     expect(find.textContaining('Enforce model'), findsOneWidget);
-    expect(find.text('Package name'), findsOneWidget);
+    expect(find.textContaining('Package name'), findsOneWidget);
     expect(find.text('Choose a backup dump'), findsOneWidget);
+    expect(
+      find.text('Choose a full 128 KB backup .bin below.'),
+      findsOneWidget,
+    );
     expect(find.text('Pack zip3'), findsOneWidget);
 
     final pageView = tester.widget<PageView>(find.byType(PageView));
@@ -119,14 +115,25 @@ void main() {
         .ancestor(of: find.text('Choose .bin'), matching: find.byType(InkWell))
         .first;
     expect(
-      tester.getSize(find.byKey(const ValueKey('zip3-pack'))).height,
+      tester.getSize(find.byKey(const ValueKey('zip3-slice'))).height,
       tester.getSize(chooseBinButton).height,
     );
+
+    tester.widget<InkWell>(find.byKey(const ValueKey('zip3-pack'))).onTap!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 1);
+    expect(find.text('Choose a firmware payload'), findsOneWidget);
+    expect(
+      find.text('Choose the complete firmware .bin to package below.'),
+      findsOneWidget,
+    );
+    expect(find.text('PACKAGE IDENTITY'), findsOneWidget);
 
     tester.widget<InkWell>(find.byKey(const ValueKey('zip3-unpack'))).onTap!();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 1);
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 2);
     expect(find.text('Choose a zip3 package'), findsOneWidget);
     expect(find.text('PACKAGE DETAILS'), findsOneWidget);
     expect(find.text('Output filename'), findsOneWidget);
@@ -151,8 +158,8 @@ void main() {
     );
     expect(unpackInk.onTap, isNull);
 
-    // A completed Unpack temporarily replaces the two-page setup with the
-    // generic result hero. Done must restore page 1 because UNPACK remains the
+    // A completed Unpack temporarily replaces the three-page setup with the
+    // generic result hero. Done must restore page 2 because UNPACK remains the
     // selected workspace toggle.
     final dynamic homeState = tester.state(find.byType(HomeScreen));
     homeState.c.stage = StageState.ok;
@@ -162,12 +169,13 @@ void main() {
     homeState.c.dismiss();
     await tester.pump();
     await tester.pump();
-    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 1);
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 2);
     expect(find.text('Choose a zip3 package'), findsOneWidget);
 
-    tester.widget<InkWell>(find.byKey(const ValueKey('zip3-pack'))).onTap!();
+    tester.widget<InkWell>(find.byKey(const ValueKey('zip3-slice'))).onTap!();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 0);
     expect(find.text('Choose a backup dump'), findsOneWidget);
   });
 }

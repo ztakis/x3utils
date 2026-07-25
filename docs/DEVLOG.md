@@ -1417,3 +1417,62 @@ Linux/macOS get the same code but were not rebuilt this session.
     member remained acceptable to the extraction-only path.
   - No packaged-app build, BLE operation, or hardware command was run for this
     v1.2.1 change.
+
+## 2026-07-26
+
+- Replaced the mixed Make zip3 input policy with a three-page `ZIP3 tools`
+  workspace: Slice / Pack / Unpack.
+  - Slice is the strict v1.2.0 path: exactly 128 KB, ZP-derived payload, and
+    the existing SHU-key gate.
+  - Pack treats the selected `.bin` as the complete payload. It supports VCU,
+    MCU, BMS, and BLE with corpus-confirmed compatible-board metadata:
+    `<model>_VCU_AT32`, `x3_MCU_AT32`, `x3_BMS`, and `<model>_BLE`.
+    Flash ZIP import remains independently restricted to VCU/MCU.
+  - Pack rejects a detected full 128 KB controller dump, input whose length is
+    not `8n + 4` (NinebotTEA would add zero padding), unsupported/missing or
+    contradictory VCU/MCU banner evidence, and VCU/MCU payloads beyond the
+    61436/59388-byte physical ceilings. Selection-time objective checks run
+    again inside the build at Start.
+  - BMS/BLE carry no known equivalent `SCOOTER_...` banner. Their Type and
+    Model remain manual; observed corpus size ranges are not treated as
+    identity. Pack does not apply ZP or SHU-key checks.
+  - The vertical page transition remains rail-controlled and non-scrollable.
+    Slice and Pack clear their shared transient input/identity state on page
+    changes; Unpack keeps its independent state. The rail subtitle is
+    `slice · pack · unpack`. The outdated "What Pack zip3 is for" entry modal
+    is disabled pending a rewrite for all three workflows.
+  - Offline verification: the focused ZIP3/controller/widget/output suite
+    passed 86/86 and `flutter analyze` was clean. After the final modal-only
+    removal, the widget suite passed 3/3 and `flutter analyze` remained clean;
+    `git diff --check` passed. No packaged-app build, BLE operation, or
+    hardware command was run.
+- Pack form polish (same day): Model dropdown now precedes Type (reads like
+  the banner, "G3 VCU"); the Package name box was measured in a widget test
+  and set to the dropdowns' exact 44 px (contentPadding vertical 11 → 12);
+  a Pack payload source now suggests `<model>_<TYPE>_<source-filename>` — the
+  Unpack suggestion's shape — while Slice dumps keep the timestamp default. The
+  blank-name default at Start and the form hint share one controller getter
+  (`zip3DefaultName`) so they cannot disagree.
+- Correction to the name-box height fix above: the padding-math approach
+  (vertical 12 "measured to 44 px") only held under the test framework's Ahem
+  font — on a real Windows build the box still rendered short of the
+  dropdowns. Root cause: an InputDecorator's height follows font metrics,
+  which differ per platform font, so padding can never pin it. Replaced with
+  the structural fix: the name field now sits in the same fixed 44 px
+  container the dropdowns use (focus border painted manually via a
+  FocusNode), with the "Package name" label and output-folder hint moved to
+  a caption line below. Heights now match by construction on every platform.
+- ZIP3 hero fit: a cleared-serial dump rendered a three-line amber callout
+  that pushed the CTA off a 768 px window. Root cause was relevance, not
+  layout — Slice emits slot 0 and Pack consumes a complete payload; neither
+  includes the full-dump serial pair at 0x1F020. The ZIP3 form
+  now shows `BinIdentity.bannerSummary` (banner only, never amber) and logs
+  the full identity line instead; every long/amber note on that page was
+  serial-derived, so this covers the category rather than one string. Guarded
+  flash paths keep the full summary with its warnings. Also trimmed the
+  packer's pre-CTA gap to 18 px and made the name caption one line.
+- Method note for future layout work: absolute pixel measurements taken in
+  `flutter test` are NOT valid for fit decisions. The test environment uses
+  the Ahem font (square glyphs), so text is much wider than real Segoe UI and
+  headings wrap that would not wrap on a real build. Widget tests are fine
+  for structure and relative behavior; judge fit on a real packaged build.

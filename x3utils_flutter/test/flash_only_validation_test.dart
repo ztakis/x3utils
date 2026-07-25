@@ -548,6 +548,110 @@ void main() {
     expect(controller.heroMessage, 'Firmware says: G3 · VCU');
   });
 
+  test('ZIP3 Slice is strict while Pack accepts complete payload bins', () {
+    SharedPreferences.setMockInitialValues({});
+    final temp = Directory.systemTemp.createTempSync('x3utils_zip3_split_');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final fullBytes = Uint8List.fromList(
+      List<int>.generate(Firmware.expectedSize, (i) => i & 0xff),
+    );
+    const fullBanner = 'SCOOTER_VCU_xxG3';
+    fullBytes.setRange(
+      0x1400,
+      0x1400 + fullBanner.length,
+      fullBanner.codeUnits,
+    );
+    final full = File(p.join(temp.path, 'full.bin'))
+      ..writeAsBytesSync(fullBytes);
+    final sliced = File(p.join(temp.path, 'sliced.bin'))
+      ..writeAsBytesSync(
+        Uint8List.fromList(List<int>.generate(58436, (i) => i & 0xff)),
+      );
+    final ble = File(p.join(temp.path, 'ble.bin'))
+      ..writeAsBytesSync(
+        Uint8List.fromList(
+          List<int>.generate(1846188, (i) => (i * 17 + 3) & 0xff),
+        ),
+      );
+    final controller = AppController();
+    addTearDown(controller.dispose);
+
+    controller.selectAction('make_zip3');
+    expect(controller.zip3WorkspacePage, Zip3WorkspacePage.slice);
+    expect(controller.zip3TypeOptions, ['VCU', 'MCU']);
+    final rejected = controller.selectFirmwareBin(sliced.path);
+    expect(rejected.ok, isFalse);
+    expect(rejected.message, contains('Expected 131072 bytes'));
+    expect(controller.selectFirmwareBin(full.path).ok, isTrue);
+
+    controller.setZip3WorkspacePage(Zip3WorkspacePage.pack);
+    expect(controller.firmwarePath, isNull);
+    expect(controller.zip3TypeOptions, ['VCU', 'MCU', 'BMS', 'BLE']);
+    final fullRejected = controller.selectFirmwareBin(full.path);
+    expect(fullRejected.ok, isFalse);
+    expect(fullRejected.message, contains('Use Slice instead of Pack'));
+    expect(controller.selectFirmwareBin(sliced.path).ok, isTrue);
+    expect(controller.selectFirmwareBin(ble.path).ok, isTrue);
+    controller.setZip3Type('BLE');
+    controller.setZip3Model('g3');
+
+    controller.setZip3WorkspacePage(Zip3WorkspacePage.unpack);
+    expect(controller.firmwarePath, isNull);
+    expect(controller.zip3Type, isNull);
+    controller.setZip3WorkspacePage(Zip3WorkspacePage.slice);
+    expect(controller.zip3TypeOptions, ['VCU', 'MCU']);
+  });
+
+  test('ZIP3 Pack rechecks declared payload identity at Start', () async {
+    SharedPreferences.setMockInitialValues({});
+    final temp = Directory.systemTemp.createTempSync('x3utils_zip3_pack_');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final payload = File(p.join(temp.path, 'bannerless.bin'))
+      ..writeAsBytesSync(
+        Uint8List.fromList(List<int>.generate(58436, (i) => i & 0xff)),
+      );
+    final controller = AppController();
+    addTearDown(controller.dispose);
+
+    controller.selectAction('make_zip3');
+    controller.setZip3WorkspacePage(Zip3WorkspacePage.pack);
+    expect(controller.selectFirmwareBin(payload.path).ok, isTrue);
+    controller.setZip3Type('VCU');
+    controller.setZip3Model('g3');
+    await controller.start();
+
+    expect(controller.stage, StageState.fail);
+    expect(controller.heroMessage, contains('declared VCU type requires'));
+  });
+
+  test('ZIP3 Slice rechecks the 128 KB size at Start', () async {
+    SharedPreferences.setMockInitialValues({});
+    final temp = Directory.systemTemp.createTempSync('x3utils_zip3_resize_');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final full = File(p.join(temp.path, 'full.bin'))
+      ..writeAsBytesSync(
+        Uint8List.fromList(
+          List<int>.generate(Firmware.expectedSize, (i) => i & 0xff),
+        ),
+      );
+    final controller = AppController();
+    addTearDown(controller.dispose);
+
+    controller.selectAction('make_zip3');
+    expect(controller.selectFirmwareBin(full.path).ok, isTrue);
+    controller.setZip3Type('VCU');
+    controller.setZip3Model('g3');
+
+    full.writeAsBytesSync(
+      Uint8List.fromList(List<int>.generate(58436, (i) => i & 0xff)),
+    );
+    await controller.start();
+
+    expect(controller.stage, StageState.fail);
+    expect(controller.failureNeedsInput, isTrue);
+    expect(controller.heroMessage, contains('Expected 131072 bytes'));
+  });
+
   test('input failure returns to setup instead of rerunning', () async {
     SharedPreferences.setMockInitialValues({});
     final temp = Directory.systemTemp.createTempSync('x3utils_retry_');
