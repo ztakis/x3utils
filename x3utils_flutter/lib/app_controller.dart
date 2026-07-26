@@ -779,6 +779,7 @@ class AppController extends ChangeNotifier {
   String? resultPath;
   String? resultNote;
   bool _failureNeedsInput = false;
+  bool _rdpRetryPending = false;
 
   /// A validation or policy failure must return to setup instead of repeating
   /// the same run. Connection failures retain the existing re-seat retry loop.
@@ -939,6 +940,10 @@ class AppController extends ChangeNotifier {
 
   /// Dismiss a completed (ok/fail) result back to idle — not a cancel.
   void dismiss() {
+    if (_rdpRetryPending) {
+      cancel();
+      return;
+    }
     if (running) return;
     _goIdle();
   }
@@ -946,6 +951,31 @@ class AppController extends ChangeNotifier {
   /// Re-run a connection failure, or return an input/policy failure to setup.
   /// The latter must never repeat a flash with the same rejected firmware.
   Future<void> retry() async {
+    if (_rdpRetryPending) {
+      _rdpRetryPending = false;
+      lastConnect = 'connecting…';
+      _set(
+        StageState.connect,
+        'Protection',
+        '${action.name}…',
+        'Retrying the connection — watch the console.',
+      );
+      if (_rdp?.sendContinue() ?? false) return;
+
+      _token++;
+      _rdp?.kill();
+      _realRun = false;
+      running = false;
+      _stopRunClock(null);
+      lastConnect = 'FAIL';
+      _set(
+        StageState.fail,
+        'Failed',
+        '${action.name} failed',
+        'The waiting protection process is no longer available. Press Retry to start again.',
+      );
+      return;
+    }
     if (failureNeedsInput) {
       _goIdle();
       return;
@@ -961,6 +991,7 @@ class AppController extends ChangeNotifier {
     resultPath = null;
     resultNote = null;
     _failureNeedsInput = false;
+    _rdpRetryPending = false;
     stage = StageState.idle;
     eyebrow = 'Ready';
     if (actionId == 'flash_only') {
@@ -1050,6 +1081,7 @@ class AppController extends ChangeNotifier {
     resultPath = null;
     resultNote = null;
     _failureNeedsInput = false;
+    _rdpRetryPending = false;
     _lastRunDuration = null;
     _lastExitCode = null;
     _runLog.clear();
@@ -1157,6 +1189,7 @@ class AppController extends ChangeNotifier {
     }
     final my = ++_token;
     _diagnosis = null;
+    _rdpRetryPending = false;
     running = true;
     _realRun = true;
     _startRunClock();
@@ -1215,6 +1248,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     if (my != _token) return;
+    _rdpRetryPending = false;
     _realRun = false;
     running = false;
     _stopRunClock(code);
@@ -1255,14 +1289,14 @@ class AppController extends ChangeNotifier {
   void _handleRdpChunk(String chunk, {required bool raceCheck}) {
     final low = chunk.toLowerCase();
     if (low.contains('press enter to retry')) {
+      _rdpRetryPending = true;
+      lastConnect = 'FAIL';
+      final issue = _runIssue ?? 'OpenOCD: connection failed';
       _set(
-        StageState.connect,
-        mode == ConnectionMode.powerRace ? 'Power-race' : 'Protection',
-        'Retry connection?',
-        mode == ConnectionMode.powerRace
-            ? 'The rescue attempt missed the window. Cut & re-apply power, then retry.'
-            : 'The connect attempt missed. Re-seat the probe, then retry.',
-        continueBtn: 'Retry connect',
+        StageState.fail,
+        'Failed',
+        '${action.name} failed',
+        '$issue\n$_reseatHint',
       );
       return;
     }
@@ -1424,7 +1458,10 @@ class AppController extends ChangeNotifier {
     _runIssue = issue;
     _runIssuePriority = priority;
     if (stage == StageState.fail) {
-      _setInstruction(issue, tone: MessageTone.danger);
+      _setInstruction(
+        _rdpRetryPending ? '$issue\n$_reseatHint' : issue,
+        tone: MessageTone.danger,
+      );
     }
   }
 

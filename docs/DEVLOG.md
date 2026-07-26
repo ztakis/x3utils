@@ -1476,3 +1476,32 @@ Linux/macOS get the same code but were not rebuilt this session.
   the Ahem font (square glyphs), so text is much wider than real Segoe UI and
   headings wrap that would not wrap on a real build. Widget tests are fine
   for structure and relative behavior; judge fit on a real packaged build.
+- Flutter RDP retry-screen fix and Linux/macOS handoff:
+  - With ST-LINK absent, Check protection and Unlock / rescue reached their
+    shell retry prompt but Flutter kept showing the busy retry screen instead
+    of the standard red failure screen. The maintainer reproduced the same
+    pre-fix behavior on Windows, Linux, and macOS.
+  - The shared fix is in `x3utils_flutter/lib/app_controller.dart`: an RDP
+    retry prompt now enters the normal red failure state; Retry resumes the
+    already-waiting RDP process; Dismiss terminates it; and late stdout/stderr
+    diagnostics preserve the full re-seat/Retry callout regardless of stream
+    ordering.
+  - Windows Flutter additionally needs
+    `x3utils_flutter/native/windows/special/rdp/rdp.ps1` to print the retry
+    prompt before promptless `Read-Host`, because `Read-Host` hides its own
+    prompt under Flutter's redirected stdio. The separate `x3utils_win` CLI
+    release tree is intentionally unchanged.
+  - Linux and macOS need the shared Dart/controller change only. Their Bash
+    `read -p` prompts already reach Flutter; do not copy the Windows PowerShell
+    workaround into either Bash tree.
+  - Windows live-UI retest was reported fixed. `flutter analyze`,
+    `git diff --check`, Dart formatting, and both relevant PowerShell parse
+    checks passed; no hardware command was run by the agent. Linux/macOS
+    post-fix packaged validation remains pending.
+  - Minimum Linux/macOS closeout: rebuild with the normal platform packaging
+    script, keep ST-LINK disconnected, and exercise both Check protection and
+    Unlock / rescue. Confirm the red failure callout is stable across repeated
+    Retry presses, Retry resumes the waiting process, and Dismiss returns to
+    idle. Never test rescue with a reachable target unless a destructive mass
+    erase is explicitly intended. Record completed platform results in
+    `docs/testing.md`.

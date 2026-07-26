@@ -282,7 +282,9 @@ function Invoke-WithRetry {
         SayWarn 'Connection/contact failed - nothing was written.'
         Say  "       Re-seat the SWD probe and the nRST/C45 contact (touch the"
         Say  "       contact point, not on top of the cap), keep it steady, then:"
-        $ans = Read-Host "       ${CL_C}Press ENTER to retry, or type Q to quit${CL_NC}"
+        # Read-Host's own prompt is hidden when Flutter redirects stdio.
+        Say  "       ${CL_C}Press ENTER to retry, or type Q to quit${CL_NC}"
+        $ans = Read-Host
         if ($ans -match '^(q|quit)$') { return $result }
         Write-Host ''
     }
