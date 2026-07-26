@@ -44,48 +44,67 @@ void main() {
   test('macOS RDP retry prompts survive redirected stdio', () async {
     if (!Platform.isMacOS) return;
 
-    for (final (verb, yes) in <(String, bool)>[
-      ('Check', false),
-      ('Rescue', true),
-    ]) {
-      final fixture = _makeMacFixture(
-        openOcdScript:
-            '#!/bin/bash\n'
-            'if [[ ! -f "@STATE@" ]]; then\n'
-            '  touch "@STATE@"\n'
-            '  echo "Error: unable to open ST-LINK"\n'
-            '  exit 1\n'
-            'fi\n'
-            'echo "0x1ffff800: ffff5aa5"\n'
-            'echo "0x08000000: 20001000 08000101 00000000 00000000"\n',
-      );
-      addTearDown(() => fixture.root.deleteSync(recursive: true));
+    await _expectUnixRetryPrompts('macos');
+  });
 
-      final promptSeen = Completer<void>();
-      final lines = <String>[];
-      final run = fixture.runner.run(
-        verb,
-        ConnectionMode.defaultSwd,
-        3,
-        yes: yes,
-        onLine: lines.add,
-        onChunk: (chunk) {
-          if (!promptSeen.isCompleted &&
-              chunk.toLowerCase().contains('press enter to retry')) {
-            promptSeen.complete();
-          }
-        },
-      );
+  test('Linux RDP retry prompts survive redirected stdio', () async {
+    if (!Platform.isLinux) return;
 
-      await promptSeen.future.timeout(const Duration(seconds: 5));
-      expect(fixture.runner.sendContinue(), isTrue);
-      expect(await run.timeout(const Duration(seconds: 5)), 0);
-      expect(lines.join('\n').toLowerCase(), contains('press enter to retry'));
-    }
+    await _expectUnixRetryPrompts('linux');
   });
 }
 
+Future<void> _expectUnixRetryPrompts(String platformDir) async {
+  for (final (verb, yes) in <(String, bool)>[
+    ('Check', false),
+    ('Rescue', true),
+  ]) {
+    final fixture = _makeUnixFixture(
+      platformDir: platformDir,
+      openOcdScript:
+          '#!/bin/bash\n'
+          'if [[ ! -f "@STATE@" ]]; then\n'
+          '  touch "@STATE@"\n'
+          '  echo "Error: unable to open ST-LINK"\n'
+          '  exit 1\n'
+          'fi\n'
+          'echo "0x1ffff800: ffff5aa5"\n'
+          'echo "0x08000000: 20001000 08000101 00000000 00000000"\n',
+    );
+    addTearDown(() => fixture.root.deleteSync(recursive: true));
+
+    final promptSeen = Completer<void>();
+    final lines = <String>[];
+    final run = fixture.runner.run(
+      verb,
+      ConnectionMode.defaultSwd,
+      3,
+      yes: yes,
+      onLine: lines.add,
+      onChunk: (chunk) {
+        if (!promptSeen.isCompleted &&
+            chunk.toLowerCase().contains('press enter to retry')) {
+          promptSeen.complete();
+        }
+      },
+    );
+
+    await promptSeen.future.timeout(const Duration(seconds: 5));
+    expect(fixture.runner.sendContinue(), isTrue);
+    expect(await run.timeout(const Duration(seconds: 5)), 0);
+    expect(lines.join('\n').toLowerCase(), contains('press enter to retry'));
+  }
+}
+
 ({Directory root, RdpRunner runner}) _makeMacFixture({
+  required String openOcdScript,
+}) => _makeUnixFixture(
+  platformDir: 'macos',
+  openOcdScript: openOcdScript,
+);
+
+({Directory root, RdpRunner runner}) _makeUnixFixture({
+  required String platformDir,
   required String openOcdScript,
 }) {
   final root = Directory.systemTemp.createTempSync('x3utils_rdp_test_');
@@ -96,7 +115,7 @@ void main() {
   final rdpDir = Directory(p.join(root.path, 'special', 'rdp'))
     ..createSync(recursive: true);
 
-  final sourceRdp = Directory(p.join('native', 'macos', 'special', 'rdp'));
+  final sourceRdp = Directory(p.join('native', platformDir, 'special', 'rdp'));
   for (final entity in sourceRdp.listSync()) {
     if (entity is File) {
       entity.copySync(p.join(rdpDir.path, p.basename(entity.path)));

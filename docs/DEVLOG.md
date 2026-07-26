@@ -1514,3 +1514,17 @@ Linux/macOS get the same code but were not rebuilt this session.
     redirected-stdio coverage for both verbs, then rebuild normally and repeat
     the disconnected-ST-LINK Retry/Dismiss checks above. Do not exercise rescue
     with a reachable target.
+  - Linux code handoff completed: both Flutter-native scripts now print the
+    retry prompt before a promptless `read`. The redirected-stdio runner test
+    covers Check and Rescue with fake OpenOCD, observes the prompt while the
+    process waits, sends Continue, and passes. `bash -n`, ShellCheck error
+    checks, `flutter analyze`, `git diff --check`, the focused test, and the
+    normal AppImage build passed; the generated AppImage contains both updated
+    executable scripts. The disconnected-ST-LINK packaged live-UI
+    Retry/Dismiss check remains pending and is not recorded as hardware
+    validation.
+  - Linux live-UI follow-up: the maintainer checked the corrected debug build
+    with ST-LINK disconnected and reported the retry failure flow fixed. This
+    closes the Linux debug-build behavior check without exercising a protection
+    rewrite. The generated AppImage was not used for that live check, so a
+    packaged smoke remains optional rather than claimed complete.
