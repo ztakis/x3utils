@@ -47,8 +47,8 @@ Default to discussion/review mode for this repo.
 - `x3utils_mac/` - macOS shell implementation and bundled xPack OpenOCD.
 - `docs/testing.md` - manual hardware test matrix, checklists, and regression
   notes.
-- `DEVLOG.md` - short chronological development memory for decisions, handoffs,
-  and test notes.
+- `docs/DEVLOG.md` - short chronological development memory for decisions,
+  handoffs, and test notes.
 - `*/special/` - special-purpose firmware files and flashing scripts.
 - `*/backup/` and `*/compat/` - runtime output locations. These should
   generally stay ignored except for their existing `.gitignore` files.
@@ -227,19 +227,31 @@ validator and must remain fail-closed:
 - Flash Only remains the explicitly warned expert override. Do not silently
   apply its permissive policy to either guarded action.
 
-Make zip3 is an optional, best-effort local archive feature, not a compatibility
-or BLE-acceptance guarantee:
+ZIP3 tools is an offline local archive feature, not a compatibility or
+BLE-acceptance guarantee:
 
-- Its intended source is a fresh full ST-LINK backup taken immediately after
-  the current firmware was installed through BLE, before any ST-LINK firmware
-  write. BLE updates the ZP firmware-length record; an ST-LINK slot-0 write does
-  not, so a structurally valid ZP can be stale and that cannot be detected from
-  the dump alone.
-- Missing/invalid ZP evidence must be rejected rather than guessed. The SHU-key
-  check is also only a best-effort filter: it can reject some older repo
-  firmware and does not prove BLE acceptance.
+- Slice is the guarded v1.2.0 full-dump path. It accepts exactly 131072 bytes,
+  requires trustworthy ZP evidence to determine the payload boundary, and keeps
+  the existing best-effort SHU-key filter. Its intended source is a fresh full
+  ST-LINK backup taken immediately after the current firmware was installed
+  through BLE, before any ST-LINK firmware write; a structurally valid ZP can
+  still be stale and that cannot be detected from the dump alone.
+- Pack treats the selected `.bin` as the complete payload and supports X3 VCU,
+  MCU, BMS, and BLE package metadata. It must reject a detected full 128 KB
+  controller dump, a payload whose length is not `8n + 4` (NinebotTEA would
+  change it through zero padding), unsupported or contradictory VCU/MCU banner
+  evidence, and VCU/MCU payloads beyond the 61436/59388-byte physical ceilings.
+  Re-run these checks at Start so a changed file cannot bypass selection-time
+  validation.
+- VCU/MCU Pack inputs require a supported banner at payload offset `0x400`; the
+  banner type and VCU model must agree with the declared Type/Model. BMS/BLE
+  carry no equivalent known banner, so their Type and Model remain manual.
+  Corpus size ranges are hints only and must not silently choose identity.
+- Pack does not apply ZP or SHU-key checks. Unpack accepts internally consistent
+  X3 VCU, MCU, BMS, and BLE packages for local extraction, while ZIP import for
+  controller flashing remains separately restricted to VCU/MCU.
 - A created package must still be tested through the BLE app's Load from file.
-  Keep the UI wording conservative and preserve operator responsibility for the
+  Keep UI wording conservative and preserve operator responsibility for the
   declared Type and Model.
 
 ## OpenOCD Notes
@@ -337,8 +349,8 @@ files instead of relying on conversation history.
 
 - Use `docs/testing.md` for real hardware testbed boards, workstation coverage,
   manual checklists, and regression notes.
-- Use `DEVLOG.md` for short chronological notes about decisions, test results,
-  and why a change was made.
+- Use `docs/DEVLOG.md` for short chronological notes about decisions, test
+  results, and why a change was made.
 
 The maintainer has real testbed boards that have been reflashed many times. Do
 not assume that lack of CI means lack of testing; hardware validation is manual

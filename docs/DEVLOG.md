@@ -1368,31 +1368,111 @@ Linux/macOS get the same code but were not rebuilt this session.
     1.5.2 payload matches the post-flash dump byte-for-byte (59028/59028). Repo
     flashing also wipes an OEM device's key region (a stock MCU carried an OEM
     ASCII-token key there; after a repo BLE flash it is all-0xFF).
-  - Root cause found. Diffing OEM-stock 1.5.2 vs repo-Compat 1.5.2 (same
-    version, so the body delta is exactly what the repo maintainer changes),
-    after excluding the key/identity region, the slot-1 mirror, the past-payload
-    tail, and the device config page, the firmware-body difference is two ARM
-    Thumb check-neuter patches: at slot-0 body 0x5608 a `CBZ r0` is replaced by
-    `NOP`, and at 0x5AD7 a `BEQ` is forced to an unconditional `B`. The
-    maintainer clears the key AND patches out the on-device validation that would
-    otherwise reject the package. That is the "something else" beyond clearing
-    the key.
-  - Resulting model: the OTA validation is passed EITHER by presenting the real
-    SHU key (what flash_compat writes) OR by carrying the maintainer's
-    check-defeat patches (what repo packages carry). A synthetic cleared bin has
-    neither - blank key, checks still intact - so it is rejected. That is why the
-    compat/defkey repackage loads and the hand-cleared one does not.
+  - Root cause. Blank-key repo firmware still loads because the repo build is
+    prepared to pass the device's acceptance check regardless of key state - a
+    property beyond the key/identity bytes. The specific mechanism is a third
+    party's and is intentionally left out of this public log. That is the
+    "something else" beyond clearing the key.
+  - Resulting model: acceptance is passed EITHER by presenting the real SHU key
+    (what flash_compat writes) OR by using a maintainer repo build that is
+    already prepared to pass regardless of key. A synthetic cleared bin is
+    neither - a blank key on an un-prepared build - so it is rejected. That is
+    why the compat/defkey repackage loads and the hand-cleared one does not.
   - Consequences for the tools (no code change, and now for a concrete reason):
     - The standalone Make zip3 blank-key gate stays as-is. Its intended source
-      is a fresh dump taken right after BLE-installing repo firmware, which
-      already carries the check-defeat patches, so a blank-key repackage of it
-      loads. Only a synthetic cleared bin fails. The gate cannot see the patches
-      and does not need to.
+      is a fresh dump taken right after BLE-installing repo firmware, which is
+      already a prepared repo build, so a blank-key repackage of it loads. Only
+      a synthetic cleared bin fails, and the gate does not need to distinguish
+      them.
     - The compat -> zip3 checkbox is a sound, independent recipe: it takes the
-      other road (writes the real key), so it loads whether or not the dump
-      carries the patches.
-  - Limits: one version-pair, MCU only (no repo 1.5.8 exists to diff the VCU
-    that failed); the two branches are inferred to be the acceptance check from
-    a clean 2-instruction delta in the right place, not yet confirmed in a
-    disassembler. Identity bytes and the OEM token value are kept out of this
-    file on purpose.
+      other road (writes the real key), so it loads whether or not the source is
+      a prepared repo build.
+  - Limits: characterized on one version-pair (MCU); no repo 1.5.8 exists to
+    diff the VCU that failed, so the VCU specifics are not established. Identity
+    bytes and the OEM token value are kept out of this file on purpose.
+
+## 2026-07-25
+
+- Prepared Flutter GUI v1.2.1 and refactored Make zip3 into the offline
+  Pack / Unpack zip3 workspace.
+  - Pack retains the existing working dump-to-ZIP3 flow. Unpack now inspects a
+    selected package, suggests
+    `<model>_<type>_<normalized-source-filename>.bin`, permits editing that
+    filename, and writes through the existing Cancel/Replace confirmation flow
+    to `Documents/x3utils/unpacked_zip3`.
+  - Unpack rechecks the selected ZIP digest at Start and validates the package
+    again before writing. It accepts internally consistent X3 VCU, MCU, BMS,
+    and BLE packages without the flash path's archive or slot-size limits.
+    Schema 1, `FIRM.bin.enc`, `md5.enc`, TEA checksum, supported model,
+    compatible-board consistency, and VCU/MCU payload-banner checks remain
+    mandatory. Flash ZIP import remains VCU/MCU-only and size-gated.
+  - Package details now show Model, Type, JSON `displayName`, payload size,
+    `enforceModel`, and encryption. The editable output field has increased
+    height and the details panel uses balanced spacing.
+  - Offline verification passed: `flutter analyze` was clean and the focused
+    ZIP3, confirmed-write, and widget suite passed 65/65. A temporary private
+    corpus probe passed 3/3: real BMS and BLE packages (including a roughly
+    1.85 MB BLE archive) decrypted, 13 malformed packages failed at their
+    intended validation gates, and a valid VCU package with an extra padding
+    member remained acceptable to the extraction-only path.
+  - No packaged-app build, BLE operation, or hardware command was run for this
+    v1.2.1 change.
+
+## 2026-07-26
+
+- Replaced the mixed Make zip3 input policy with a three-page `ZIP3 tools`
+  workspace: Slice / Pack / Unpack.
+  - Slice is the strict v1.2.0 path: exactly 128 KB, ZP-derived payload, and
+    the existing SHU-key gate.
+  - Pack treats the selected `.bin` as the complete payload. It supports VCU,
+    MCU, BMS, and BLE with corpus-confirmed compatible-board metadata:
+    `<model>_VCU_AT32`, `x3_MCU_AT32`, `x3_BMS`, and `<model>_BLE`.
+    Flash ZIP import remains independently restricted to VCU/MCU.
+  - Pack rejects a detected full 128 KB controller dump, input whose length is
+    not `8n + 4` (NinebotTEA would add zero padding), unsupported/missing or
+    contradictory VCU/MCU banner evidence, and VCU/MCU payloads beyond the
+    61436/59388-byte physical ceilings. Selection-time objective checks run
+    again inside the build at Start.
+  - BMS/BLE carry no known equivalent `SCOOTER_...` banner. Their Type and
+    Model remain manual; observed corpus size ranges are not treated as
+    identity. Pack does not apply ZP or SHU-key checks.
+  - The vertical page transition remains rail-controlled and non-scrollable.
+    Slice and Pack clear their shared transient input/identity state on page
+    changes; Unpack keeps its independent state. The rail subtitle is
+    `slice · pack · unpack`. The outdated "What Pack zip3 is for" entry modal
+    is disabled pending a rewrite for all three workflows.
+  - Offline verification: the focused ZIP3/controller/widget/output suite
+    passed 86/86 and `flutter analyze` was clean. After the final modal-only
+    removal, the widget suite passed 3/3 and `flutter analyze` remained clean;
+    `git diff --check` passed. No packaged-app build, BLE operation, or
+    hardware command was run.
+- Pack form polish (same day): Model dropdown now precedes Type (reads like
+  the banner, "G3 VCU"); the Package name box was measured in a widget test
+  and set to the dropdowns' exact 44 px (contentPadding vertical 11 → 12);
+  a Pack payload source now suggests `<model>_<TYPE>_<source-filename>` — the
+  Unpack suggestion's shape — while Slice dumps keep the timestamp default. The
+  blank-name default at Start and the form hint share one controller getter
+  (`zip3DefaultName`) so they cannot disagree.
+- Correction to the name-box height fix above: the padding-math approach
+  (vertical 12 "measured to 44 px") only held under the test framework's Ahem
+  font — on a real Windows build the box still rendered short of the
+  dropdowns. Root cause: an InputDecorator's height follows font metrics,
+  which differ per platform font, so padding can never pin it. Replaced with
+  the structural fix: the name field now sits in the same fixed 44 px
+  container the dropdowns use (focus border painted manually via a
+  FocusNode), with the "Package name" label and output-folder hint moved to
+  a caption line below. Heights now match by construction on every platform.
+- ZIP3 hero fit: a cleared-serial dump rendered a three-line amber callout
+  that pushed the CTA off a 768 px window. Root cause was relevance, not
+  layout — Slice emits slot 0 and Pack consumes a complete payload; neither
+  includes the full-dump serial pair at 0x1F020. The ZIP3 form
+  now shows `BinIdentity.bannerSummary` (banner only, never amber) and logs
+  the full identity line instead; every long/amber note on that page was
+  serial-derived, so this covers the category rather than one string. Guarded
+  flash paths keep the full summary with its warnings. Also trimmed the
+  packer's pre-CTA gap to 18 px and made the name caption one line.
+- Method note for future layout work: absolute pixel measurements taken in
+  `flutter test` are NOT valid for fit decisions. The test environment uses
+  the Ahem font (square glyphs), so text is much wider than real Segoe UI and
+  headings wrap that would not wrap on a real build. Widget tests are fine
+  for structure and relative behavior; judge fit on a real packaged build.

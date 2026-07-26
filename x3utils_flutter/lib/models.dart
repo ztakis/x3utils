@@ -63,6 +63,9 @@ enum DangerLevel { none, soft, hard }
 /// Write scope inside the deliberately unguarded Flash Only action.
 enum FlashOnlyScope { fullImage, slot0 }
 
+/// Page shown by the offline zip3 workspace.
+enum Zip3WorkspacePage { slice, pack, unpack }
+
 extension DangerLevelX on DangerLevel {
   /// The tile dot encodes risk at a glance: safe / write / destructive.
   Color get dot => switch (this) {
@@ -196,12 +199,12 @@ const kActions = <FlashAction>[
   FlashAction(
     id: 'make_zip3',
     section: Section.advanced,
-    name: 'Make zip3',
-    script: 'pack · offline',
+    name: 'ZIP3 tools',
+    script: 'slice · pack · unpack',
     sub:
-        'Repackage a 128 KB backup dump into a BLE-loadable zip3 package. Offline — reads a file, writes a file, never touches the controller.',
+        'Slice a 128 KB backup, pack a firmware .bin, or unpack a zip3 package. Fully offline.',
     chips: [InfoChipData('offline', ChipKind.ok)],
-    cta: 'Make zip3',
+    cta: 'Pack zip3',
     okMsg: 'zip3 package written.',
     needsFirmware: true,
   ),

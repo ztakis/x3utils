@@ -1,8 +1,11 @@
-import 'dart:ui' show Offset, Size;
+import 'dart:ui' show Size;
 
-import 'package:flutter/widgets.dart' show Scrollable;
+import 'package:flutter/material.dart' show InkWell;
+import 'package:flutter/widgets.dart'
+    show Axis, NeverScrollableScrollPhysics, PageView, ValueKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:x3utils_flutter/main.dart';
+import 'package:x3utils_flutter/models.dart';
 
 void main() {
   testWidgets('App boots and shows the default action', (
@@ -36,13 +39,12 @@ void main() {
     }
     await tester.tap(find.text('ADVANCED'));
     await tester.pump(const Duration(milliseconds: 250));
-    final railScroll = find.ancestor(
-      of: find.text('Flash Only'),
-      matching: find.byType(Scrollable),
+    final flashTile = tester.widget<InkWell>(
+      find
+          .ancestor(of: find.text('Flash Only'), matching: find.byType(InkWell))
+          .first,
     );
-    await tester.fling(railScroll, const Offset(0, -200), 1000);
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.text('Flash Only'));
+    flashTile.onTap!();
     await tester.pump();
     expect(find.text('Flash Only — no safety nets'), findsOneWidget);
 
@@ -57,10 +59,13 @@ void main() {
 
     await tester.tap(find.text('Slot 0 only'));
     await tester.pump(const Duration(milliseconds: 200));
-    expect(find.text('Choose slot-0 firmware'), findsOneWidget);
+    expect(
+      find.text('Choose a slot-sized .bin or encrypted zip3 package below.'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('Make zip3 shows the offline packer form', (
+  testWidgets('ZIP3 tools use a locked three-page workspace', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -76,27 +81,101 @@ void main() {
     }
     await tester.tap(find.text('ADVANCED'));
     await tester.pump(const Duration(milliseconds: 250));
-    final railScroll = find.ancestor(
-      of: find.text('Flash slot 0'),
-      matching: find.byType(Scrollable),
+    expect(find.text('slice · pack · unpack'), findsOneWidget);
+    expect(find.text('slice · pack · unpack · offline'), findsNothing);
+    final zip3Tile = tester.widget<InkWell>(
+      find
+          .ancestor(of: find.text('ZIP3 tools'), matching: find.byType(InkWell))
+          .first,
     );
-    await tester.fling(railScroll, const Offset(0, -200), 1000);
-    await tester.pump(const Duration(milliseconds: 500));
-    // Opening Make zip3 shows an untimed "what is this for" intro; Continue
-    // enters the action (no countdown, unlike the Flash Only gate).
-    await tester.tap(find.text('Make zip3').first);
+    // ZIP3 tools currently opens directly; its intro modal is disabled pending
+    // a rewrite for the three distinct Slice / Pack / Unpack workflows.
+    zip3Tile.onTap!();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('What Make zip3 is for'), findsOneWidget);
-    await tester.tap(find.text('Continue'));
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('What Pack zip3 is for'), findsNothing);
 
     // The identity form and its controls are present.
     expect(find.text('PACKAGE IDENTITY'), findsOneWidget);
     expect(find.text('Type'), findsOneWidget);
     expect(find.text('Model'), findsOneWidget);
     expect(find.textContaining('Enforce model'), findsOneWidget);
-    expect(find.text('Package name'), findsOneWidget);
+    expect(find.textContaining('Package name'), findsOneWidget);
     expect(find.text('Choose a backup dump'), findsOneWidget);
-    expect(find.text('Make zip3').last.hitTestable(), findsOneWidget);
+    expect(
+      find.text('Choose a full 128 KB backup .bin below.'),
+      findsOneWidget,
+    );
+    expect(find.text('Pack zip3'), findsOneWidget);
+
+    final pageView = tester.widget<PageView>(find.byType(PageView));
+    expect(pageView.scrollDirection, Axis.vertical);
+    expect(pageView.physics, isA<NeverScrollableScrollPhysics>());
+    expect(pageView.allowImplicitScrolling, isFalse);
+    final chooseBinButton = find
+        .ancestor(of: find.text('Choose .bin'), matching: find.byType(InkWell))
+        .first;
+    expect(
+      tester.getSize(find.byKey(const ValueKey('zip3-slice'))).height,
+      tester.getSize(chooseBinButton).height,
+    );
+
+    tester.widget<InkWell>(find.byKey(const ValueKey('zip3-pack'))).onTap!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 1);
+    expect(find.text('Choose a firmware payload'), findsOneWidget);
+    expect(
+      find.text('Choose the complete firmware .bin to package below.'),
+      findsOneWidget,
+    );
+    expect(find.text('PACKAGE IDENTITY'), findsOneWidget);
+
+    tester.widget<InkWell>(find.byKey(const ValueKey('zip3-unpack'))).onTap!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 2);
+    expect(find.text('Choose a zip3 package'), findsOneWidget);
+    expect(find.text('PACKAGE DETAILS'), findsOneWidget);
+    expect(find.text('Output filename'), findsOneWidget);
+    expect(find.textContaining('.bin is added automatically'), findsOneWidget);
+    expect(find.text('Unpack zip3'), findsOneWidget);
+    final chooseZipInk = tester.widget<InkWell>(
+      find
+          .ancestor(
+            of: find.text('Choose .zip'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    expect(chooseZipInk.onTap, isNotNull);
+    final unpackInk = tester.widget<InkWell>(
+      find
+          .ancestor(
+            of: find.text('Unpack zip3'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    expect(unpackInk.onTap, isNull);
+
+    // A completed Unpack temporarily replaces the three-page setup with the
+    // generic result hero. Done must restore page 2 because UNPACK remains the
+    // selected workspace toggle.
+    final dynamic homeState = tester.state(find.byType(HomeScreen));
+    homeState.c.stage = StageState.ok;
+    homeState.c.notifyListeners();
+    await tester.pump();
+    expect(find.byType(PageView), findsNothing);
+    homeState.c.dismiss();
+    await tester.pump();
+    await tester.pump();
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 2);
+    expect(find.text('Choose a zip3 package'), findsOneWidget);
+
+    tester.widget<InkWell>(find.byKey(const ValueKey('zip3-slice'))).onTap!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 0);
+    expect(find.text('Choose a backup dump'), findsOneWidget);
   });
 }

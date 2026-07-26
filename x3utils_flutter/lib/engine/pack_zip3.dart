@@ -7,8 +7,19 @@ import 'package:crypto/crypto.dart';
 
 import 'device_spec.dart';
 import 'firmware.dart';
+import 'firmware_inspection.dart';
 import 'ninebot_tea.dart';
 import 'zp_extract.dart';
+
+enum Zip3UnpackPolicy {
+  /// Firmware is being armed for a controller write: VCU/MCU only, with the
+  /// existing X3 model, board, and payload-banner checks.
+  flash,
+
+  /// Firmware is only being decrypted to a local file: additionally accepts
+  /// X3 BMS/BLE packages and does not infer flashability from payload size.
+  extract,
+}
 
 /// Dart port of ScooterHacking's fw-zip-package-v3 `Python/pack.py`:
 /// https://github.com/scooterhacking/fw-zip-package-v3
@@ -23,9 +34,10 @@ import 'zp_extract.dart';
 /// structure/key order, and matching MD5 hex digests.
 class PackV3 {
   static const Set<String> allowedEncFlags = {'both', 'plain', 'encrypted'};
-  // x3 controllers are VCU/MCU only. (The upstream tool's DRV/BMS/BLE list does
-  // not apply here — a package must declare VCU or MCU, same as the unpack gate.)
-  static const Set<String> allowedTypeFlags = {'VCU', 'MCU'};
+  // Package creation/extraction supports every X3 component type represented
+  // in the firmware corpus. The hardware-flash import policy remains a
+  // separate, stricter VCU/MCU allow-list in unpackV3().
+  static const Set<String> allowedTypeFlags = {'VCU', 'MCU', 'BMS', 'BLE'};
   static const (int, int) modelLengthRange = (1, 10);
 
   // ── Validation (mirrors the validate_* functions) ──────────────────────────
@@ -155,9 +167,10 @@ class PackV3 {
   /// never a `1K1/1CG/1EF/03S` model serial — so its model cannot be
   /// preselected: [Zip3Detect.model] is left null and the operator picks it.
   /// Identity here is a suggestion only; the operator's dropdown choices are
-  /// what [buildZip3FromDump] actually uses.
-  static Zip3Detect detect(List<int> dumpBytes) {
-    final id = DeviceSpec.describeBin(dumpBytes, slotBin: false);
+  /// what [buildZip3FromDump] actually uses. [slotBin] reads a hand-sliced
+  /// slot-0 payload instead (banner at 0x400 rather than 0x1400).
+  static Zip3Detect detect(List<int> dumpBytes, {bool slotBin = false}) {
+    final id = DeviceSpec.describeBin(dumpBytes, slotBin: slotBin);
     return Zip3Detect(
       type: id.bannerType,
       // Only VCU can be preselected; MCU (and unknown VCU codes) stay empty.
@@ -226,16 +239,280 @@ class PackV3 {
     // Exact slot-0 payload from the device's own committed length.
     final payload = Zp.payloadFromDump(dumpBytes);
 
-    final board = t == 'MCU' ? 'x3_MCU_AT32' : '${m}_VCU_AT32';
+    return _finishBuild(
+      payload: payload,
+      type: t,
+      model: m,
+      enforceModel: enforceModel,
+      displayName: displayName,
+    );
+  }
+
+  // ── Sliced slot-0 bin → zip3 (advisory findings, operator decides) ──────────
+
+  /// Slot 0's flash base — a sliced payload's first two words are its vector
+  /// table, whose targets resolve against this address.
+  static const int _slot0Base = 0x08001000;
+
+  /// Advisory pre-pack findings for a hand-sliced slot-0 [binBytes]. A sliced
+  /// bin is the modder's own work, so — Flash Only's philosophy, not the
+  /// guarded path's — nothing here refuses: the UI presents the findings and
+  /// the operator decides. Checks, per docs/plan-zip3-inputs.md: exact-cut
+  /// length (≡ 4 mod 8), the observed size window (the confirmed 61436
+  /// physical ceiling is a HARD gate in [buildZip3FromSlotBin], not a finding
+  /// here; the unconfirmed MCU 59388 ceiling only warns), banner agreement
+  /// with the operator-declared [type]/[model], vector-table sanity, and the
+  /// slot-relative SHU key (warns — older repo builds hold unrelated bytes at
+  /// 0x420 yet BLE-flash fine, and that is the motivating round-trip case).
+  /// An empty list means nothing fired — still not a BLE-acceptance promise.
+  static List<CompatibilityFinding> inspectSlotBinForPack(
+    List<int> binBytes, {
+    required String type,
+    required String model,
+  }) {
+    final findings = <CompatibilityFinding>[];
+    final len = binBytes.length;
+    final t = type.trim().toUpperCase();
+
+    if (len % 8 != 4) {
+      findings.add(
+        CompatibilityFinding(
+          'slice_not_exact_cut',
+          'Every known exact slot-0 payload is 4 bytes more than a multiple '
+              'of 8; this file is $len bytes, so the cut points are probably '
+              'off. The encrypted payload is padded to whole 8-byte blocks, '
+              'so what the device receives will not be byte-identical.',
+        ),
+      );
+    }
+    if (len < Firmware.slot0MinBytes) {
+      findings.add(
+        CompatibilityFinding(
+          'slice_below_window',
+          'Smaller than any known slot-0 firmware: $len bytes (observed '
+              'payloads start around ${Firmware.slot0MinBytes}).',
+        ),
+      );
+    } else if (t == 'MCU' && len > Firmware.slot0MaxPayloadMcu) {
+      findings.add(
+        CompatibilityFinding(
+          'slice_over_mcu_region',
+          'Larger than the observed MCU slot-0 region: $len bytes (region '
+              'fits ${Firmware.slot0MaxPayloadMcu}). The MCU ceiling is '
+              'corpus-derived and less proven than the VCU one.',
+        ),
+      );
+    }
+
+    final banner = DeviceSpec.verifyBanner(binBytes, model, t);
+    if (!banner.consistent) {
+      findings.add(CompatibilityFinding('slice_banner', banner.message));
+    }
+
+    var vectorsOk = false;
+    if (len >= 8) {
+      final sp = _leWord(binBytes, 0);
+      final reset = _leWord(binBytes, 4);
+      final resetTarget = reset & ~1;
+      vectorsOk =
+          sp % 4 == 0 &&
+          sp > 0x20000000 &&
+          sp <= 0x20010000 &&
+          (reset & 1) == 1 &&
+          resetTarget >= _slot0Base &&
+          resetTarget < _slot0Base + len;
+    }
+    if (!vectorsOk) {
+      findings.add(
+        const CompatibilityFinding(
+          'slice_vector_table',
+          'The first 8 bytes do not look like a slot-0 vector table (initial '
+              'stack pointer in RAM, reset vector inside the payload) — this '
+              'may not be firmware sliced at 0x1000.',
+        ),
+      );
+    }
+
+    if (!CompatPatch.keyState(binBytes, slotBin: true).bleFlashable) {
+      findings.add(
+        const CompatibilityFinding(
+          'slice_no_shu_key',
+          'Neither the default SHU key nor a blank key at 0x420. OEM/stock '
+              'firmware looks like this and may not BLE-flash — but some '
+              'older repo firmware does too and flashes fine.',
+        ),
+      );
+    }
+
+    return List<CompatibilityFinding>.unmodifiable(findings);
+  }
+
+  /// Pack a hand-sliced slot-0 [binBytes] as-is: the file IS the payload, so
+  /// there is no ZP step and no slicing. Hard gates are deliberately minimal
+  /// (the structural file checks ran at pick time; the advisory checks live in
+  /// [inspectSlotBinForPack], already shown to the operator): an unsupported
+  /// identity selection, and a payload over the confirmed 61436-byte physical
+  /// slot-0 ceiling — that one cannot fit the region for any type, so it is a
+  /// stop, not a finding. Throws [FormatException] for either.
+  static Zip3BuildResult buildZip3FromSlotBin(
+    List<int> binBytes, {
+    required String type,
+    required String model,
+    required bool enforceModel,
+    String? displayName,
+  }) {
+    final t = type.trim().toUpperCase();
+    final m = model.trim().toLowerCase();
+
+    final verdict = DeviceSpec.evaluateZip3(m, t);
+    if (!verdict.ok) {
+      throw FormatException(verdict.reason);
+    }
+    if (binBytes.length > Firmware.slot0MaxPayloadVcu) {
+      throw FormatException(
+        'This file is ${binBytes.length} bytes — larger than the slot-0 '
+        'region itself (${Firmware.slot0MaxPayloadVcu} bytes). It cannot be '
+        'slot-0 firmware, so Make zip3 was stopped.',
+      );
+    }
+
+    return _finishBuild(
+      payload: binBytes,
+      type: t,
+      model: m,
+      enforceModel: enforceModel,
+      displayName: displayName,
+    );
+  }
+
+  /// Fail-closed checks for a complete Pack payload.
+  ///
+  /// A full controller dump is recognized only at its exact 128 KB size and
+  /// full-image banner offset. A VCU/MCU payload is recognized independently at
+  /// its slot-relative banner offset, then checked against its physical ceiling
+  /// and (when supplied) the operator-declared identity. BMS/BLE remain
+  /// bannerless/manual: their observed size ranges are not identity evidence.
+  ///
+  /// The modulo check is required for byte-exact NinebotTEA round trips. The
+  /// reference format cannot encode the original padding length, so any input
+  /// other than `8n + 4` would unpack with extra zero bytes.
+  static void validatePayloadForPack(
+    List<int> payload, {
+    String? type,
+    String? model,
+  }) {
+    if (payload.length == Firmware.expectedSize) {
+      final fullIdentity = DeviceSpec.describeBin(payload, slotBin: false);
+      if (fullIdentity.bannerType != null) {
+        throw const FormatException(
+          'This is a full 128 KB VCU/MCU controller dump (firmware banner at '
+          '0x1400). Use Slice instead of Pack.',
+        );
+      }
+    }
+
+    if (payload.length % 8 != 4) {
+      throw FormatException(
+        'Payload size must be 4 bytes more than a multiple of 8 for an exact '
+        'NinebotTEA round trip. This file is ${payload.length} bytes '
+        '(remainder ${payload.length % 8}); packing it would add zero padding.',
+      );
+    }
+
+    final identity = DeviceSpec.describeBin(payload, slotBin: true);
+    if (identity.banner != null && !identity.bannerSupported) {
+      throw FormatException(
+        'Unsupported VCU/MCU firmware banner "${identity.banner}" at 0x400.',
+      );
+    }
+
+    if (identity.bannerSupported) {
+      final maxBytes = identity.bannerType == 'MCU'
+          ? Firmware.slot0MaxPayloadMcu
+          : Firmware.slot0MaxPayloadVcu;
+      if (payload.length > maxBytes) {
+        throw FormatException(
+          '${identity.bannerType} payload is ${payload.length} bytes, above '
+          'its $maxBytes-byte physical slot-0 ceiling.',
+        );
+      }
+    }
+
+    final declaredType = type?.trim().toUpperCase();
+    if (declaredType == null) return;
+    if ((declaredType == 'VCU' || declaredType == 'MCU') &&
+        !identity.bannerSupported) {
+      throw FormatException(
+        'The declared $declaredType type requires a supported firmware banner '
+        'at 0x400.',
+      );
+    }
+    if (identity.banner != null) {
+      final verdict = DeviceSpec.verifyBanner(
+        payload,
+        model?.trim().toLowerCase() ?? '',
+        declaredType,
+      );
+      if (!verdict.consistent) throw FormatException(verdict.message);
+    }
+  }
+
+  /// Pack a complete firmware component payload as-is. Unlike the guarded
+  /// full-dump Slice path, this generic Pack path does not infer a payload
+  /// boundary or apply ZP or SHU-key checks.
+  static Zip3BuildResult buildZip3FromPayload(
+    List<int> payload, {
+    required String type,
+    required String model,
+    required bool enforceModel,
+    String? displayName,
+  }) {
+    final t = type.trim().toUpperCase();
+    final m = model.trim().toLowerCase();
+    validateTypeFlag(t);
+    validateModel(m);
+    if (!kSupportedDevices.any((device) => device.model == m)) {
+      throw FormatException(
+        'This package is for ${m.toUpperCase()}. '
+        'x3utils supports ${DeviceSpec.modelList()} only.',
+      );
+    }
+    validatePayloadForPack(payload, type: t, model: m);
+
+    return _finishBuild(
+      payload: payload,
+      type: t,
+      model: m,
+      enforceModel: enforceModel,
+      displayName: displayName,
+    );
+  }
+
+  /// Shared tail of the build paths: derive the board, resolve the
+  /// display name, and pack the payload as an encrypted, MD5'd package.
+  static Zip3BuildResult _finishBuild({
+    required List<int> payload,
+    required String type,
+    required String model,
+    required bool enforceModel,
+    String? displayName,
+  }) {
+    final board = switch (type) {
+      'VCU' => '${model}_VCU_AT32',
+      'MCU' => 'x3_MCU_AT32',
+      'BMS' => 'x3_BMS',
+      'BLE' => '${model}_BLE',
+      _ => throw FormatException('Unsupported ZIP3 component type: $type.'),
+    };
     final name = (displayName != null && displayName.trim().isNotEmpty)
         ? displayName.trim()
-        : '${m}_$t';
+        : '${model}_$type';
 
     final zip = makeZipV3(
       data: payload,
       name: name,
-      typeFlag: t,
-      model: m,
+      typeFlag: type,
+      model: model,
       boards: [board],
       enforceModel: enforceModel,
       enc: 'encrypted',
@@ -243,12 +520,15 @@ class PackV3 {
 
     return Zip3BuildResult(
       zipBytes: zip,
-      model: m,
-      type: t,
+      model: model,
+      type: type,
       displayName: name,
       payloadLength: payload.length,
     );
   }
+
+  static int _leWord(List<int> b, int off) =>
+      b[off] | (b[off + 1] << 8) | (b[off + 2] << 16) | (b[off + 3] << 24);
 
   // ── Convenience: read a .bin, write the .zip ────────────────────────────────
 
@@ -286,19 +566,23 @@ class PackV3 {
   /// flash. A zip3 is defined as **encrypted and MD5'd**, so this is strict:
   ///
   /// 1. readable ZIP with `info.json`, `schemaVersion == 1`;
-  /// 2. supported VCU/MCU metadata whose `compatible` board agrees with its
-  ///    model/type;
+  /// 2. metadata whose `compatible` board agrees with its model/type and the
+  ///    selected [policy];
   /// 3. a `FIRM.bin.enc` member (a plain `FIRM.bin` alone is not a zip3 and is
   ///    rejected — the point of zip3 is the encryption);
   /// 4. a matching `md5.enc` in `info.json` — the payload is hashed and checked
   ///    before it is decrypted;
   /// 5. NinebotTEA decrypt, whose internal checksum guards the plaintext;
-  /// 6. a firmware banner that agrees with the package metadata.
+  /// 6. for VCU/MCU, a firmware banner that agrees with package metadata.
   ///
   /// The decrypted bytes are returned as-is (identical to `ninebottea decrypt`),
   /// including NinebotTEA's canonical trailing pad. Throws [FormatException] for
   /// anything that fails the above.
-  static UnpackedV3 unpackV3(List<int> zipBytes, {List<int>? key}) {
+  static UnpackedV3 unpackV3(
+    List<int> zipBytes, {
+    List<int>? key,
+    Zip3UnpackPolicy policy = Zip3UnpackPolicy.flash,
+  }) {
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(zipBytes);
@@ -332,20 +616,29 @@ class PackV3 {
       throw const FormatException('info.json has no firmware.model.');
     }
     final type = fw['type']?.toString().trim().toUpperCase();
-    if (type != 'VCU' && type != 'MCU') {
+    final allowedTypes = policy == Zip3UnpackPolicy.flash
+        ? const {'VCU', 'MCU'}
+        : const {'VCU', 'MCU', 'BMS', 'BLE'};
+    if (!allowedTypes.contains(type)) {
       throw FormatException(
         'This package contains ${type ?? 'unknown'} firmware. '
-        'x3utils flashes only VCU/MCU firmware.',
+        '${policy == Zip3UnpackPolicy.flash ? 'x3utils flashes only VCU/MCU firmware.' : 'Standalone Unpack supports VCU, MCU, BMS, and BLE.'}',
       );
     }
 
-    // ZIP3 is an integrity-bearing package. Every import path, including Flash
-    // Only, must reject unsupported or internally inconsistent metadata. An
-    // operator who intentionally wants to bypass package identity can decrypt
-    // it separately and select the raw slot-0 .bin instead.
-    final verdict = DeviceSpec.evaluateZip3(model, type);
-    if (!verdict.ok) {
-      throw FormatException(verdict.reason);
+    if (policy == Zip3UnpackPolicy.flash) {
+      // A package armed for flashing stays on the strict VCU/MCU allow-list.
+      final verdict = DeviceSpec.evaluateZip3(model, type);
+      if (!verdict.ok) {
+        throw FormatException(verdict.reason);
+      }
+    } else if (!kSupportedDevices.any(
+      (device) => device.model == model.toLowerCase(),
+    )) {
+      throw FormatException(
+        'This package is for ${model.toUpperCase()}. '
+        'x3utils supports ${DeviceSpec.modelList()} only.',
+      );
     }
 
     final compatibleValue = fw['compatible'];
@@ -362,9 +655,12 @@ class PackV3 {
         .cast<String>()
         .map((value) => value.trim())
         .toList(growable: false);
-    final expectedBoard = type == 'MCU'
-        ? 'x3_MCU_AT32'
-        : '${model.toLowerCase()}_VCU_AT32';
+    final expectedBoard = switch (type) {
+      'MCU' => 'x3_MCU_AT32',
+      'BMS' => 'x3_BMS',
+      'BLE' => '${model.toLowerCase()}_BLE',
+      _ => '${model.toLowerCase()}_VCU_AT32',
+    };
     if (compatible.length != 1 ||
         compatible.single.toLowerCase() != expectedBoard.toLowerCase()) {
       final boards = compatible.join(', ');
@@ -403,11 +699,13 @@ class PackV3 {
       key: key,
     ).decrypt(encBytes); // TEA checksum inside
 
-    // The decrypted payload must agree with the package claim. This checks the
-    // package itself; it does not claim that the connected controller matches.
-    final banner = DeviceSpec.verifyBanner(firmware, model, type!);
-    if (!banner.consistent) {
-      throw FormatException(banner.message);
+    // VCU/MCU carry the known X3 banner. BMS/BLE use different image formats,
+    // so extraction relies on package metadata + MD5 + TEA checksum instead.
+    if (type == 'VCU' || type == 'MCU') {
+      final banner = DeviceSpec.verifyBanner(firmware, model, type!);
+      if (!banner.consistent) {
+        throw FormatException(banner.message);
+      }
     }
 
     return UnpackedV3(
@@ -431,8 +729,7 @@ class Zip3Detect {
   final String? model;
 }
 
-/// Result of [PackV3.buildZip3FromDump]: the finished package plus the identity
-/// derived from the dump (for the UI/filename and logs).
+/// Finished package plus its declared identity (for the UI/filename and logs).
 class Zip3BuildResult {
   const Zip3BuildResult({
     required this.zipBytes,
@@ -445,7 +742,7 @@ class Zip3BuildResult {
   /// The complete zip3 archive, ready to write to disk.
   final Uint8List zipBytes;
 
-  /// Derived scooter model (e.g. `g3`) and type (`VCU`/`MCU`).
+  /// Declared scooter model and component type.
   final String model;
   final String type;
 
@@ -484,4 +781,17 @@ class UnpackedV3 {
 
   /// `info.json` firmware.type (accepted by [DeviceSpec] during unpack).
   String get type => (info['firmware'] as Map?)?['type']?.toString() ?? '';
+
+  /// Informational `info.json` firmware.enforceModel value. It is displayed but
+  /// deliberately not used as an extraction acceptance gate.
+  bool? get enforceModel {
+    final value = (info['firmware'] as Map?)?['enforceModel'];
+    return value is bool ? value : null;
+  }
+
+  /// Declared `info.json` firmware.encryption mode.
+  String? get encryption {
+    final value = (info['firmware'] as Map?)?['encryption'];
+    return value is String && value.trim().isNotEmpty ? value.trim() : null;
+  }
 }

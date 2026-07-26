@@ -100,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 14),
               const Text(
-                'Replace existing package?',
+                'Replace existing file?',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -109,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'A ZIP already exists at this exact path:',
+                'A file already exists at this exact path:',
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.5,
@@ -120,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
               DesktopPathDisplay(path: path, action: DesktopPathAction.none),
               const SizedBox(height: 12),
               const Text(
-                'Replace will permanently overwrite the existing package.',
+                'Replace will permanently overwrite the existing file.',
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.5,
@@ -216,6 +216,28 @@ class _HomeScreenState extends State<HomeScreen> {
     final res = await c.loadSlotFirmwareFromZip(file.path);
     if (!mounted) return;
     // Two states: loaded → green, rejected (bad model/type/banner) → red.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            res.ok ? res.message : 'Package rejected: ${res.message}',
+            style: const TextStyle(color: Colors.white),
+          ),
+          backgroundColor: res.ok ? AppColors.ok : AppColors.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  /// Standalone offline unpack: inspect a ZIP3 and populate its package details.
+  /// No output is written until the operator presses Unpack zip3.
+  Future<void> _pickUnpackZip() async {
+    const group = XTypeGroup(label: 'v3 package', extensions: ['zip']);
+    final file = await openFile(acceptedTypeGroups: [group]);
+    if (file == null) return;
+    final res = await c.selectZip3ForUnpack(file.path);
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -725,6 +747,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               onStart: _onStart,
                               onPickFirmware: _pickFirmware,
                               onPickZip: _pickFirmwareZip,
+                              onPickUnpackZip: _pickUnpackZip,
                             ),
                           ),
                         ],
@@ -1295,12 +1318,6 @@ class _ActionTile extends StatelessWidget {
                     c.actionId != action.id) {
                   final ok = await _showRescueWarning(context);
                   if (ok != true) return;
-                } else if (action.id == 'make_zip3' &&
-                    c.actionId != action.id) {
-                  // An untimed "what is this for" intro so the operator-declared
-                  // identity is understood before entering the action.
-                  final ok = await _showMakeZip3Notice(context);
-                  if (ok != true) return;
                 }
                 c.selectAction(action.id);
               },
@@ -1382,21 +1399,71 @@ class _ActionTile extends StatelessWidget {
 
 // ─────────────────────────────────────────── main area
 
-class _MainArea extends StatelessWidget {
+class _MainArea extends StatefulWidget {
   const _MainArea({
     required this.c,
     required this.onStart,
     required this.onPickFirmware,
     required this.onPickZip,
+    required this.onPickUnpackZip,
   });
   final AppController c;
   final Future<void> Function() onStart;
   final Future<void> Function() onPickFirmware;
   final Future<void> Function() onPickZip;
+  final Future<void> Function() onPickUnpackZip;
+
+  @override
+  State<_MainArea> createState() => _MainAreaState();
+}
+
+class _MainAreaState extends State<_MainArea> {
+  final PageController _zip3Pages = PageController();
+  late String _lastActionId = widget.c.actionId;
+  late StageState _lastStage = widget.c.stage;
+
+  @override
+  void dispose() {
+    _zip3Pages.dispose();
+    super.dispose();
+  }
+
+  void _setZip3Page(Zip3WorkspacePage page) {
+    widget.c.setZip3WorkspacePage(page);
+    if (!_zip3Pages.hasClients) return;
+    _zip3Pages.animateToPage(
+      page.index,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeInOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final c = widget.c;
     final a = c.action;
+    if (_lastActionId != c.actionId) {
+      _lastActionId = c.actionId;
+      if (c.actionId == 'make_zip3') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _zip3Pages.hasClients) _zip3Pages.jumpToPage(0);
+        });
+      }
+    }
+    if (_lastStage != c.stage) {
+      final returnedToIdle =
+          _lastStage != StageState.idle &&
+          c.stage == StageState.idle &&
+          c.actionId == 'make_zip3';
+      _lastStage = c.stage;
+      if (returnedToIdle) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _zip3Pages.hasClients) {
+            _zip3Pages.jumpToPage(c.zip3WorkspacePage.index);
+          }
+        });
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1431,13 +1498,15 @@ class _MainArea extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 200),
-                child: Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [for (final ch in a.chips) _Chip(ch)],
-                ),
+                constraints: const BoxConstraints(maxWidth: 300),
+                child: a.id == 'make_zip3'
+                    ? _Zip3WorkspaceSwitch(c: c, onChanged: _setZip3Page)
+                    : Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [for (final ch in a.chips) _Chip(ch)],
+                      ),
               ),
             ],
           ),
@@ -1445,9 +1514,11 @@ class _MainArea extends StatelessWidget {
         Expanded(
           child: _HeroStage(
             c: c,
-            onStart: onStart,
-            onPickFirmware: onPickFirmware,
-            onPickZip: onPickZip,
+            zip3Pages: _zip3Pages,
+            onStart: widget.onStart,
+            onPickFirmware: widget.onPickFirmware,
+            onPickZip: widget.onPickZip,
+            onPickUnpackZip: widget.onPickUnpackZip,
           ),
         ),
         _StatusBar(c: c),
@@ -1493,19 +1564,87 @@ class _Chip extends StatelessWidget {
   }
 }
 
+class _Zip3WorkspaceSwitch extends StatelessWidget {
+  const _Zip3WorkspaceSwitch({required this.c, required this.onChanged});
+  final AppController c;
+  final ValueChanged<Zip3WorkspacePage> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 49,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0x30000000),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _item('SLICE', Zip3WorkspacePage.slice),
+          _item('PACK', Zip3WorkspacePage.pack),
+          _item('UNPACK', Zip3WorkspacePage.unpack),
+        ],
+      ),
+    );
+  }
+
+  Widget _item(String label, Zip3WorkspacePage page) {
+    final selected = c.zip3WorkspacePage == page;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey('zip3-${page.name}'),
+        onTap: c.running ? null : () => onChanged(page),
+        borderRadius: BorderRadius.circular(999),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.ok.withValues(alpha: 0.16)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected
+                  ? AppColors.ok.withValues(alpha: 0.7)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.9,
+              color: selected ? AppColors.ok : AppColors.dim,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────── hero stage
 
 class _HeroStage extends StatefulWidget {
   const _HeroStage({
     required this.c,
+    required this.zip3Pages,
     required this.onStart,
     required this.onPickFirmware,
     required this.onPickZip,
+    required this.onPickUnpackZip,
   });
   final AppController c;
+  final PageController zip3Pages;
   final Future<void> Function() onStart;
   final Future<void> Function() onPickFirmware;
   final Future<void> Function() onPickZip;
+  final Future<void> Function() onPickUnpackZip;
   @override
   State<_HeroStage> createState() => _HeroStageState();
 }
@@ -1570,123 +1709,147 @@ class _HeroStageState extends State<_HeroStage>
               child: Column(
                 children: [
                   Expanded(
-                    // Optical center: nudge the stack up from true middle so it
-                    // reads as balanced (a little more air below the button than
-                    // above the eyebrow). Only bites when there's vertical slack;
-                    // tall screens (Make zip3) still fill and scroll.
-                    child: Align(
-                      alignment: const Alignment(0, -0.08),
-                      child: SingleChildScrollView(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 600),
-                          child: Padding(
-                            // Tighter top/bottom so the tall Make zip3 screen
-                            // consumes the vertical space instead of overflowing
-                            // the button past the card edge.
-                            padding: const EdgeInsets.fromLTRB(28, 18, 28, 16),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  c.heroEyebrow.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 2.8,
-                                    color: c.stage == StageState.idle
-                                        ? c.stakesColor
-                                        : accent,
-                                  ),
-                                ),
-                                const SizedBox(height: 14),
-                                Text(
-                                  c.heroTitle,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 30,
-                                    fontWeight: FontWeight.w700,
-                                    height: 1.08,
-                                    color: AppColors.txt,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                _HeroMessage(
-                                  text: c.heroMessage,
-                                  color: c.heroMessageWarn
-                                      ? AppColors.hold
-                                      : c.stage == StageState.fail
-                                      ? AppColors.danger
-                                      : c.messageTone.color,
-                                  callout:
-                                      c.heroMessageWarn ||
-                                      c.heroMessage.length > 96 ||
-                                      c.heroMessage.contains('\n'),
-                                  icon: c.heroMessageWarn
-                                      ? Icons.warning_amber_rounded
-                                      : Icons.info_outline_rounded,
-                                ),
-                                if (c.resultNote != null) ...[
-                                  const SizedBox(height: 14),
-                                  _HeroMessage(
-                                    text: 'Note: ${c.resultNote!}',
-                                    color: AppColors.hold,
-                                    callout: true,
-                                    icon: Icons.info_outline_rounded,
-                                  ),
-                                ],
-                                if (c.resultPath != null) ...[
-                                  const SizedBox(height: 14),
-                                  ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: kHeroBlockWidth,
-                                    ),
-                                    child: DesktopPathDisplay(
-                                      path: c.resultPath!,
-                                      action: DesktopPathAction.reveal,
-                                    ),
-                                  ),
-                                ],
-                                // Make zip3's idle hero is the picker + identity
-                                // form, so the generic bolt is redundant there.
-                                if (!(c.actionId == 'make_zip3' &&
-                                    c.stage == StageState.idle)) ...[
-                                  const SizedBox(height: 22),
-                                  _Visual(c: c, accent: accent, pulse: _pulse),
-                                ],
-                                if (c.stage == StageState.idle &&
-                                    c.action.needsFirmware) ...[
-                                  const SizedBox(height: 14),
-                                  _FirmwareBar(
-                                    c: c,
-                                    onPick: widget.onPickFirmware,
-                                    onPickZip: widget.onPickZip,
-                                  ),
-                                ],
-                                if (c.stage == StageState.idle &&
-                                    c.actionId == 'make_zip3') ...[
-                                  const SizedBox(height: 12),
-                                  _MakeZip3Form(c: c),
-                                ],
-                                const SizedBox(height: 26),
-                                _StageButtons(c: c, onStart: widget.onStart),
-                                // A faint opt-in under the compat pill: also pack
-                                // a BLE zip3 of the patched image once it flashes.
-                                if (c.stage == StageState.idle &&
-                                    c.actionId == 'flash_compat') ...[
-                                  const SizedBox(height: 14),
-                                  _CompatZip3Toggle(c: c),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    child:
+                        c.actionId == 'make_zip3' && c.stage == StageState.idle
+                        ? PageView(
+                            controller: widget.zip3Pages,
+                            scrollDirection: Axis.vertical,
+                            physics: const NeverScrollableScrollPhysics(),
+                            allowImplicitScrolling: false,
+                            children: [
+                              KeyedSubtree(
+                                key: const ValueKey('zip3-slice-page'),
+                                child: _buildStagePage(c, accent),
+                              ),
+                              KeyedSubtree(
+                                key: const ValueKey('zip3-pack-page'),
+                                child: _buildStagePage(c, accent),
+                              ),
+                              _UnpackZip3Page(
+                                c: c,
+                                onPick: widget.onPickUnpackZip,
+                                onStart: widget.onStart,
+                              ),
+                            ],
+                          )
+                        : _buildStagePage(c, accent),
                   ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStagePage(AppController c, Color accent) {
+    // Optical center: nudge the stack up from true middle so it reads as
+    // balanced. Tall pages still fill and scroll inside their own viewport.
+    return Align(
+      alignment: const Alignment(0, -0.08),
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(28, 18, 28, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  c.heroEyebrow.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2.8,
+                    color: c.stage == StageState.idle ? c.stakesColor : accent,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  c.heroTitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w700,
+                    height: 1.08,
+                    color: AppColors.txt,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _HeroMessage(
+                  text: c.heroMessage,
+                  color: c.heroMessageWarn
+                      ? AppColors.hold
+                      : c.stage == StageState.fail
+                      ? AppColors.danger
+                      : c.messageTone.color,
+                  callout:
+                      c.heroMessageWarn ||
+                      c.heroMessage.length > 96 ||
+                      c.heroMessage.contains('\n'),
+                  icon: c.heroMessageWarn
+                      ? Icons.warning_amber_rounded
+                      : Icons.info_outline_rounded,
+                ),
+                if (c.resultNote != null) ...[
+                  const SizedBox(height: 14),
+                  _HeroMessage(
+                    text: 'Note: ${c.resultNote!}',
+                    color: AppColors.hold,
+                    callout: true,
+                    icon: Icons.info_outline_rounded,
+                  ),
+                ],
+                if (c.resultPath != null) ...[
+                  const SizedBox(height: 14),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: kHeroBlockWidth,
+                    ),
+                    child: DesktopPathDisplay(
+                      path: c.resultPath!,
+                      action: DesktopPathAction.reveal,
+                    ),
+                  ),
+                ],
+                // Pack zip3's idle hero is the picker + identity form, so the
+                // generic bolt is redundant there.
+                if (!(c.actionId == 'make_zip3' &&
+                    c.stage == StageState.idle)) ...[
+                  const SizedBox(height: 22),
+                  _Visual(c: c, accent: accent, pulse: _pulse),
+                ],
+                if (c.stage == StageState.idle && c.action.needsFirmware) ...[
+                  const SizedBox(height: 14),
+                  _FirmwareBar(
+                    c: c,
+                    onPick: widget.onPickFirmware,
+                    onPickZip: widget.onPickZip,
+                  ),
+                ],
+                if (c.stage == StageState.idle &&
+                    c.actionId == 'make_zip3') ...[
+                  const SizedBox(height: 12),
+                  _MakeZip3Form(c: c),
+                ],
+                // The packer's idle page carries a file bar AND a form, so it
+                // gets a tighter pre-CTA gap than the other actions.
+                SizedBox(
+                  height:
+                      c.actionId == 'make_zip3' && c.stage == StageState.idle
+                      ? 18
+                      : 26,
+                ),
+                _StageButtons(c: c, onStart: widget.onStart),
+                if (c.stage == StageState.idle &&
+                    c.actionId == 'flash_compat') ...[
+                  const SizedBox(height: 14),
+                  _CompatZip3Toggle(c: c),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1736,6 +1899,324 @@ class _HeroMessage extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Standalone offline ZIP3 unpack. Selection inspects the package and fills the
+/// details; Start re-validates it before writing the chosen local `.bin`.
+class _UnpackZip3Page extends StatefulWidget {
+  const _UnpackZip3Page({
+    required this.c,
+    required this.onPick,
+    required this.onStart,
+  });
+  final AppController c;
+  final Future<void> Function() onPick;
+  final Future<void> Function() onStart;
+
+  @override
+  State<_UnpackZip3Page> createState() => _UnpackZip3PageState();
+}
+
+class _UnpackZip3PageState extends State<_UnpackZip3Page> {
+  final TextEditingController _nameCtl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameCtl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.c;
+    final hasPackage = c.unpackZip3Path != null;
+    if (_nameCtl.text != c.unpackOutputName) {
+      _nameCtl.value = TextEditingValue(
+        text: c.unpackOutputName,
+        selection: TextSelection.collapsed(offset: c.unpackOutputName.length),
+      );
+    }
+    final nameCheck = Firmware.validateUnpackedFilename(c.unpackOutputName);
+    final unpackInfo = c.unpackPayloadLength == null
+        ? null
+        : '${c.unpackPayloadLength} bytes · '
+              'enforceModel ${c.unpackEnforceModel == null
+                  ? '—'
+                  : c.unpackEnforceModel!
+                  ? 'yes'
+                  : 'no'} · '
+              'encryption ${c.unpackEncryption?.toLowerCase() ?? '—'}';
+    return Align(
+      alignment: const Alignment(0, -0.08),
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(28, 18, 28, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'OFFLINE · READS A FILE',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2.8,
+                    color: AppColors.ok,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  hasPackage ? 'Ready to unpack' : 'Choose a zip3 package',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w700,
+                    height: 1.08,
+                    color: AppColors.txt,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Inspect the package, then decrypt its firmware to a local '
+                  '.bin for editing or flashing.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: AppColors.dim,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.panel,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.line2),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.inventory_2_outlined,
+                        size: 18,
+                        color: AppColors.mut,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          c.unpackZip3FileName ?? 'No zip3 package chosen',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: hasPackage ? kMono : null,
+                            fontSize: 13,
+                            color: hasPackage ? AppColors.txt : AppColors.dim,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      _PillButton(
+                        label: hasPackage ? 'Change' : 'Choose .zip',
+                        onTap: widget.onPick,
+                        bg: AppColors.line,
+                        fg: AppColors.txt,
+                        border: AppColors.line2,
+                        small: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.panel,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.line2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'PACKAGE DETAILS',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.6,
+                          color: AppColors.mut,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 1,
+                            child: _UnpackDetail(
+                              label: 'Model',
+                              value: c.unpackModel?.toUpperCase(),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 1,
+                            child: _UnpackDetail(
+                              label: 'Type',
+                              value: c.unpackType?.toUpperCase(),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 2,
+                            child: _UnpackDetail(
+                              label: 'Name',
+                              value: c.unpackDisplayName,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _UnpackDetail(
+                        label: 'Info',
+                        value: unpackInfo,
+                        valueFontSize: 12,
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _nameCtl,
+                        enabled: hasPackage,
+                        onChanged: c.setUnpackOutputName,
+                        style: const TextStyle(
+                          fontFamily: kMono,
+                          fontSize: 13,
+                          color: AppColors.txt,
+                        ),
+                        cursorColor: AppColors.brand,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          labelText: 'Output filename',
+                          labelStyle: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.dim,
+                          ),
+                          hintText: 'firmware.bin',
+                          hintStyle: const TextStyle(
+                            fontFamily: kMono,
+                            fontSize: 13,
+                            color: AppColors.mut,
+                          ),
+                          errorText:
+                              hasPackage &&
+                                  c.unpackOutputName.trim().isNotEmpty &&
+                                  !nameCheck.ok
+                              ? nameCheck.message
+                              : null,
+                          helperText:
+                              '.bin is added automatically. Output folder: '
+                              '${Firmware.unpackedZip3DirLabel.split(RegExp(r'[\\/]')).join(' › ')}',
+                          helperStyle: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.mut,
+                          ),
+                          helperMaxLines: 2,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 14,
+                          ),
+                          filled: true,
+                          fillColor: AppColors.panel2,
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: AppColors.line2,
+                            ),
+                          ),
+                          disabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: AppColors.line2,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: AppColors.brand),
+                          ),
+                          errorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: AppColors.danger,
+                            ),
+                          ),
+                          focusedErrorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: AppColors.danger,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 26),
+                _PillButton(
+                  label: 'Unpack zip3',
+                  onTap: c.canStart ? widget.onStart : null,
+                  gradient: [AppColors.brand, AppColors.brand2],
+                  fg: const Color(0xFF04120F),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UnpackDetail extends StatelessWidget {
+  const _UnpackDetail({required this.label, this.value, this.valueFontSize});
+  final String label;
+  final String? value;
+  final double? valueFontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.panel2,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.line2),
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: AppColors.dim),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value ?? '—',
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.start,
+              style: TextStyle(
+                fontFamily: kMono,
+                fontSize: valueFontSize,
+                color: value == null ? AppColors.mut : AppColors.txt,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2174,118 +2655,6 @@ class _StageButtons extends StatelessWidget {
   );
 }
 
-/// Entry intro for Make zip3: an untimed "what is this for" modal shown when
-/// the action is opened from the rail. The action is offline and
-/// non-destructive, so this explains its best-effort BLE-backup workflow, the
-/// stale-ZP limitation, and the operator-declared package identity. Returns true
-/// to enter the action.
-Future<bool?> _showMakeZip3Notice(BuildContext context) {
-  return showDialog<bool>(
-    context: context,
-    barrierColor: const Color(0xB3040A0F),
-    builder: (ctx) => Dialog(
-      backgroundColor: AppColors.panel,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: AppColors.line2),
-      ),
-      child: Container(
-        width: 420,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: AppColors.brand.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.inventory_2_outlined,
-                color: AppColors.brand,
-                size: 24,
-              ),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'What Make zip3 is for',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.txt,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Make zip3 is an optional, best-effort way to turn a fresh '
-              '128 KB ST-Link backup into a local package for the BLE app’s '
-              '“Load from file”. It helps you keep repo firmware versions that '
-              'may no longer be available. The conversion is fully offline.',
-              style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Use a full backup taken immediately after the current firmware '
-              'was installed through BLE, before any ST-Link firmware write. '
-              'BLE records the payload length in ZP; an ST-Link slot0 write '
-              'does not update it, so a valid-looking ZP can be stale.',
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.5,
-                color: AppColors.hold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'x3utils checks the ZP record and repo firmware key, but cannot '
-              'detect a stale valid ZP. It refuses missing or invalid evidence '
-              'rather than guess. A created package is not a guarantee — '
-              'confirm that the BLE app accepts it.',
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.5,
-                color: AppColors.hold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'The package can also be used with Flash slot 0. Its Type and '
-              'Model come from your selection, not the physical controller. '
-              'Confirm both before you pack.',
-              style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                _PillButton(
-                  label: 'Cancel',
-                  onTap: () => Navigator.pop(ctx, false),
-                  bg: AppColors.line,
-                  fg: AppColors.txt,
-                  border: AppColors.line2,
-                  small: true,
-                ),
-                const SizedBox(width: 10),
-                _PillButton(
-                  label: 'Continue',
-                  onTap: () => Navigator.pop(ctx, true),
-                  gradient: [AppColors.brand, AppColors.brand2],
-                  fg: const Color(0xFF04120F),
-                  small: true,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 /// Selection gate for Flash Only: shown every time the action is entered from
 /// the left pane. Flash Only is the deliberate override — no backup and no
 /// target-match guard — so entry requires sitting through a short countdown.
@@ -2640,7 +3009,7 @@ class _StatusBar extends StatelessWidget {
   Widget _sep() => Container(
     width: 1,
     height: 18,
-    margin: const EdgeInsets.symmetric(horizontal: 14),
+    margin: const EdgeInsets.symmetric(horizontal: 13),
     color: AppColors.line,
   );
 }
@@ -3049,9 +3418,9 @@ class _FlashOnlyScopeControl extends StatelessWidget {
   }
 }
 
-/// The offline "Make zip3" form: operator-declared Type/Model (preselected from
-/// the loaded dump's banner), an enforce-model checkbox, and an editable package
-/// name. Reads a full backup dump and writes a BLE-loadable v3 package.
+/// Shared Slice/Pack identity form: operator-declared Type/Model (optionally
+/// preselected from a readable VCU/MCU banner), an enforce-model checkbox, and
+/// an editable package name.
 class _MakeZip3Form extends StatefulWidget {
   const _MakeZip3Form({required this.c});
   final AppController c;
@@ -3061,10 +3430,20 @@ class _MakeZip3Form extends StatefulWidget {
 
 class _MakeZip3FormState extends State<_MakeZip3Form> {
   final TextEditingController _nameCtl = TextEditingController();
+  final FocusNode _nameFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // The name box paints its own focus border (it is a plain container, not
+    // an InputDecorator), so rebuild on focus change.
+    _nameFocus.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
     _nameCtl.dispose();
+    _nameFocus.dispose();
     super.dispose();
   }
 
@@ -3082,9 +3461,7 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
     }
     final hasDump = c.firmwarePath != null;
     final canName = c.zip3Type != null && c.zip3Model != null;
-    final defaultName = canName
-        ? Firmware.defaultZip3Name(model: c.zip3Model!, type: c.zip3Type!)
-        : 'model_TYPE_timestamp';
+    final defaultName = c.zip3DefaultName ?? 'model_TYPE_name';
 
     return Opacity(
       opacity: hasDump ? 1 : 0.5,
@@ -3113,15 +3490,7 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Expanded(
-                    child: _dropdown(
-                      hint: 'Type',
-                      value: c.zip3Type,
-                      items: AppController.zip3Types,
-                      onChanged: c.setZip3Type,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
+                  // Model before Type: reads like the banner ("G3 VCU").
                   Expanded(
                     child: _dropdown(
                       hint: 'Model',
@@ -3131,13 +3500,22 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
                       labelOf: (m) => m.toUpperCase(),
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _dropdown(
+                      hint: 'Type',
+                      value: c.zip3Type,
+                      items: c.zip3TypeOptions,
+                      onChanged: c.setZip3Type,
+                    ),
+                  ),
                 ],
               ),
               if (hasDump && !canName) ...[
                 const SizedBox(height: 8),
                 Text(
                   c.zip3Type == 'MCU'
-                      ? 'An MCU dump has no model identity — pick the model.'
+                      ? 'MCU firmware has no model identity — pick the model.'
                       : 'Pick the firmware type and model to build.',
                   style: const TextStyle(fontSize: 12, color: AppColors.hold),
                 ),
@@ -3145,51 +3523,54 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
               const SizedBox(height: 10),
               _EnforceModelToggle(c: c),
               const SizedBox(height: 12),
-              TextField(
-                controller: _nameCtl,
-                onChanged: c.setZip3Name,
-                style: const TextStyle(
-                  fontFamily: kMono,
-                  fontSize: 13,
-                  color: AppColors.txt,
-                ),
-                cursorColor: AppColors.brand,
-                decoration: InputDecoration(
-                  isDense: true,
-                  labelText: 'Package name',
-                  labelStyle: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.dim,
-                  ),
-                  hintText: defaultName,
-                  hintStyle: const TextStyle(
-                    fontFamily: kMono,
-                    fontSize: 13,
-                    color: AppColors.mut,
-                  ),
-                  helperText:
-                      'Blank → the default above. Output folder: '
-                      '${Firmware.packedZip3DirLabel.split(RegExp(r'[\\/]')).join(' › ')}',
-                  helperStyle: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.mut,
-                  ),
-                  helperMaxLines: 2,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 11,
-                  ),
-                  filled: true,
-                  fillColor: AppColors.panel2,
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.line2),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: AppColors.brand),
+              // The name box clones the dropdowns' fixed 44 px container
+              // rather than using an InputDecorator: an outline TextField's
+              // height follows font metrics, which differ between the test
+              // font and real platform fonts, so padding math cannot keep the
+              // boxes matched. A fixed-height box matches by construction.
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.panel2,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _nameFocus.hasFocus
+                        ? AppColors.brand
+                        : AppColors.line2,
                   ),
                 ),
+                child: Center(
+                  child: TextField(
+                    controller: _nameCtl,
+                    focusNode: _nameFocus,
+                    onChanged: c.setZip3Name,
+                    style: const TextStyle(
+                      fontFamily: kMono,
+                      fontSize: 13,
+                      color: AppColors.txt,
+                    ),
+                    cursorColor: AppColors.brand,
+                    decoration: InputDecoration.collapsed(
+                      hintText: defaultName,
+                      hintStyle: const TextStyle(
+                        fontFamily: kMono,
+                        fontSize: 13,
+                        color: AppColors.mut,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              // One line on purpose: this page is the tallest idle layout in
+              // the app, and a wrapped caption costs a line the MCU case
+              // (which adds a "pick the model" hint) needs. The output folder
+              // is still shown with a reveal button on the result screen.
+              const Text(
+                'Package name — blank uses the suggestion.',
+                style: TextStyle(fontSize: 11, color: AppColors.mut),
               ),
             ],
           ),
