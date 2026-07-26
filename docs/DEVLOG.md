@@ -1491,9 +1491,11 @@ Linux/macOS get the same code but were not rebuilt this session.
     prompt before promptless `Read-Host`, because `Read-Host` hides its own
     prompt under Flutter's redirected stdio. The separate `x3utils_win` CLI
     release tree is intentionally unchanged.
-  - Linux and macOS need the shared Dart/controller change only. Their Bash
-    `read -p` prompts already reach Flutter; do not copy the Windows PowerShell
-    workaround into either Bash tree.
+  - Correction after macOS retest: Bash suppresses `read -p` prompts when
+    Flutter launches the script with redirected stdin. The macOS
+    `rdp_check.sh` and `rescue_unlock.sh` retry loops now print the prompt
+    explicitly before a promptless `read`, matching the Windows redirected-
+    stdio workaround. Linux still needs its packaged retry flow rechecked.
   - Windows live-UI retest was reported fixed. `flutter analyze`,
     `git diff --check`, Dart formatting, and both relevant PowerShell parse
     checks passed; no hardware command was run by the agent. Linux/macOS
@@ -1505,3 +1507,10 @@ Linux/macOS get the same code but were not rebuilt this session.
     idle. Never test rescue with a reachable target unless a destructive mass
     erase is explicitly intended. Record completed platform results in
     `docs/testing.md`.
+  - macOS live-UI retest after the explicit Bash prompt fix was reported
+    fixed. Linux handoff: its Flutter-native `rdp_check.sh` and
+    `rescue_unlock.sh` still use `read -p`, so apply the same explicit
+    `echo` followed by promptless `read` before packaged testing. Add
+    redirected-stdio coverage for both verbs, then rebuild normally and repeat
+    the disconnected-ST-LINK Retry/Dismiss checks above. Do not exercise rescue
+    with a reachable target.

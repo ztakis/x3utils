@@ -108,7 +108,9 @@ while true; do
         echo "       probe and the contact (touch the contact point, NOT on top of the cap),"
         echo "       keep it steady. (Read-only check — retrying never changes the chip.)"
         echo
-        read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
+        # Bash hides read -p prompts when Flutter redirects stdin through a pipe.
+        echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}"
+        read -r retry_choice
         retry_choice_lc="$(echo "$retry_choice" | tr '[:upper:]' '[:lower:]')"
         if [[ "$retry_choice_lc" == "q" ]]; then
             break   # keep this failed scan -> verdict prints INCONCLUSIVE, exit 3

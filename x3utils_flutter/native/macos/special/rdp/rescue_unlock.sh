@@ -82,7 +82,9 @@ while true; do
     echo "       the nRST/C45 contact, check grounding/release timing, keep it steady. The"
     echo "       rewrite re-erases and reprograms, so a retry is safe."
     echo
-    read -rp "$(echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}")" retry_choice
+    # Bash hides read -p prompts when Flutter redirects stdin through a pipe.
+    echo -e "${CL_C}Press ENTER to retry, or type Q to quit: ${CL_NC}"
+    read -r retry_choice
     retry_choice_lc="$(echo "$retry_choice" | tr '[:upper:]' '[:lower:]')"
     if [[ "$retry_choice_lc" == "q" ]]; then
         exit 1
