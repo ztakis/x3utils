@@ -1761,3 +1761,16 @@ Linux/macOS get the same code but were not rebuilt this session.
   - Still uncovered on hardware: `Keep it`, the pre-flash-backup abort, the
     all-`0xFF` blank verdict (free to test right after a rescue mass erase,
     before reflashing), and the Linux/macOS trash moves.
+- Linux and macOS closed out the same day, after the commit: the maintainer
+  reported no behavioral difference from the Windows runs — staged `.bin.part`,
+  no `.bin`, the cleanup modal, and the trash move. That is the first real
+  exercise of the freedesktop `info/*.trashinfo` path and of the `~/.Trash`
+  move; both were code-reviewed only until then. No per-run figures were
+  captured. Linux also restored the board from a `.bin` afterwards and passed.
+  - Those two boards read back all zeros with FAP reported NOT enabled, i.e. an
+    empty chip, not a masked one. Worth knowing because `inspectDump` keys on
+    the byte pattern alone: an all-zero image gets the `masked` verdict and the
+    "readout-protection signature" message regardless of the actual protection
+    state. The message therefore names a cause the bytes cannot fully prove. It
+    is left as-is for now — `Check protection` is exactly where it sends the
+    operator, and that tool reads the FAP byte and settles it.
