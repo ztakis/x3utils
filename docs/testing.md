@@ -30,6 +30,8 @@ Record one row per meaningful test run.
 | Date | OS | Board | ST-LINK | Mode | Action | Result | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TBD | TBD | TBD | TBD | TBD | dump / flash / compat / slot0 / rdp | pass / fail |  |
+| 2026-07-29 | Windows home primary | AT32F415 X3 testbed, deliberately FAP'd via CLI `rdp.ps1 -Enable` | ST-LINK | A / Default SWD | Flutter v1.2.1 masked-read evidence path (Backup) | pass | The dump completed normally — 131072 bytes in 1.97 s, exit 0, `xPSR/pc/msp` all zero — and inspection returned the masked verdict. No `.bin` was created; the file stayed `.bin.part`. The screen named the readout-protection signature and pointed at Check protection, the console logged `chip finding, file left at →`, and the single button read `Dismiss` rather than "Back to setup". The cleanup modal used the finding title, and `Move to Recycle Bin` moved it and showed the note. Still to cover: `Keep it`, the pre-flash-backup abort, the all-0xFF blank verdict after a rescue erase, and the Linux/macOS trash moves. |
+| 2026-07-29 | Windows home primary | AT32F415 X3 testbed | ST-LINK | A / Default SWD | Flutter v1.2.1 invalid-backup handling (Backup) | pass | Contact pulled mid-dump after `target halted`. OpenOCD exited 1 with 28672 of 131072 bytes read. The file stayed `dump_2026-07-29_00-41-51.bin.part`; no `.bin` was created. The cleanup modal stated the shortfall and the identity-in-the-last-4-KB reason, `Move to Recycle Bin` removed it from the backup folder, and the failure screen showed the note. Console recorded `incomplete read left at` then the move. Still to cover on hardware: `Keep it`, the pre-flash-backup abort, a read-protected board's all-zero evidence path, and the Linux/macOS trash moves. |
 | 2026-07-26 | Linux Mint home primary / x86_64 | No target | disconnected | selected GUI mode | Flutter v1.2.1 debug RDP retry failure flow | pass | Maintainer checked the corrected debug build and reported the issue fixed. This validates the live disconnected-adapter failure presentation in the debug build; no protection rewrite reached hardware. The generated AppImage contains the same corrected scripts but was not used for this check. |
 | 2026-07-24 | Windows home primary | ZT3 VCU test board | ST-LINK | A / Default SWD | Flutter v1.2.0 SHU compatible with the "Attempt to also make zip3" checkbox ticked | pass | Compat flash completed green (TOOK 0:07). With the checkbox on, the run emitted three co-located files under one shared timestamp in `Documents/x3utils/compat/` — `compat_<ts>.bin` (backup), `compat_<ts>_patched.bin`, and `compat_<ts>_patched.zip` — and showed the "BLE-loadable zip3 saved beside the backup" note. The checkbox-produced `_patched.zip` was then loaded through the BLE app's Load from file, recognized as `zt3 / VCU`, flashed 57.4 KB, and reported "Firmware flashed successfully". End-to-end proven: compat flash → auto zip3 → BLE load → PASS. VCU path; MCU auto-skip not exercised here. |
 | 2026-07-24 | macOS 15.7.7 / Intel x86_64 | ZT3 VCU test board | ST-LINK | A / Default SWD | Flutter v1.2.0 BETA packaged Check connection + matching Backup + Flash | pass | The packaged universal app used its embedded xPack OpenOCD backend. Check connection halted the target, found the `artery` flash bank at `0x08000000`, and exited 0. The guarded run saved `/Users/akis/Documents/x3utils/backup/dump_2026-07-24_00-48-46.bin` plus its secondary copy, identified matching ZT3 VCU target and genuine firmware, erased and wrote 131072 bytes in 47.788 s, verified 131072 bytes in 3.303 s, exited 0, and completed green. This closes the minimum macOS hardware smoke; the broader Windows matrix was not repeated. |
@@ -64,7 +66,26 @@ Record one row per meaningful test run.
 - Confirm output file exists in the platform backup folder.
 - Confirm secondary backup exists if that option is enabled.
 - Confirm validator accepts the dumped file.
+- Confirm no `.bin.part` file is left behind after a successful dump.
 - Note whether read protection or connection timing affected the run.
+
+## Invalid Backup Test
+
+Pull the SWD contact mid-dump, after `target halted`, to produce a short read.
+Repeat for Backup and for Backup + Flash.
+
+- Confirm the backup folder gets a `.bin.part` file and no new `.bin`.
+- Confirm the failure screen names the shortfall (`n of 131072 bytes`).
+- Confirm the cleanup modal appears, and that `Keep it` leaves the file exactly
+  where it is.
+- Confirm `Move to Recycle Bin` / `Move to Trash` removes it from the backup
+  folder and that it is recoverable from the OS trash.
+- Confirm Backup + Flash aborted before any erase or write.
+- On a read-protected board, confirm the full-size all-zero read gets the
+  finding wording ("This read is a finding, not a backup"), points at Check
+  protection, and offers `Dismiss` rather than "Back to setup".
+- Right after a rescue mass erase, before reflashing, confirm the all-`0xFF`
+  blank verdict behaves the same way.
 
 ## Full Flash Test
 

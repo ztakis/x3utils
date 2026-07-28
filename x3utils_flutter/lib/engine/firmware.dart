@@ -9,6 +9,52 @@ class FirmwareCheck {
   static FirmwareCheck fail(String m) => FirmwareCheck(false, m);
 }
 
+/// What a finished dump file actually is. A failed read and a read-protected
+/// chip both used to collapse into one "invalid" message, but they are opposite
+/// findings: one is a broken read of a working chip, the other is a complete,
+/// correct read of a chip that refuses to show its flash.
+enum DumpVerdict {
+  /// 128 KB of real, varied firmware. The only verdict that becomes a backup.
+  ok,
+
+  /// OpenOCD wrote nothing at all.
+  missing,
+
+  /// Short (or long) read. Identity lives in the last 4 KB at 0x1F000, so a
+  /// truncated dump is not a degraded backup — it is not a backup.
+  incomplete,
+
+  /// Full size, all `0x00`: the readout-protection (FAP) signature. Valid
+  /// evidence about the chip, and the reason to run Check protection.
+  masked,
+
+  /// Full size, all `0xFF`: an erased or blank chip. Nothing to back up.
+  blank,
+
+  /// Full size, but one repeated byte that is neither `0x00` nor `0xFF`.
+  uniform,
+}
+
+class DumpCheck {
+  const DumpCheck(this.verdict, this.message, this.length);
+
+  final DumpVerdict verdict;
+  final String message;
+  final int length;
+
+  bool get ok => verdict == DumpVerdict.ok;
+
+  /// A file that never can be a backup, and that only clutters the folder.
+  /// These are the ones the operator is offered a trash move for.
+  bool get isJunk =>
+      verdict == DumpVerdict.incomplete || verdict == DumpVerdict.uniform;
+
+  /// A complete read that says something true about the chip. Kept, never
+  /// swept up as junk.
+  bool get isEvidence =>
+      verdict == DumpVerdict.masked || verdict == DumpVerdict.blank;
+}
+
 /// Port of FirmwareValidator.cs. `requireSize` is off for slot-0 bins
 /// (validate_bin ... nosize in flash_slot0.bat).
 class Firmware {
@@ -43,16 +89,8 @@ class Firmware {
     if (!f.existsSync()) {
       return FirmwareCheck.fail('Firmware file does not exist.');
     }
-    if (path.contains('{') || path.contains('}')) {
-      return FirmwareCheck.fail(
-        'Path contains an unsupported character: { or }.',
-      );
-    }
-    if (path.codeUnits.any((c) => c > 127)) {
-      return FirmwareCheck.fail(
-        'Path has non-ASCII characters — use English letters only.',
-      );
-    }
+    final safe = validateOpenOcdPath(path);
+    if (!safe.ok) return safe;
     if (p.extension(path).toLowerCase() != '.bin') {
       return FirmwareCheck.fail('Invalid file type. Only .bin is allowed.');
     }
@@ -68,6 +106,77 @@ class Firmware {
       );
     }
     return FirmwareCheck.valid;
+  }
+
+  /// Path rules for anything handed to OpenOCD, in either direction. Braces are
+  /// the Tcl quoting characters the commands are built with; the Windows
+  /// non-ASCII guard covers the bundled build's command path handling. Checked
+  /// on dump DESTINATIONS too, before the run, so a backup folder OpenOCD
+  /// cannot write to fails while nothing has happened yet.
+  static FirmwareCheck validateOpenOcdPath(String path) {
+    if (path.contains('{') || path.contains('}')) {
+      return FirmwareCheck.fail(
+        'Path contains an unsupported character: { or }.',
+      );
+    }
+    if (path.codeUnits.any((c) => c > 127)) {
+      return FirmwareCheck.fail(
+        'Path has non-ASCII characters — use English letters only.',
+      );
+    }
+    return FirmwareCheck.valid;
+  }
+
+  /// Read a finished dump file and say what it is. Deliberately separate from
+  /// [validate]: this runs on the staged `.part` file (so no `.bin` extension
+  /// yet) and it must distinguish a broken read from read-protection instead of
+  /// reporting one "invalid" for both.
+  static DumpCheck inspectDump(String path) {
+    final f = File(path);
+    if (!f.existsSync()) {
+      return const DumpCheck(
+        DumpVerdict.missing,
+        'No dump file was written.',
+        0,
+      );
+    }
+    final bytes = f.readAsBytesSync();
+    final len = bytes.length;
+    if (len != expectedSize) {
+      return DumpCheck(
+        DumpVerdict.incomplete,
+        'Incomplete read: $len of $expectedSize bytes. Identity lives in the '
+        'last 4 KB, so a short dump is not a backup.',
+        len,
+      );
+    }
+    if (!_singleRepeatedBytes(bytes)) {
+      return DumpCheck(DumpVerdict.ok, '', len);
+    }
+    switch (bytes[0]) {
+      case 0x00:
+        return DumpCheck(
+          DumpVerdict.masked,
+          'The chip read back as all zeros. That is the readout-protection '
+          'signature, not a bad read — run Check protection.',
+          len,
+        );
+      case 0xFF:
+        return DumpCheck(
+          DumpVerdict.blank,
+          'The chip read back as all 0xFF — an erased or blank chip. There is '
+          'no firmware here to back up.',
+          len,
+        );
+      default:
+        final b = bytes[0].toRadixString(16).padLeft(2, '0').toUpperCase();
+        return DumpCheck(
+          DumpVerdict.uniform,
+          'The whole 128 KB read back as one repeated byte (0x$b) — that is '
+          'not firmware.',
+          len,
+        );
+    }
   }
 
   /// Slot-0 bins are NOT full images: reject a 128 KB image, then enforce the
@@ -162,6 +271,33 @@ class Firmware {
     final dir = folder ?? _dir('backup');
     Directory(dir).createSync(recursive: true);
     return p.join(dir, '${_pre(prefix)}dump_${_stamp()}.bin');
+  }
+
+  /// Suffix a dump carries while it is being written and until it has been
+  /// inspected. A failed read must never occupy a real backup name: it would
+  /// look legitimate in the folder and a `.bin` file picker would offer it.
+  static const String partSuffix = '.part';
+
+  /// Where OpenOCD actually writes, given the eventual backup path.
+  static String stagedDumpPath(String finalPath) => '$finalPath$partSuffix';
+
+  static bool isStagedDump(String path) => path.endsWith(partSuffix);
+
+  /// Give a validated dump its real backup name. Returns the new path, or the
+  /// staged path unchanged if the rename fails — the caller then reports where
+  /// the file really is rather than a name that does not exist.
+  static String promoteDump(String stagedPath) {
+    if (!isStagedDump(stagedPath)) return stagedPath;
+    final finalPath = stagedPath.substring(
+      0,
+      stagedPath.length - partSuffix.length,
+    );
+    try {
+      File(stagedPath).renameSync(finalPath);
+      return finalPath;
+    } catch (_) {
+      return stagedPath;
+    }
   }
 
   /// Firmware decrypted from a zip3 package, kept under

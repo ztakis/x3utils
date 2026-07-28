@@ -7,6 +7,7 @@ import 'package:file_selector/file_selector.dart';
 import 'app_controller.dart';
 import 'engine/firmware.dart';
 import 'engine/firmware_inspection.dart';
+import 'engine/trash.dart';
 import 'models.dart';
 import 'theme.dart';
 import 'widgets/desktop_path_display.dart';
@@ -56,7 +57,10 @@ class _HomeScreenState extends State<HomeScreen> {
         // Let the normal Start path place a changed/invalid selection in the
         // hero failure state. Do not show compatibility evidence for stale
         // bytes.
-        await c.start(confirmFileReplace: _showZip3ReplaceConfirm);
+        await c.start(
+          confirmFileReplace: _showZip3ReplaceConfirm,
+          confirmTrash: _showTrashConfirm,
+        );
         return;
       }
       final ok = await _showFlashOnlyConfirm();
@@ -65,7 +69,109 @@ class _HomeScreenState extends State<HomeScreen> {
       final ok = await _showConfirm(a);
       if (ok != true) return;
     }
-    await c.start(confirmFileReplace: _showZip3ReplaceConfirm);
+    await c.start(
+      confirmFileReplace: _showZip3ReplaceConfirm,
+      confirmTrash: _showTrashConfirm,
+    );
+  }
+
+  /// Offered after a read that did not become a backup. The file is already
+  /// named `.part`, so nothing can mistake it for a backup — this is about
+  /// sweeping it out of the folder, and it goes to the OS trash so the choice
+  /// stays reversible.
+  Future<bool> _showTrashConfirm(
+    String path,
+    String title,
+    String reason,
+  ) async {
+    final where = Trash.label;
+    final move = await showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0xB3040A0F),
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.line2),
+        ),
+        child: Container(
+          width: 460,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.hold.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: AppColors.hold,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.txt,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                reason,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AppColors.dim,
+                ),
+              ),
+              const SizedBox(height: 8),
+              DesktopPathDisplay(path: path, action: DesktopPathAction.none),
+              const SizedBox(height: 12),
+              Text(
+                'Moving it to the $where keeps it recoverable — nothing is '
+                'deleted. Keeping it is fine too; it can never be flashed.',
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AppColors.dim,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _PillButton(
+                    label: 'Keep it',
+                    onTap: () => Navigator.pop(ctx, false),
+                    bg: AppColors.line,
+                    fg: AppColors.txt,
+                    border: AppColors.line2,
+                    small: true,
+                  ),
+                  const SizedBox(width: 10),
+                  _PillButton(
+                    label: 'Move to $where',
+                    onTap: () => Navigator.pop(ctx, true),
+                    gradient: [AppColors.brand, AppColors.brand2],
+                    fg: const Color(0xFF04120F),
+                    small: true,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return move == true;
   }
 
   Future<bool> _showZip3ReplaceConfirm(String path) async {
@@ -3951,21 +4057,6 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(Icons.folder_copy_rounded, size: 18, color: AppColors.brand),
-            const SizedBox(width: 8),
-            Text(
-              'Backups',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: AppColors.txt,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
         Row(
           children: [
             const Expanded(

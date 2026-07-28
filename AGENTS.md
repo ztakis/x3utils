@@ -206,6 +206,37 @@ The shared validators are part of the safety boundary. They should continue to:
 Avoid duplicating validation logic in callers. Prefer updating the shared
 validator and then consuming its result.
 
+### Staged Dumps and the Two Dump Verdicts
+
+Dump output is validated before it is allowed to look like a backup:
+
+- Every read writes `<name>.bin.part` and is renamed to `.bin` only after
+  `Firmware.inspectDump` returns `ok`. This covers Backup, the mandatory
+  pre-flash backup, and the SHU-compat raw read. Do not write a dump straight to
+  its final `.bin` name: identity lives at 0x1F000 in the last 4 KB, so a
+  truncated read can never contain it, and a `.bin` picker must never be able to
+  offer one.
+- `inspectDump` reports two different kinds of failure and they must stay
+  distinct in WORDING, not in flow. Incomplete or single-repeated-byte junk is a
+  failed read. A full-size all-`0x00` (readout protection) or all-`0xFF` (erased
+  chip) read is a complete, correct read of a chip with nothing to save, and its
+  message must point at Check protection and never imply the read failed.
+  `DumpCheck.isEvidence` selects the dialog's title for this; both kinds get the
+  same trash offer, and both keep the `.part` name whatever the operator
+  decides. A filename must not assert a diagnosis.
+- A verdict about the chip is not a rejected input. Pass `finding: true` to
+  `_finishReal` for those, so the failure screen offers `Dismiss` instead of
+  sending the operator back to setup or blaming the selected firmware.
+- `lib/engine/trash.dart` moves files to the OS trash and has no hard-delete
+  path. Keep it that way. If a platform move fails, leave the file and report
+  where it is; never fall back to deleting it. macOS must not use the Finder
+  `osascript` route (automation permission prompt).
+- The cleanup offer is suppressed while auto-retry is armed. Do not put a modal
+  in front of an operator whose hands are on the probe.
+- `Firmware.validateOpenOcdPath` carries the brace/non-ASCII guard for both
+  firmware inputs and dump destinations, and destinations are checked before the
+  run. Keep that pre-run check when touching dump paths.
+
 ### Flutter Firmware Identity and Make zip3 Safety
 
 The guarded Flutter flash paths are stricter than the shared structural

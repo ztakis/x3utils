@@ -14,6 +14,7 @@ import 'engine/firmware.dart';
 import 'engine/firmware_inspection.dart';
 import 'engine/pack_zip3.dart';
 import 'engine/confirmed_file_writer.dart';
+import 'engine/trash.dart';
 
 /// Drives the whole UI via a single StageState the hero binds to.
 class AppController extends ChangeNotifier {
@@ -785,6 +786,7 @@ class AppController extends ChangeNotifier {
   String? resultPath;
   String? resultNote;
   bool _failureNeedsInput = false;
+  bool _failureIsFinding = false; // a chip verdict, not a rejected input
   bool _rdpRetryPending = false;
 
   /// A validation or policy failure must return to setup instead of repeating
@@ -847,6 +849,10 @@ class AppController extends ChangeNotifier {
 
   String get failurePrimaryLabel {
     if (!failureNeedsInput) return 'Retry';
+    // A chip verdict is not a rejected input: there is nothing in setup to
+    // change, and on a firmware action the selected .bin is not the problem
+    // either. The button only clears the screen, so it says so.
+    if (_failureIsFinding) return 'Dismiss';
     if (actionId == 'make_zip3') return 'Change input';
     if (action.needsFirmware) return 'Change firmware';
     return 'Back to setup';
@@ -1068,6 +1074,7 @@ class AppController extends ChangeNotifier {
     resultPath = null;
     resultNote = null;
     _failureNeedsInput = false;
+    _failureIsFinding = false;
     _rdpRetryPending = false;
     stage = StageState.idle;
     eyebrow = 'Ready';
@@ -1158,13 +1165,23 @@ class AppController extends ChangeNotifier {
         '${DateTime.now().toString().split('.').first}';
   }
 
-  Future<void> start({ConfirmFileReplace? confirmFileReplace}) async {
+  /// Kept on the controller rather than threaded through each call: [retry]
+  /// re-enters [start] with no arguments, and a retried dump that fails again
+  /// must still be able to offer its cleanup.
+  ConfirmTrash? _confirmTrash;
+
+  Future<void> start({
+    ConfirmFileReplace? confirmFileReplace,
+    ConfirmTrash? confirmTrash,
+  }) async {
+    if (confirmTrash != null) _confirmTrash = confirmTrash;
     _runIssue = null;
     _runIssuePriority = 0;
     messageTone = MessageTone.normal;
     resultPath = null;
     resultNote = null;
     _failureNeedsInput = false;
+    _failureIsFinding = false;
     _rdpRetryPending = false;
     _sawTargetHalted = false;
     _cannotRun = false;
@@ -1244,7 +1261,8 @@ class AppController extends ChangeNotifier {
   void _failCannotRun(String eb, String t, String sb) {
     running = false;
     _realRun = false;
-    _cannotRun = true; // nothing launched: a retry cannot help, so don't arm one
+    _cannotRun =
+        true; // nothing launched: a retry cannot help, so don't arm one
     lastConnect = 'FAIL';
     _log('== $t ==');
     _set(StageState.fail, eb, t, sb);
@@ -1560,15 +1578,19 @@ class AppController extends ChangeNotifier {
 
   String _openOcdExitFallback(int exitCode, List<String> args) {
     final joined = args.join(' ').toLowerCase();
-    if (actionId == 'check' || joined.contains('flash probe')) {
-      return 'OpenOCD: connection check failed';
-    }
+    if (actionId == 'check') return 'OpenOCD: connection check failed';
+    // Order matters: a dump/flash command line ALSO carries `flash probe`, so
+    // the specific work has to be matched before the probe, or every failed
+    // dump reports the connection-check wording.
     if (joined.contains('dump_image')) return 'OpenOCD: dump did not complete';
     if (joined.contains('do_flash_and_verify') ||
         joined.contains('flash erase') ||
         joined.contains('flash write') ||
         joined.contains('write_image')) {
       return 'OpenOCD: flash did not complete';
+    }
+    if (joined.contains('flash probe')) {
+      return 'OpenOCD: connection check failed';
     }
     return 'OpenOCD: failed with exit $exitCode';
   }
@@ -1700,11 +1722,15 @@ class AppController extends ChangeNotifier {
 
   /// [reseat] appends the contact-retry hint — only right for CONNECTION
   /// failures, not validation/patch failures (a re-seat won't fix those).
+  /// [finding] marks a verdict about the CHIP rather than a rejected input, so
+  /// the button offers to clear the screen instead of sending the operator back
+  /// to setup for something they cannot change.
   void _finishReal(
     bool ok,
     String okMsg,
     String failMsg, {
     bool reseat = true,
+    bool finding = false,
     String? outputPath,
     String? outputNote,
   }) {
@@ -1712,6 +1738,7 @@ class AppController extends ChangeNotifier {
     resultPath = outputPath;
     resultNote = outputNote;
     _failureNeedsInput = !ok && !reseat;
+    _failureIsFinding = !ok && finding;
     final String msg;
     if (ok) {
       msg = okMsg;
@@ -1735,6 +1762,7 @@ class AppController extends ChangeNotifier {
     String okMsg,
     String failMsg, {
     bool reseat = true,
+    bool finding = false,
     String? outputPath,
     String? outputNote,
   }) async {
@@ -1748,6 +1776,7 @@ class AppController extends ChangeNotifier {
       okMsg,
       failMsg,
       reseat: reseat,
+      finding: finding,
       outputPath: outputPath,
       outputNote: outputNote,
     );
@@ -1860,36 +1889,48 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _runDump(OpenOcdRunner runner, bool guided) async {
-    final outPath = Firmware.newDumpPath(
-      folder: backupFolder,
-      prefix: backupPrefix,
-    );
+    final staged = _stagedDumpPath();
+    if (staged == null) return;
     _showOpenOcdProgress(eyebrow: 'Backing up');
     _setInstruction('Reading the full 128 KB flash into a backup file...');
     final r = await _runRealCore(
-      runner.dumpArgs(mode, countdownSeconds, outPath),
+      runner.dumpArgs(mode, countdownSeconds, staged),
       guided: guided,
     );
-    if (r == null) return;
+    if (r == null) {
+      _noteStagedFile(staged); // cancelled mid-read: say what was left behind
+      return;
+    }
     _showOpenOcdProgress(eyebrow: 'Validating');
     if (!_dumpConfirmed(r)) {
-      await _finishRealAfterHold(false, '', _dumpFailMessage(r));
+      await _finishRealAfterHold(
+        false,
+        '',
+        _dumpFailMessage(r),
+        outputPath: _existingOrNull(staged),
+      );
+      await _offerDumpCleanup(staged);
       return;
     }
     _setInstruction('Validating backup file...');
-    final v = Firmware.validate(outPath);
+    final v = Firmware.inspectDump(staged);
     if (!v.ok) {
       _log('== validation FAILED: ${v.message} ==');
       await _finishRealAfterHold(
         false,
         '',
-        'Dump saved but failed validation — do not trust it. ${v.message} '
-            '(a read-protected or blank chip reads back like this — try Check protection).',
-        reseat: false,
-        outputPath: outPath,
+        '${v.message} It was not saved as a backup.',
+        // An incomplete read is still a contact problem, so it keeps the
+        // re-seat/Retry loop. A masked or blank chip is a finding, not a
+        // wiring fault — re-seating it changes nothing.
+        reseat: v.verdict == DumpVerdict.incomplete,
+        finding: v.isEvidence,
+        outputPath: _existingOrNull(staged),
       );
+      await _offerDumpCleanup(staged);
       return;
     }
+    final outPath = Firmware.promoteDump(staged);
     _log('== validated OK → $outPath ==');
     _setInstruction('Backup validated. Keep this file safe.');
     _maybeSecondCopy(outPath);
@@ -1899,6 +1940,98 @@ class AppController extends ChangeNotifier {
       '',
       outputPath: outPath,
     );
+  }
+
+  // ── Staged dumps ──────────────────────────────────────────────────────────
+  // Every read writes to `<name>.bin.part` and is renamed to `.bin` only after
+  // it passes inspection, so a failed read can never occupy a real backup name
+  // or be offered by a `.bin` file picker. A partial dump is not a degraded
+  // backup: identity lives in the last 4 KB, so a short file can never hold it.
+
+  /// The staging path for this run, or null when the backup folder itself is
+  /// unusable — checked BEFORE the run, while nothing has happened yet.
+  String? _stagedDumpPath({String? folder, String? explicitPath}) {
+    final finalPath =
+        explicitPath ??
+        Firmware.newDumpPath(
+          folder: folder ?? backupFolder,
+          prefix: backupPrefix,
+        );
+    final staged = Firmware.stagedDumpPath(finalPath);
+    final safe = Firmware.validateOpenOcdPath(staged);
+    if (!safe.ok) {
+      _setInputFailure(
+        'Backup folder',
+        'Cannot write the backup',
+        '${safe.message} Choose a different backup folder in Settings, then '
+            'start again.',
+      );
+      return null;
+    }
+    return staged;
+  }
+
+  String? _existingOrNull(String path) => File(path).existsSync() ? path : null;
+
+  void _noteStagedFile(String staged) {
+    if (!File(staged).existsSync()) return;
+    final finding = Firmware.inspectDump(staged).isEvidence;
+    _log(
+      finding
+          ? '== chip finding, file left at → $staged =='
+          : '== incomplete read left at → $staged ==',
+    );
+  }
+
+  /// Warn about a dump that is not a backup and offer to bin it.
+  ///
+  /// Two verdicts, not one — but the difference is carried by the WORDING, not
+  /// by whether the offer appears. Junk (a short read, or one repeated byte
+  /// that is not the protection signature) is a failed read. A full-size
+  /// all-zeros or all-0xFF read is a complete, correct read that says something
+  /// true about the chip, and its dialog must never imply the read failed.
+  /// Neither one is a backup, neither can be flashed, and both keep the `.part`
+  /// name whatever the operator decides.
+  Future<void> _offerDumpCleanup(String staged) async {
+    final file = File(staged);
+    if (!file.existsSync()) return;
+    final check = Firmware.inspectDump(staged);
+    _noteStagedFile(staged);
+    // Auto-retry means the operator has both hands on the probe. A modal is
+    // exactly the wrong thing to put in front of them mid-loop.
+    if (autoRetryArmed) return;
+    final confirm = _confirmTrash;
+    if (confirm == null) return;
+    final title = check.isEvidence
+        ? 'This read is a finding, not a backup'
+        : 'This file is not a backup';
+    if (!await confirm(staged, title, check.message)) {
+      _log('== kept → $staged ==');
+      return;
+    }
+    final result = await Trash.move(staged);
+    final where = Trash.label;
+    if (result.ok) {
+      // Source → destination. Windows recycles through the shell and reports no
+      // destination path, so say where it went by name instead of repeating the
+      // source path after an arrow that would read like a destination.
+      final dest = result.destination;
+      _log(
+        dest == null
+            ? '== $staged → moved to the $where =='
+            : '== $staged → moved to $dest ==',
+      );
+      resultPath = null;
+      resultNote = 'The dump was moved to the $where.';
+    } else {
+      // Fail closed: never a hard delete, and never a silent one either.
+      _log('== could not move to the $where: ${result.message} ==');
+      resultPath = staged;
+      resultNote =
+          'It could not be moved to the $where (${result.message}) — it is '
+          'still at the path above.';
+    }
+    notifyListeners();
   }
 
   Future<void> _runFlash(
@@ -1947,40 +2080,46 @@ class AppController extends ChangeNotifier {
 
     // Mandatory backup first (the scripts' safety floor) — abort flash if it fails.
     if (backup) {
-      final outPath = Firmware.newDumpPath(
-        folder: backupFolder,
-        prefix: backupPrefix,
-      );
+      final staged = _stagedDumpPath();
+      if (staged == null) return;
       _showOpenOcdProgress(eyebrow: 'Backing up');
       _setInstruction('Backing up the chip before flashing...');
       final b = await _runRealCore(
-        runner.dumpArgs(mode, countdownSeconds, outPath),
+        runner.dumpArgs(mode, countdownSeconds, staged),
         guided: guided,
         title: 'Backing up first…',
       );
-      if (b == null) return;
+      if (b == null) {
+        _noteStagedFile(staged);
+        return;
+      }
       if (!_dumpConfirmed(b)) {
         await _finishRealAfterHold(
           false,
           '',
           'Backup did not confirm a complete dump — flash aborted for safety. ${_dumpFailMessage(b)}',
+          outputPath: _existingOrNull(staged),
         );
+        await _offerDumpCleanup(staged);
         return;
       }
       _setInstruction('Validating backup file before writing...');
-      final backupCheck = Firmware.validate(outPath);
+      final backupCheck = Firmware.inspectDump(staged);
       if (!backupCheck.ok) {
         _log('== validation FAILED: ${backupCheck.message} ==');
         await _finishRealAfterHold(
           false,
           '',
-          'Backup validation failed — flash aborted for safety. ${backupCheck.message} '
-              '(read-protected or blank chip? try Check protection).',
-          reseat: false,
-          outputPath: outPath,
+          'Flash aborted for safety — nothing was written. '
+              '${backupCheck.message}',
+          reseat: backupCheck.verdict == DumpVerdict.incomplete,
+          finding: backupCheck.isEvidence,
+          outputPath: _existingOrNull(staged),
         );
+        await _offerDumpCleanup(staged);
         return;
       }
+      final outPath = Firmware.promoteDump(staged);
       _log('== backup ok → $outPath ==');
       _setInstruction('Backup validated. Writing can continue.');
       _maybeSecondCopy(outPath);
@@ -2100,37 +2239,48 @@ class AppController extends ChangeNotifier {
   /// SHU-compat: dump the chip → patch its own firmware → flash it back
   /// (mirrors flash_compat.bat; no user .bin — uses the chip's own image).
   Future<void> _runCompat(OpenOcdRunner runner, bool guided) async {
-    final (raw, patched) = Firmware.newCompatPaths(prefix: backupPrefix);
+    final (rawFinal, patched) = Firmware.newCompatPaths(prefix: backupPrefix);
+    final staged = _stagedDumpPath(explicitPath: rawFinal);
+    if (staged == null) return;
     _showOpenOcdProgress(eyebrow: 'Backing up');
     _setInstruction('Reading the chip before patching...');
 
     // Step 1 — read the current firmware.
     final d = await _runRealCore(
-      runner.dumpArgs(mode, countdownSeconds, raw),
+      runner.dumpArgs(mode, countdownSeconds, staged),
       guided: guided,
       title: 'Reading current firmware…',
     );
-    if (d == null) return;
+    if (d == null) {
+      _noteStagedFile(staged);
+      return;
+    }
     if (!_dumpConfirmed(d)) {
       await _finishRealAfterHold(
         false,
         '',
         'Could not confirm a complete chip read — nothing was changed. ${_dumpFailMessage(d)}',
+        outputPath: _existingOrNull(staged),
       );
+      await _offerDumpCleanup(staged);
       return;
     }
-    final rawCheck = Firmware.validate(raw);
+    final rawCheck = Firmware.inspectDump(staged);
     if (!rawCheck.ok) {
       _log('== validation FAILED: ${rawCheck.message} ==');
       await _finishRealAfterHold(
         false,
         '',
-        'The chip read back as invalid — nothing was written. ${rawCheck.message} '
-            '(a read-protected or blank chip reads back like this — try Check protection).',
-        reseat: false,
+        'Nothing was written — the chip did not read back as firmware. '
+            '${rawCheck.message}',
+        reseat: rawCheck.verdict == DumpVerdict.incomplete,
+        finding: rawCheck.isEvidence,
+        outputPath: _existingOrNull(staged),
       );
+      await _offerDumpCleanup(staged);
       return;
     }
+    final raw = Firmware.promoteDump(staged);
 
     _setInstruction('Original backup saved. Preparing the patch...');
     _maybeSecondCopy(raw);

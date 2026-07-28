@@ -1656,3 +1656,108 @@ Linux/macOS get the same code but were not rebuilt this session.
     do nothing), and setting Auto-retry to 0 while a countdown is running (must
     disarm immediately). The RDP actions have also not been checked for the
     plain-Retry-no-countdown behavior the exclusion promises.
+
+## 2026-07-29
+
+- Implemented the parked invalid-backup handling from 2026-07-28. A failed read
+  can no longer occupy a real backup name.
+  - Every dump now writes to `<name>.bin.part` and is renamed to `.bin` only
+    after it passes inspection. Applied to all three read sites: Backup, the
+    mandatory pre-flash backup, and the SHU-compat raw read. A `.part` file is
+    invisible to a `.bin` file picker, which was the point: identity lives at
+    0x1F000 in the last 4 KB, so a truncated dump can never hold it. A partial
+    backup is not a degraded backup, it is not a backup.
+  - Two verdicts, as agreed. `Firmware.inspectDump` replaces `Firmware.validate`
+    on these paths and returns `ok` / `missing` / `incomplete` / `masked` /
+    `blank` / `uniform`. Junk is incomplete, or a repeated byte that is not the
+    protection signature. A full-size all-`0x00` read is the FAP signature and a
+    full-size all-`0xFF` read is an erased chip: both are complete, correct
+    reads, and the message points at Check protection rather than at the wiring.
+  - Maintainer decision on the evidence file: it keeps the `.part` name. One
+    rule — nothing that failed inspection ever gets a `.bin` name — beats a
+    filename that asserts a diagnosis. The verdict lives in the message and the
+    log.
+  - REVERSES the 2026-07-28 rule that a masked read "must NOT inherit the
+    invalid, bin it? flow". It now gets the same offer, decided after seeing the
+    screen on a real FAP'd board. The reasoning that changed it: the evidence is
+    the finding, and the finding is already on screen and in the log — 128 KB of
+    zeros cannot be diffed, flashed, or sliced, so keeping the bytes proves
+    nothing the log does not, and they accumulate one file per attempt. What
+    survives from the original rule is the part that mattered: the dialog must
+    never imply the read failed. `DumpCheck.isEvidence` now picks the WORDING
+    instead of gating the offer — "This read is a finding, not a backup" versus
+    "This file is not a backup". Do not re-derive the old behavior from the
+    2026-07-28 entry.
+  - The offer is a modal (maintainer's choice over an extra pill on the fail
+    screen). The red failure screen is shown first, then the dialog explains the
+    verdict, shows the path, and offers `Keep it` / `Move to Recycle Bin`.
+  - `lib/engine/trash.dart` is new and has no hard-delete path at all.
+    Windows shells to PowerShell `Microsoft.VisualBasic.FileIO.FileSystem`
+    `SendToRecycleBin`; Linux writes the freedesktop `~/.local/share/Trash`
+    `files/` + `info/*.trashinfo` pair; macOS moves into `~/.Trash` (the Finder
+    `osascript` route is avoided because it trips the automation prompt).
+    Cross-filesystem moves fall back to verified copy-then-remove — the copy's
+    length is checked before the original goes. If anything fails, the file is
+    left where it is and the screen says so.
+  - Coverage the DEVLOG entry did not anticipate: OpenOCD can also fail *during*
+    the dump, before validation is ever reached — that is the 0-byte and 32768-
+    byte case from the auto-retry tests. Those paths now run the same cleanup
+    offer, so the file is never silently abandoned. A cancelled run logs the
+    leftover path rather than prompting.
+  - The offer is suppressed while auto-retry is armed. A modal in front of an
+    operator with both hands on the probe is the one thing the third hand exists
+    to avoid. In practice this branch is unreachable: an armed retry means the
+    run never connected, and a run that never connected wrote no file.
+  - The `{}`/non-ASCII path guard that `Firmware.validate` applied to dump
+    output would have been lost in the switch to `inspectDump`. It is now
+    `Firmware.validateOpenOcdPath`, shared by both, and checked on the staging
+    path BEFORE the run — a backup folder OpenOCD cannot write to now fails
+    while nothing has happened yet, instead of after a wasted read.
+  - Fixed the cosmetic `_openOcdExitFallback` ordering bug noted on 2026-07-28:
+    dump/flash command lines also contain `flash probe`, so the probe branch has
+    to be tested last or every failed dump reports "connection check failed".
+  - `flutter analyze` clean, `dart format` applied, 160 tests pass (14 new in
+    `test/backup_validation_test.dart`: the six verdicts, staging/promote, and
+    controller-level runs proving a good read is promoted, a short read is
+    offered and left alone when declined, a masked read is offered with the
+    finding wording and the `Dismiss` label, a failed connect writes nothing,
+    and an invalid pre-flash backup aborts the flash). The trash move itself is
+    stubbed in tests — a unit test must not put files in the real Recycle Bin.
+  - Verified outside the test suite on Windows: the exact PowerShell recycle
+    one-liner, including apostrophe quoting, on a scratch file. Exit 0 and the
+    file left its path. Linux and macOS trash moves are code-reviewed only and
+    still need a real run.
+  - Not covered and deliberately unchanged: `Firmware.validate` still guards
+    firmware inputs on the flash side; only the dump-output paths moved to the
+    new verdicts.
+  - Settings: the `Backups` section header was removed. The section already sits
+    between two dividers, so the header was redundant and everything moved up.
+- Maintainer hardware result, Windows mode A, same day: the contact was pulled
+  mid-dump after `target halted`, OpenOCD exited 1 with 28672 of 131072 bytes,
+  the file stayed `.bin.part` with no `.bin` created, the modal named the
+  shortfall, and `Move to Recycle Bin` cleared it. Recorded in `docs/testing.md`.
+  - Two wording bugs the live run exposed, both fixed: the success log line read
+    `moved to the recycle bin → <source path>`, which reads as a destination —
+    Windows recycles through the shell and reports no destination path, so it
+    now logs `<source> → moved to the Recycle Bin` and only prints a real
+    destination on Linux/macOS, where there is one. The result note also said
+    "recycle bin" in lower case (`Trash.label.toLowerCase()`) and called the
+    file "incomplete" even for the repeated-byte verdict; it is now "The dump
+    was moved to the Recycle Bin", matching the button's capitalisation.
+- Maintainer hardware result, Windows mode A, on a deliberately FAP'd board
+  (CLI `rdp.ps1 -Enable`): Backup read 131072 bytes of zeros, exit 0. The
+  masked path behaved as designed — `.part` kept, no `.bin`, the message named
+  the protection signature and pointed at Check protection, and the console
+  logged `chip finding, file left at →`. The offer then appeared with the
+  finding title and the move succeeded. This is the run that settled the
+  reversal above. Recorded in `docs/testing.md`.
+  - Failure-screen button: a chip verdict is not a rejected input, so
+    "Back to setup" was wrong — there is nothing in setup to change. `_finishReal`
+    gained a `finding` flag beside `reseat`, set from `DumpCheck.isEvidence` at
+    all three validation sites, and `failurePrimaryLabel` returns `Dismiss` for
+    it. This also fixes a case not yet seen on hardware: a masked chip during
+    Backup + Flash would have said "Change firmware", blaming a file that was
+    never the problem.
+  - Still uncovered on hardware: `Keep it`, the pre-flash-backup abort, the
+    all-`0xFF` blank verdict (free to test right after a rescue mass erase,
+    before reflashing), and the Linux/macOS trash moves.
