@@ -74,9 +74,12 @@ class AppController extends ChangeNotifier {
                 _prefs!.getInt('countdown') ??
                 defaultCountdown)
             .clamp(0, 10);
+    defaultAutoRetry = (_prefs!.getInt('defaultAutoRetry') ?? defaultAutoRetry)
+        .clamp(0, 10);
     // Seed the live session from the defaults.
     mode = defaultMode;
     countdownSeconds = defaultCountdown;
+    autoRetrySeconds = defaultAutoRetry;
     final ai = _prefs!.getInt('accent') ?? 1; // default: Silver
     accentNotifier.value = (ai >= 0 && ai < kAccents.length) ? ai : 0;
     logToFile = _prefs!.getBool('logToFile') ?? false;
@@ -486,6 +489,7 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _elapsedTicker?.cancel();
     _elapsedTicker = null;
+    _cancelAutoRetry();
     super.dispose();
   }
 
@@ -754,12 +758,14 @@ class AppController extends ChangeNotifier {
   // rail changes the session only.
   ConnectionMode defaultMode = ConnectionMode.defaultSwd;
   int defaultCountdown = 3;
+  int defaultAutoRetry = 3; // seconds between automatic retries; 0 = off
 
   // Live session values (seeded from the defaults on launch; the rail overrides
   // these WITHOUT touching the persisted defaults).
   ConnectionMode mode = ConnectionMode.defaultSwd;
   String actionId = 'check';
   int countdownSeconds = 3;
+  int autoRetrySeconds = 3;
   bool running = false;
   int raceAttempts =
       0; // power-race respawn: attempts so far (drives the indicator)
@@ -784,6 +790,60 @@ class AppController extends ChangeNotifier {
   /// A validation or policy failure must return to setup instead of repeating
   /// the same run. Connection failures retain the existing re-seat retry loop.
   bool get failureNeedsInput => stage == StageState.fail && _failureNeedsInput;
+
+  // ── Auto-retry: the third hand ────────────────────────────────────────────
+  // The top real-world failure is a lost SWD / C45 contact, and the operator
+  // who has to fix it has both hands on the probe. Rather than making them let
+  // go to click Retry, press it for them. Nothing else is special-cased: the
+  // automatic press runs the same retry() the button runs.
+  static const int kAutoRetryMaxAttempts = 10;
+  Timer? _autoRetryTimer;
+  int autoRetryCountdown = 0; // seconds left before the next automatic press
+  int autoRetryAttempt = 0; // automatic presses used since the last fresh run
+  bool _sawTargetHalted = false; // this run reached the core
+  bool _cannotRun = false; // never launched (missing OpenOCD / unwired action)
+
+  bool get autoRetryArmed => _autoRetryTimer != null;
+
+  String get autoRetryLabel =>
+      'Retrying in $autoRetryCountdown…  '
+      '(${autoRetryAttempt + 1} of $kAutoRetryMaxAttempts)';
+
+  /// Only a failure that never got past connect may repeat itself. A run that
+  /// reached the core and failed later may have written flash, and re-running
+  /// that unattended is not what a third hand would do.
+  bool get _autoRetryEligible =>
+      autoRetrySeconds > 0 &&
+      stage == StageState.fail &&
+      !_failureNeedsInput && // policy failure: needs the user, not a retry
+      !_cannotRun && // a broken bundle is not a loose wire
+      !_sawTargetHalted && // connected, then failed → never auto-repeat
+      mode != ConnectionMode.powerRace && // has its own respawn loop
+      actionId != 'rdp_check' && // stdin prompt, not a re-run (own pass)
+      actionId != 'rdp_rescue' &&
+      autoRetryAttempt < kAutoRetryMaxAttempts;
+
+  void _armAutoRetry() {
+    _autoRetryTimer?.cancel();
+    autoRetryCountdown = autoRetrySeconds;
+    _autoRetryTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      autoRetryCountdown--;
+      if (autoRetryCountdown > 0) {
+        notifyListeners();
+        return;
+      }
+      _cancelAutoRetry();
+      autoRetryAttempt++;
+      _log('== auto-retry $autoRetryAttempt of $kAutoRetryMaxAttempts ==');
+      retry(auto: true);
+    });
+  }
+
+  void _cancelAutoRetry() {
+    _autoRetryTimer?.cancel();
+    _autoRetryTimer = null;
+    autoRetryCountdown = 0;
+  }
 
   String get failurePrimaryLabel {
     if (!failureNeedsInput) return 'Retry';
@@ -891,6 +951,16 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Settings: seconds the failure screen waits before pressing Retry itself.
+  /// 0 disables auto-retry entirely and restores the plain manual prompt.
+  void setDefaultAutoRetry(int v) {
+    defaultAutoRetry = v.clamp(0, 10);
+    _prefs?.setInt('defaultAutoRetry', defaultAutoRetry);
+    autoRetrySeconds = defaultAutoRetry;
+    if (autoRetrySeconds == 0) _cancelAutoRetry();
+    notifyListeners();
+  }
+
   void continueStep() {
     if (!_realRun) return;
     if (actionId.startsWith('rdp')) {
@@ -950,7 +1020,12 @@ class AppController extends ChangeNotifier {
 
   /// Re-run a connection failure, or return an input/policy failure to setup.
   /// The latter must never repeat a flash with the same rejected firmware.
-  Future<void> retry() async {
+  ///
+  /// [auto] marks the press as coming from the auto-retry timer rather than the
+  /// user. A real press is a fresh intent, so it restarts the attempt budget.
+  Future<void> retry({bool auto = false}) async {
+    _cancelAutoRetry();
+    if (!auto) autoRetryAttempt = 0;
     if (_rdpRetryPending) {
       _rdpRetryPending = false;
       lastConnect = 'connecting…';
@@ -987,6 +1062,8 @@ class AppController extends ChangeNotifier {
     running = false;
     _elapsedTicker?.cancel();
     _elapsedTicker = null;
+    _cancelAutoRetry();
+    autoRetryAttempt = 0;
     _runStartedAt = null;
     resultPath = null;
     resultNote = null;
@@ -1047,6 +1124,13 @@ class AppController extends ChangeNotifier {
     messageTone = MessageTone.normal;
     showContinue = continueBtn != null;
     if (continueBtn != null) continueLabel = continueBtn;
+    // The red screen is the one place auto-retry arms from, so every failure
+    // path gets it without any action knowing this feature exists.
+    if (s == StageState.fail && _autoRetryEligible) {
+      _armAutoRetry();
+    } else {
+      _cancelAutoRetry();
+    }
     notifyListeners();
   }
 
@@ -1082,6 +1166,8 @@ class AppController extends ChangeNotifier {
     resultNote = null;
     _failureNeedsInput = false;
     _rdpRetryPending = false;
+    _sawTargetHalted = false;
+    _cannotRun = false;
     _lastRunDuration = null;
     _lastExitCode = null;
     _runLog.clear();
@@ -1158,6 +1244,7 @@ class AppController extends ChangeNotifier {
   void _failCannotRun(String eb, String t, String sb) {
     running = false;
     _realRun = false;
+    _cannotRun = true; // nothing launched: a retry cannot help, so don't arm one
     lastConnect = 'FAIL';
     _log('== $t ==');
     _set(StageState.fail, eb, t, sb);
@@ -1439,7 +1526,13 @@ class AppController extends ChangeNotifier {
     _log(line);
     final clean = line.replaceAll(_ansi, '').trim();
     final low = clean.toLowerCase();
-    if (low.contains('target halted')) lastConnect = 'PASS';
+    if (low.contains('target halted')) {
+      lastConnect = 'PASS';
+      // Sticky for the whole run: _finishReal overwrites lastConnect with FAIL
+      // on ANY failure, so it cannot tell "never connected" from "connected,
+      // then failed" — and only the former may auto-retry.
+      _sawTargetHalted = true;
+    }
     _diagnose(low);
     _surfaceOpenOcdIssue(clean, low);
     if (driveOpenOcdProgress) _advanceOpenOcdStage(low);

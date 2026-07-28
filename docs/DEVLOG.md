@@ -1528,3 +1528,131 @@ Linux/macOS get the same code but were not rebuilt this session.
     closes the Linux debug-build behavior check without exercising a protection
     rewrite. The generated AppImage was not used for that live check, so a
     packaged smoke remains optional rather than claimed complete.
+
+## 2026-07-28
+
+- Added GUI auto-retry ("the third hand") for v1.2.1. On a failure screen the
+  Retry button counts itself down and presses itself, so a lost SWD / C45
+  contact can be recovered without letting go of the probe. Planning notes and
+  the full rationale live in `docs/plan-retry.md`.
+  - Settings gained an `Auto-retry` stepper (0-10 s, ship default 3, `0` shows
+    `off` and restores the previous manual-only behavior exactly). Same
+    session-value plus persisted-startup-default plumbing as `Hold countdown`.
+  - Bounded at 10 attempts, counted rather than timed: a retry re-runs the
+    action, so attempt duration varies by mode and by the pre-connect countdown.
+    A wall-clock bound would give a different number of attempts per mode with
+    nothing on screen showing the remaining budget.
+  - While armed the primary button is an inert `Retrying in N...  (k of 10)`
+    readout and `Dismiss` is the live control. Enter no longer fires the primary
+    on the fail stage while armed, matching the existing rule that running
+    stages ignore Enter.
+  - Armed from one place: the `StageState.fail` transition inside `_set()` in
+    `lib/app_controller.dart`. No action code path knows the feature exists.
+  - Nothing about the run is special-cased. The automatic press calls the same
+    `retry()` the button calls, including replaying the pre-connect countdown.
+    A real press is treated as fresh intent and restarts the attempt budget.
+  - Eligibility gate, which is the only real logic here: auto-retry arms only
+    when the run never got past connect. `lastConnect` cannot be used for this
+    because `_finishReal` overwrites it with `FAIL` on any failure, so a sticky
+    per-run `_sawTargetHalted` flag carries the fact instead. Also excluded:
+    validation/policy failures, `_failCannotRun` (nothing launched, so a retry
+    cannot help), `rdp_check` and `rdp_rescue` (a stdin prompt is not a re-run
+    and needs its own pass), and Power-race, which has its own respawn loop and
+    by construction never reaches the fail state on a failed connect.
+  - Scope note: an earlier draft limited this to the four Standard actions and
+    modes A/B. That narrowing was a budget decision, and hooking the fail state
+    removed the budget argument, so the action and mode filters collapsed into
+    the two exclusions above. Advanced `flash_only` / `flash_slot0` are in
+    scope; a failed connect writes nothing there either.
+  - `flutter analyze` clean, 146 tests pass, `git diff --check` clean. New
+    focused tests in `x3utils_flutter/test/auto_retry_test.dart` cover arming on
+    a connect failure, declining after `target halted`, `0` disabling it,
+    Power-race, and Dismiss disarming.
+  - Test-writing trap worth remembering: constructing `AppController` WITHOUT an
+    injected runner makes it find the real bundled OpenOCD, and `start()` then
+    drives whatever hardware is attached. One throwaway probe did exactly that
+    during this work (read-only check, nothing written). Unit tests must always
+    inject a scripted runner; the `_cannotRun` guard is deliberately left
+    untested for this reason.
+- Maintainer hardware results on Windows, mode A (Default SWD):
+  - Auto-retry recovered a real failure end to end: the loop was running, the
+    ST-LINK was plugged in and the SWD contact re-seated mid-loop, and the run
+    passed without a click.
+  - Both failure texts are treated alike and should be: `open failed` means the
+    adapter never enumerated, `init mode failed` means the adapter is fine and
+    the target is not answering. Neither got past connect, neither writes
+    anything, and both are fixed by the operator's hands.
+  - The 10-attempt cap was observed stopping the loop and handing back the
+    manual Retry.
+  - `Auto-retry = 0` confirmed to restore the plain manual prompt.
+  - The eligibility gate was confirmed twice with auto-retry set to 3: pulling
+    the cable mid-dump, after `target halted`, correctly did NOT arm a retry.
+    One of the two died between `flash probe` and the first block, so a run that
+    had connected but written nothing at all still correctly declined.
+- Parked (not implemented): invalid-backup handling for the plain Backup action.
+  - Failed dumps leave a file in the backup folder with normal timestamped
+    naming. Observed sizes from the tests above were 32768 and 0 bytes,
+    alongside a genuine 131072-byte backup. The app called both runs failed; it
+    just leaves the evidence looking legitimate.
+  - This matters more than the file size suggests: identity lives at 0x1F000,
+    the last 4 KB, so a truncated dump can never contain it. A partial backup is
+    not a degraded backup, it is not a backup.
+  - Agreed direction: dump to `<name>.bin.part` and rename to `.bin` only after
+    validation passes, so a failed read can never occupy a real backup name and
+    cannot be offered by a `.bin` file picker. Then warn the user explicitly and
+    offer to move the invalid file to the OS trash.
+  - Maintainer decision: NO real deletion. Move to the recycle bin / trash.
+    Per-OS mechanism: PowerShell `Microsoft.VisualBasic.FileIO.FileSystem`
+    `SendToRecycleBin` on Windows (the Windows build already shells out to
+    PowerShell for `rdp.ps1`), the freedesktop `~/.local/share/Trash` spec plus
+    a `.trashinfo` file on Linux, and a `~/.Trash` move on macOS. Avoid the
+    Finder `osascript` route on macOS because it trips the automation
+    permission prompt. If the trash move fails, fail closed: leave the `.part`
+    file, say where it is, and never fall back to a hard delete.
+  - Two verdicts, not one: a wrong-size file is an incomplete read and is
+    worthless. A full-size all-zeros dump is the FAP / readout-protection
+    signature, is valid evidence, and must NOT inherit the "invalid, bin it?"
+    flow; it should point at RDP check instead.
+- Pre-existing cosmetic bug noticed while reading dump logs: a failed Backup
+  reports `OpenOCD: connection check failed`. In `_openOcdExitFallback` the
+  `flash probe` branch is tested before the `dump_image` branch and dump args
+  contain both, so a failed dump gets the check-connection wording instead of
+  "dump did not complete". Unrelated to auto-retry.
+- Mode B (C45 Clone) interaction with auto-retry, decided and CLOSED: an
+  automatic Retry in the guided mode lands back on `Hold C45 -> GND` and waits
+  for the human "I'm holding - continue" press, so the loop parks at attempt 1
+  and the feature cannot save the round trip there. Auto-pressing Continue was
+  rejected outright: that press asserts a physical fact (the contact is being
+  held) that no timer can know, which is the same line the project drew when it
+  removed simulation. Adding a mode-B exclusion was considered and REJECTED by
+  the maintainer: the Auto-retry setting already lets anyone turn it off, so the
+  behavior stays as-is. Do not "fix" this by excluding mode B.
+- Further auto-retry test results and open items (2026-07-28, Windows):
+  - `flash_only` and `flash_slot0` confirmed working with auto-retry, as
+    intended: they are Advanced actions but a failed connect writes nothing.
+  - Power-race has NO reachable armable failure, so "auto-retry must not fire in
+    mode D" cannot be tested by producing one. A failed connect there becomes
+    attempt N+1 instead of a fail state, Cancel goes to idle, RDP in Power-race
+    is `StageState.warn` ("Not supported") rather than fail, and a post-catch
+    failure has already seen `target halted` so the sticky gate declines anyway.
+    The observable check is the absence: hammering with a climbing attempt
+    counter and no red screen. The mode exclusion is belt and braces over a
+    state that does not occur.
+  - RDP exclusion revisited. It was never a safety verdict, only "different
+    mechanism, not yet thought through". On review `rdp_check` is a good
+    candidate and arguably a better fit than the OpenOCD path: when the script
+    is still waiting on stdin, `retry()` writes a newline to the live process
+    instead of restarting anything, `sendContinue()` already returns false once
+    the process has moved on, and the action is read-only. `rdp_rescue` should
+    stay manual on one specific ground: it is the mass-erase tool, so an
+    automatic press resumes an irreversible erase the moment contact returns
+    with nobody at the laptop. Everywhere else regaining contact only repeats a
+    read or a re-connect. Maintainer decision: LEAVE AS-IS for now, both still
+    excluded. If this is revisited, first confirm whether `rdp.ps1` ever prints
+    `target halted`, because that would set the sticky flag and block auto-retry
+    on the RDP path regardless of the action gate.
+  - Not yet exercised on hardware: the 10-attempt cap followed by a manual Retry
+    restarting the budget, Dismiss during a countdown, Enter while armed (must
+    do nothing), and setting Auto-retry to 0 while a countdown is running (must
+    disarm immediately). The RDP actions have also not been checked for the
+    plain-Retry-no-countdown behavior the exclusion promises.

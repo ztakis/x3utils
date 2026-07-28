@@ -176,7 +176,8 @@ class _HomeScreenState extends State<HomeScreen> {
         c.dismiss();
         break;
       case StageState.fail:
-        c.retry();
+        // Auto-retry makes the primary inert, so Enter must not fire it either.
+        if (!c.autoRetryArmed) c.retry();
         break;
       case StageState.count:
         break;
@@ -654,6 +655,48 @@ class _HomeScreenState extends State<HomeScreen> {
                                     onTap: () {
                                       c.setDefaultCountdown(
                                         c.defaultCountdown + 1,
+                                      );
+                                      setLocal(() {});
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            _SettingRow(
+                              label: 'Auto-retry',
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _StepBtn(
+                                    icon: Icons.remove,
+                                    onTap: () {
+                                      c.setDefaultAutoRetry(
+                                        c.defaultAutoRetry - 1,
+                                      );
+                                      setLocal(() {});
+                                    },
+                                  ),
+                                  SizedBox(
+                                    width: 30,
+                                    child: Text(
+                                      c.defaultAutoRetry == 0
+                                          ? 'off'
+                                          : '${c.defaultAutoRetry}',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontFamily: kMono,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.txt,
+                                      ),
+                                    ),
+                                  ),
+                                  _StepBtn(
+                                    icon: Icons.add,
+                                    onTap: () {
+                                      c.setDefaultAutoRetry(
+                                        c.defaultAutoRetry + 1,
                                       );
                                       setLocal(() {});
                                     },
@@ -2617,10 +2660,12 @@ class _StageButtons extends StatelessWidget {
         );
         break;
       case StageState.fail:
+        // While auto-retry is armed the primary is a readout, not a control:
+        // the operator's hands are on the probe and Dismiss is the way out.
         children.add(
           _PillButton(
-            label: c.failurePrimaryLabel,
-            onTap: () => c.retry(),
+            label: c.autoRetryArmed ? c.autoRetryLabel : c.failurePrimaryLabel,
+            onTap: c.autoRetryArmed ? null : () => c.retry(),
             gradient: [AppColors.brand, AppColors.brand2],
             fg: const Color(0xFF04120F),
           ),
