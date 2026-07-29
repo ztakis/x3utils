@@ -627,7 +627,8 @@ void main(List<String> args) {
     payload('14a'),
     'path',
     'non-ASCII (German umlaut) directory in path',
-    'reject non-ASCII path before OpenOCD starts',
+    'WINDOWS: reject non-ASCII path before OpenOCD starts. '
+        'Linux/macOS: accept — argv is not codepage-converted there',
   );
   emit(
     '16b_slot_zt3_vcu_SYNTHETIC.dat',

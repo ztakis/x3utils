@@ -108,6 +108,31 @@ void main() {
     });
   });
 
+  group('validateOpenOcdPath', () {
+    // The two halves are scoped differently ON PURPOSE, and a later change
+    // could quietly re-merge them. Braces are Tcl quoting, so they break
+    // everywhere. Non-ASCII is a Windows argv/codepage problem only: applying
+    // it off Windows refused every dump for a user whose home carries a
+    // non-ASCII name, since ~/x3utils is built from it.
+    test('refuses braces on every platform', () {
+      expect(Firmware.validateOpenOcdPath('/tmp/a{b}/fw.bin').ok, isFalse);
+      expect(Firmware.validateOpenOcdPath('/tmp/a}b/fw.bin').ok, isFalse);
+    });
+
+    test('non-ASCII is refused on Windows and accepted elsewhere', () {
+      // The German username that started this, plus the founding case: a
+      // Cyrillic С homoglyph hiding inside an otherwise-ASCII serial.
+      const jorg = '/home/Jörg/x3utils/backup/dump.bin';
+      const homoglyph = '/home/a/MEMORY_G3_С45_1.5.4.bin';
+      expect(Firmware.validateOpenOcdPath(jorg).ok, !Platform.isWindows);
+      expect(Firmware.validateOpenOcdPath(homoglyph).ok, !Platform.isWindows);
+    });
+
+    test('plain ASCII passes everywhere', () {
+      expect(Firmware.validateOpenOcdPath('/home/a/x3utils/d.bin').ok, isTrue);
+    });
+  });
+
   group('AppController', () {
     Future<AppController> load(Map<String, Object> prefs) async {
       SharedPreferences.setMockInitialValues(prefs);

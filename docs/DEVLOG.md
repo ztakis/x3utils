@@ -2128,3 +2128,106 @@ Linux/macOS get the same code but were not rebuilt this session.
     `Failed to create log directory` line means the root is not writable.
   - Worth capturing in the testing.md row: the paths from the console, and
     `ls ~/x3utils/logs/rdp_check`.
+- LINUX v1.2.2 VALIDATED on the packaged AppImage, and the non-ASCII guard
+  SCOPED TO WINDOWS. Rows in `docs/testing.md`.
+  - The packaged sweep closed the Linux half of the handoff above: ten actions
+    from `dist/x3utils-1.2.2-x86_64.AppImage`, all five subfolders under
+    `~/x3utils`, 2nd copies outside it, no `~/Documents/x3utils` created, and
+    both RDP logs in `~/x3utils/logs/rdp_check/`. The exec-bit gotcha did not
+    bite: `rdp_check.sh` and `openocd` were `-rwxr-xr-x` inside the squashfs
+    mount. `X3UTILS_RDP_LOG_DIR` reached the script even from that read-only
+    mount, via the runner's temp-copy `config.sh`.
+  - The `_toolkit` suffix has now been load-bearing three times out of three:
+    every rdp_check pair recorded so far shares its second, on both platforms.
+  - Correction to the entry above: the toolkit file is UTF-16LE on WINDOWS only.
+    On Linux it is plain ASCII. The console log is still the one to ask a user
+    for, for the other reason already given — it is the superset (1548 B vs
+    592 B on the same run).
+  - THE PROBE THE ENTRY ABOVE ASKED FOR, now run, so Linux is BINARY-proven
+    rather than layer-proven. Bundled `native/linux/oocd/bin/openocd`, no
+    hardware: `-f <dir>/probe.cfg` and a jimtcl `open`/`puts`/`close` write, both
+    through four directory names — `Prüfung/` (German umlaut), `Δοκιμή/` (Greek),
+    `MEMORY_G3_С45/` (the founding U+0421 Cyrillic homoglyph) and `zip⚡3/`
+    (emoji). ALL EIGHT SUCCEEDED. Read and write, every shape the guard refused.
+  - So the guard was refusing paths its own binary handles. DONE: the non-ASCII
+    half of `Firmware.validateOpenOcdPath` is now `Platform.isWindows`-gated.
+    Braces stay unconditional — Tcl quoting breaks everywhere. This is the step
+    the "agreed build order" put first and the root-folder session took second;
+    it is now closed.
+  - HOW BAD IT WAS OFF WINDOWS, since this was under-rated as a cosmetic
+    refusal. For a user whose home is `/home/Jörg`, the DEFAULT root
+    `~/x3utils` carries the umlaut, so `_stagedDumpPath` refused Backup, SHU
+    compat and Backup + Flash before OpenOCD started — and the message told them
+    to pick another folder in Settings, where `validateRootFolder` refused every
+    folder they own. A dead end out of the box. The guard also runs on the
+    SOURCE file via `Firmware.validate`, so Flash Only, Flash slot 0 and the
+    ZIP3 tools rejected anything under their home too.
+  - Windows behaviour is byte-identical, message included, so the Windows
+    hardware sweep and installer from earlier that day stay valid. The message
+    wording is deliberately NOT changed here; it is Windows-only text and
+    belongs with whichever Windows strategy lands (see OPEN below).
+  - Noticed while tracing it: the v1.2.2 root change accidentally de-fanged this
+    on Windows. The old default `Documents/x3utils` carried the username, so
+    Jörg's dumps were blocked there too; `C:\x3utils` took the username out of
+    the output path. On Linux/macOS `~/x3utils` still carries it, so the same
+    commit left the guard lethal on exactly the two platforms where it has no
+    technical basis.
+  - `tool/gen_test_bins.dart` — the `Prüfung/` row's verdict is now scoped to
+    Windows, per the standing rule that behaviour-pinning manifest rows move in
+    the same change as the behaviour.
+  - HARDWARE-CONFIRMED the same evening, which beats the offline probe: guarded
+    Flash slot 0 took the `Prüfung/16a_slot_zt3_vcu_SYNTHETIC.bin` fixture and
+    OpenOCD handled the umlaut path inside the brace-quoted `write_image erase`
+    AND `verify_image` commands — wrote 59392 B (2 KB page rounding of 58436),
+    verified 58436 B, exit 0. The probe only proved a jimtcl `open`; this is the
+    real command path the app builds. Pre-flash backup, 2nd copy and the
+    identity gate all behaved on the way through. Note the fixture is a
+    synthetic unbootable payload, so the board needs a reflash afterwards — it
+    exists to be SELECTED, and flashing it is not required to prove the gate.
+  - 177 tests pass (was 174), `flutter analyze` clean. The three new ones sit
+    beside the brace test in `x3utils_root_test.dart` and pin the two halves as
+    SEPARATELY scoped, which is the thing a later cleanup would re-merge.
+  - REJECTED, so it is not re-proposed: moving the Linux root to `/opt/x3utils`
+    to dodge the username. `/opt` is `root:root` 755, so a normal user cannot
+    create it, and the Linux artifact is an AppImage with no packaging step to
+    do it for them. A run-once privileged setup script WOULD work — Linux
+    already needs one by hand (udev rules, `libhidapi-hidraw0`, `plugdev`), so
+    it is a net win on its own merits and is listed under OPEN below. But it
+    cannot fix this bug: relocating the root fixes the destination half only,
+    while firmware ARRIVES in the user's home directory, and the source-side
+    check would still refuse it. macOS does have a real equivalent if it is ever
+    wanted for its own sake — `/Users/Shared` is mode 1777 on every Mac and the
+    app is unsandboxed by design — but the same limitation applies.
+- OPEN ITEMS, carried forward explicitly. The previous handoff was written as a
+  validation checklist and dropped these, which is why the ASCII scoping sat
+  unstarted through two sessions. Keep this list at the tail.
+  - WINDOWS non-ASCII strategy. The guard is still blanket ASCII on Windows,
+    which refuses `C:\Users\Jörg\Desktop\fw.bin` even though a German machine's
+    CP1252 represents it and OpenOCD would open it correctly. Three candidates,
+    to be judged on the Windows box where the ACP can actually be observed:
+    (a) an ACP round-trip test — convert wide→ANSI→wide via `WideCharToMultiByte`
+    and compare; identical means OpenOCD gets the right file, different catches
+    both unrepresentable and best-fit mapping. Correct in general, needs ~30
+    lines of `dart:ffi` plus a `package:ffi` dependency, and is unit-testable
+    with known strings. (b) exempt characters that also occur in `%USERPROFILE%`,
+    which are representable by construction; no FFI, ~5 lines, fixes the username
+    case only. (c) keep blanket ASCII and only improve the message. Whichever
+    lands, the message should name the character and offset (`'С' U+0421 at
+    position 15`) — "use English letters only" is unactionable when the name
+    looks like English, which is the founding case exactly.
+  - macOS v1.2.2 validation, per the handoff above, PLUS the four-path probe run
+    against the xPack OpenOCD. Linux is measured now; macOS scoping still rests
+    on the POSIX-argv reasoning alone. Same probe, different binary.
+  - The all-zero dump message: make the `masked` verdict neutral (protection
+    masking OR an empty/unreadable target). Three places move together — the
+    message, the `DumpVerdict.masked` doc comment, and the test's name.
+  - `Firmware.promoteDump` swallows every rename failure and returns the
+    unchanged `.part` path; all three callers treat that as success. Return a
+    result and abort guarded writes when promotion failed.
+  - A Linux run-once setup script: deps, udev rules + reload + trigger, plugdev
+    group, and a `--check` mode. Currently all manual in `x3utils_linux/README.md`.
+  - v1.2.2 release note: users who deliberately pointed backups elsewhere now
+    write to the new root. Still unwritten; there is no changelog file.
+  - Cosmetic: `DesktopPathDisplay` gives a short root like `C:\x3utils` a tall
+    two-line box. A one-line variant for short directory paths whenever the
+    settings panel is next touched.

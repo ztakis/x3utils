@@ -108,18 +108,33 @@ class Firmware {
     return FirmwareCheck.valid;
   }
 
-  /// Path rules for anything handed to OpenOCD, in either direction. Braces are
-  /// the Tcl quoting characters the commands are built with; the Windows
-  /// non-ASCII guard covers the bundled build's command path handling. Checked
-  /// on dump DESTINATIONS too, before the run, so a backup folder OpenOCD
-  /// cannot write to fails while nothing has happened yet.
+  /// Path rules for anything handed to OpenOCD, in either direction. Checked on
+  /// dump DESTINATIONS too, before the run, so a backup folder OpenOCD cannot
+  /// write to fails while nothing has happened yet.
+  ///
+  /// Braces are the Tcl quoting characters the commands are built with, so they
+  /// are refused everywhere.
+  ///
+  /// The non-ASCII rule is WINDOWS ONLY. The bundled Windows OpenOCD is a mingw
+  /// build whose CRT converts `argv` from UTF-16 down to the machine's ANSI
+  /// codepage before `main()`, so a path survives only if this PC's codepage can
+  /// represent it — and `ü` best-fit maps to `u`, a valid but DIFFERENT path.
+  /// Blanket ASCII is a deliberate locale-independent safe superset there; do
+  /// not narrow it into a per-codepage test without reading the DEVLOG entry.
+  ///
+  /// It does not apply off Windows: POSIX paths are opaque bytes and `argv` is
+  /// unconverted. Measured 2026-07-29 against the bundled Linux OpenOCD — cfg
+  /// reads and file writes through `Prüfung/`, `Δοκιμή/`, a Cyrillic-homoglyph
+  /// directory and an emoji directory all succeeded. Applying it there refused
+  /// every dump for a user like `/home/Jörg`, whose `~/x3utils` root carries the
+  /// username, and refused firmware picked from their own home as well.
   static FirmwareCheck validateOpenOcdPath(String path) {
     if (path.contains('{') || path.contains('}')) {
       return FirmwareCheck.fail(
         'Path contains an unsupported character: { or }.',
       );
     }
-    if (path.codeUnits.any((c) => c > 127)) {
+    if (Platform.isWindows && path.codeUnits.any((c) => c > 127)) {
       return FirmwareCheck.fail(
         'Path has non-ASCII characters — use English letters only.',
       );
@@ -541,9 +556,10 @@ class Firmware {
   }
 
   /// Check a folder the user is about to make the root, WHEN IT IS PICKED:
-  /// usable by OpenOCD (the brace/non-ASCII rules every dump destination under
-  /// it inherits) and actually writable. The pre-run destination check stays as
-  /// the safety net; this only moves the bad news to the moment of the choice.
+  /// usable by OpenOCD (the path rules every dump destination under it inherits,
+  /// non-ASCII among them on Windows only) and actually writable. The pre-run
+  /// destination check stays as the safety net; this only moves the bad news to
+  /// the moment of the choice.
   static FirmwareCheck validateRootFolder(String path) {
     final trimmed = path.trim();
     if (trimmed.isEmpty) return FirmwareCheck.fail('Choose a folder.');
