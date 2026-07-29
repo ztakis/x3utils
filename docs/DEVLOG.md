@@ -1135,9 +1135,9 @@ Linux/macOS get the same code but were not rebuilt this session.
   slot-0 write, and that Make zip3 rejects a dump without trustworthy BLE ZP
   evidence with the revised wording. `docs/testing.md` records those results,
   the AppImage/window-size check, and the fixed immediate Nemo reveal feedback.
-  `docs/flutter-v1.2.0-minimum-macos-linux-validation.md` carries the narrowed
-  package/UI/hardware checklist for the final checkout. `AGENTS.md` also records
-  the strict guarded-banner,
+  The minimum Linux/macOS package/UI/hardware campaign is now closed and
+  recorded in `docs/testing.md` plus the 2026-07-24 DEVLOG entries below.
+  `AGENTS.md` also records the strict guarded-banner,
   digest-recheck, MCU limitation, and stale-ZP/Make-zip3 safety contracts so a
   later implementation pass does not weaken them.
 
@@ -1289,10 +1289,11 @@ Linux/macOS get the same code but were not rebuilt this session.
     Only, passed MD5/decryption, and showed matching ZT3/VCU JSON and firmware
     banner evidence; it was cancelled before flashing. This is desktop
     structural validation, not BLE Load-from-file acceptance.
-  - Removed the temporary macOS-only handoff and replaced it with
-    `docs/flutter-v1.2.0-minimum-macos-linux-validation.md`: focused tests and
-    packaging, one packaged offline smoke, and one matching guarded hardware
-    write per OS, with a stop rule against replaying the Windows matrix.
+  - Removed the temporary macOS-only handoff and established the minimum
+    Linux/macOS validation plan later closed in `docs/testing.md` and the
+    2026-07-24 entries below: focused tests and packaging, one packaged offline
+    smoke, and one matching guarded hardware write per OS, with a stop rule
+    against replaying the Windows matrix.
 
 ## 2026-07-24
 
