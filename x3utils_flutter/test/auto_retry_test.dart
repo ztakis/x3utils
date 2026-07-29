@@ -41,25 +41,50 @@ class _ScriptedRunner extends OpenOcdRunner {
   }) async => _replay(onLine);
 }
 
-Future<AppController> _controller({
+Future<({AppController controller, _ScriptedRunner runner})> _harness({
   required List<String> lines,
   required int exitCode,
   int autoRetry = 3,
 }) async {
   SharedPreferences.setMockInitialValues({'defaultAutoRetry': autoRetry});
-  final c = AppController(
-    runner: _ScriptedRunner(lines: lines, exitCode: exitCode),
-  );
-  addTearDown(c.dispose);
+  final runner = _ScriptedRunner(lines: lines, exitCode: exitCode);
+  final controller = AppController(runner: runner);
+  addTearDown(controller.dispose);
   await Future<void>.delayed(Duration.zero); // let _loadPrefs settle
-  return c;
+  return (controller: controller, runner: runner);
+}
+
+Future<AppController> _controller({
+  required List<String> lines,
+  required int exitCode,
+  int autoRetry = 3,
+}) async {
+  final harness = await _harness(
+    lines: lines,
+    exitCode: exitCode,
+    autoRetry: autoRetry,
+  );
+  return harness.controller;
 }
 
 void main() {
   // A connect that never reached the core is the whole point of the feature.
-  const noContact = ['Error: init mode failed (unable to connect to the target)'];
-  // 'target halted' is the marker that the run got past connect.
-  const connected = ['target halted due to debug-request', 'Error: verify failed'];
+  const noContact = [
+    'Error: init mode failed (unable to connect to the target)',
+  ];
+  // Every marker that proves the run got past connect. The flash-bank driver
+  // name is per-OS, so both spellings of the probe line are covered.
+  const pastConnectEvidence = <String>[
+    'target halted due to debug-request',
+    'Connected.  Ready to flash.',
+    "Info : flash 'at32f415xx' found at 0x08000000",
+    "Info : flash 'artery' found at 0x08000000",
+    'dumped 131072 bytes',
+    'erased 128 KiB',
+    'wrote 131072 bytes',
+    'Write failed (chip half-written)',
+    'verified 131072 bytes',
+  ];
 
   test('arms on a connect failure and counts down', () async {
     final c = await _controller(lines: noContact, exitCode: 1);
@@ -70,15 +95,102 @@ void main() {
     expect(c.autoRetryLabel, 'Retrying in 3…  (1 of 10)');
   });
 
-  test('does not arm once the run reached the core', () async {
-    final c = await _controller(lines: connected, exitCode: 1);
-    await c.start();
+  for (final marker in pastConnectEvidence) {
+    test('does not arm after target progress: $marker', () async {
+      final c = await _controller(
+        lines: [marker, 'Error: operation failed'],
+        exitCode: 1,
+      );
+      await c.start();
 
-    // Connected, then failed: the write may have gone out, so a third hand
-    // must not repeat it unattended.
-    expect(c.stage, StageState.fail);
-    expect(c.autoRetryArmed, isFalse);
-  });
+      // Connected, then failed: a flash operation may already have started, so
+      // a third hand must not repeat it unattended.
+      expect(c.stage, StageState.fail);
+      expect(c.autoRetryArmed, isFalse);
+    });
+  }
+
+  // The runner echoes '> openocd <args>' into the same stream, and the args
+  // carry the user's backup/firmware path. A folder named after one of the
+  // markers must not count as target evidence — that would silently disarm
+  // auto-retry on every run for that user.
+  for (final dir in ['verified', 'dumped', 'erased']) {
+    test('a user path containing "$dir" still arms auto-retry', () async {
+      final c = await _controller(
+        lines: [
+          r'> openocd -s scripts -d0 -c dump_image {d:\scooter\'
+              '$dir'
+              r'\fw.bin} 0x08000000 0x20000',
+          ...noContact,
+        ],
+        exitCode: 1,
+      );
+      await c.start();
+
+      expect(c.stage, StageState.fail);
+      expect(c.autoRetryArmed, isTrue);
+    });
+  }
+
+  test(
+    'retries on the timer, stops at ten, and manual retry resets it',
+    () async {
+      final harness = await _harness(
+        lines: noContact,
+        exitCode: 1,
+        autoRetry: 1,
+      );
+      final c = harness.controller;
+      await c.start();
+
+      expect(harness.runner.runs, 1);
+      for (
+        var attempt = 1;
+        attempt <= AppController.kAutoRetryMaxAttempts;
+        attempt++
+      ) {
+        final deadline = DateTime.now().add(const Duration(seconds: 2));
+        while (harness.runner.runs < attempt + 1 &&
+            DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        expect(harness.runner.runs, attempt + 1);
+        expect(c.autoRetryAttempt, attempt);
+      }
+
+      expect(c.autoRetryArmed, isFalse);
+
+      await c.retry();
+
+      expect(harness.runner.runs, AppController.kAutoRetryMaxAttempts + 2);
+      expect(c.autoRetryAttempt, 0);
+      expect(c.autoRetryArmed, isTrue);
+      expect(c.autoRetryLabel, 'Retrying in 1…  (1 of 10)');
+    },
+    timeout: const Timeout(Duration(seconds: 20)),
+  );
+
+  test(
+    'disabling auto-retry during a countdown cancels it',
+    () async {
+      final harness = await _harness(
+        lines: noContact,
+        exitCode: 1,
+        autoRetry: 1,
+      );
+      final c = harness.controller;
+      await c.start();
+      expect(c.autoRetryArmed, isTrue);
+
+      c.setDefaultAutoRetry(0);
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+
+      expect(c.autoRetryArmed, isFalse);
+      expect(harness.runner.runs, 1);
+      expect(c.stage, StageState.fail);
+    },
+    timeout: const Timeout(Duration(seconds: 5)),
+  );
 
   test('0 disables it and restores the plain manual prompt', () async {
     final c = await _controller(lines: noContact, exitCode: 1, autoRetry: 0);
@@ -97,6 +209,24 @@ void main() {
     expect(c.stage, StageState.fail);
     expect(c.autoRetryArmed, isFalse);
   });
+
+  // The protection actions drive rdp.ps1, not OpenOCD: with an injected runner
+  // there is no RdpRunner, so they fail before anything could arm a timer. That
+  // is exactly what must be asserted — a protection failure never leaves a
+  // countdown running — while the actionId guard in _autoRetryEligible stays as
+  // defence for the day one of them does reach the OpenOCD finish path.
+  for (final actionId in ['rdp_check', 'rdp_rescue']) {
+    test('does not arm for $actionId', () async {
+      final harness = await _harness(lines: noContact, exitCode: 1);
+      final c = harness.controller;
+      c.selectAction(actionId);
+      await c.start();
+
+      expect(c.stage, StageState.fail);
+      expect(c.autoRetryArmed, isFalse);
+      expect(harness.runner.runs, 0); // never went through OpenOCD
+    });
+  }
 
   // NOTE: the "OpenOCD never launched" guard (_cannotRun) has no test here on
   // purpose. Reaching it needs an AppController built WITHOUT an injected

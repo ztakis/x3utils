@@ -802,7 +802,7 @@ class AppController extends ChangeNotifier {
   Timer? _autoRetryTimer;
   int autoRetryCountdown = 0; // seconds left before the next automatic press
   int autoRetryAttempt = 0; // automatic presses used since the last fresh run
-  bool _sawTargetHalted = false; // this run reached the core
+  bool _sawTargetProgress = false; // this run reached target/operation progress
   bool _cannotRun = false; // never launched (missing OpenOCD / unwired action)
 
   bool get autoRetryArmed => _autoRetryTimer != null;
@@ -819,7 +819,7 @@ class AppController extends ChangeNotifier {
       stage == StageState.fail &&
       !_failureNeedsInput && // policy failure: needs the user, not a retry
       !_cannotRun && // a broken bundle is not a loose wire
-      !_sawTargetHalted && // connected, then failed → never auto-repeat
+      !_sawTargetProgress && // connected/progressed → never auto-repeat
       mode != ConnectionMode.powerRace && // has its own respawn loop
       actionId != 'rdp_check' && // stdin prompt, not a re-run (own pass)
       actionId != 'rdp_rescue' &&
@@ -1183,7 +1183,7 @@ class AppController extends ChangeNotifier {
     _failureNeedsInput = false;
     _failureIsFinding = false;
     _rdpRetryPending = false;
-    _sawTargetHalted = false;
+    _sawTargetProgress = false;
     _cannotRun = false;
     _lastRunDuration = null;
     _lastExitCode = null;
@@ -1546,14 +1546,22 @@ class AppController extends ChangeNotifier {
     final low = clean.toLowerCase();
     if (low.contains('target halted')) {
       lastConnect = 'PASS';
-      // Sticky for the whole run: _finishReal overwrites lastConnect with FAIL
-      // on ANY failure, so it cannot tell "never connected" from "connected,
-      // then failed" — and only the former may auto-retry.
-      _sawTargetHalted = true;
     }
+    // The runners echo their own command line ('> openocd …', '> bash …') into
+    // this same stream, and those args carry user-chosen paths. A backup folder
+    // named 'verified' or 'dumped' must never read as target evidence: it would
+    // disarm the third hand before OpenOCD had even started, invisibly and for
+    // every run. Only real target output counts.
+    final fromTarget = !clean.startsWith('> ');
+    // Sticky for the whole run: _finishReal overwrites lastConnect with FAIL
+    // on ANY failure, so it cannot tell "never connected" from "connected,
+    // then failed" — and only the former may auto-retry. Treat later objective
+    // progress as proof too, so a missing/changed halt line can never make an
+    // erase or write failure eligible for unattended repetition.
+    if (fromTarget) _sawTargetProgress |= hasTargetProgressEvidence(low);
     _diagnose(low);
     _surfaceOpenOcdIssue(clean, low);
-    if (driveOpenOcdProgress) _advanceOpenOcdStage(low);
+    if (driveOpenOcdProgress && fromTarget) _advanceOpenOcdStage(low);
     if (guided) _parseGuided(line, low);
   }
 
@@ -1825,15 +1833,7 @@ class AppController extends ChangeNotifier {
   /// Any live OpenOCD marker shows the busy surface and keeps the race watchdog
   /// fed. Markers are not told apart; the eyebrow is per-action, not per-stage.
   void _advanceOpenOcdStage(String low) {
-    if (low.contains('target halted') ||
-        low.contains('caught; hold power') ||
-        low.contains('x3_caught_hold_power') ||
-        low.contains("flash 'at32f415xx' found") ||
-        low.contains('dumped') ||
-        low.contains('erased') ||
-        low.contains('wrote') ||
-        low.contains('written') ||
-        low.contains('verified')) {
+    if (hasTargetProgressEvidence(low)) {
       _lastProgressAt = DateTime.now();
       _showOpenOcdProgress();
     }

@@ -1555,7 +1555,9 @@ Linux/macOS get the same code but were not rebuilt this session.
   - Eligibility gate, which is the only real logic here: auto-retry arms only
     when the run never got past connect. `lastConnect` cannot be used for this
     because `_finishReal` overwrites it with `FAIL` on any failure, so a sticky
-    per-run `_sawTargetHalted` flag carries the fact instead. Also excluded:
+    per-run `_sawTargetProgress` flag carries the fact instead (named
+    `_sawTargetHalted` and keyed on that one line until it was widened on
+    2026-07-29, below). Also excluded:
     validation/policy failures, `_failCannotRun` (nothing launched, so a retry
     cannot help), `rdp_check` and `rdp_rescue` (a stdin prompt is not a re-run
     and needs its own pass), and Power-race, which has its own respawn loop and
@@ -1775,3 +1777,87 @@ Linux/macOS get the same code but were not rebuilt this session.
     state. The message therefore names a cause the bytes cannot fully prove. It
     is left as-is for now — `Check protection` is exactly where it sends the
     operator, and that tool reads the FAP byte and settles it.
+- Widened the auto-retry eligibility gate from `target halted` alone to ANY
+  evidence that the run got past connect. `_sawTargetHalted` is now
+  `_sawTargetProgress`.
+  - Why: the old gate rested on one string from one cfg path. A cfg reword, or
+    a flow that reaches flash without reprinting the halt line, would have made
+    an erase or write failure eligible for an unattended repeat. That second
+    case is not hypothetical — `runRace` already compensates for it, because on
+    the 2-catch backup+flash and SHU flows the core is ALREADY halted from the
+    first catch and the line is not printed again.
+  - The gate now also trips on the guided `Ready to flash.` banner, the flash
+    bank probe, and the operation markers `dumped` / `erased` / `wrote` /
+    `written` / `verified`. These are objective: they mean the chip was reached
+    and an operation may have started, whatever the connect log said.
+  - One vocabulary, not three. `hasTargetProgressEvidence()` now lives in
+    `lib/engine/openocd_runner.dart` beside the existing `OpenOcdEvidence`
+    regexes, and both `_advanceOpenOcdStage` and the retry gate call it. There
+    were three near-identical copies of this marker list before.
+  - THE REASON THIS MATTERED, found while checking the widening against the
+    other platforms: the old one-string gate was INERT ON macOS. The 2026-07-21
+    macOS CLI issue in `docs/testing.md` is the proof — Linux OEM OpenOCD
+    prints `target halted`, but the bundled xPack build at `-d0` does not, which
+    is why mode-D grading had to move to flash-bank/FAP evidence. The GUI hits
+    exactly that combination: `native/macos/oocd/bin/openocd` is a `cafebabe`
+    universal binary whose two slices are byte-for-byte the sizes of the two
+    `xpack-openocd-0.12.0-7-darwin-*` CLI builds, and `_base()` in
+    `openocd_runner.dart` always passes `-d0`. So on macOS `_sawTargetHalted`
+    would never have been set, and a run that connected and then failed
+    mid-erase or mid-write would have been ELIGIBLE for an unattended repeat —
+    the precise thing the gate exists to prevent.
+  - Caught pre-release: auto-retry landed 2026-07-28 for v1.2.1, the tree is
+    `1.2.1+7`, and the newest tag is `gui-v1.2.0`. No shipped build carried the
+    inert gate. Nothing to warn users about.
+  - Second half of the same hole: the probe marker was the literal
+    `flash 'at32f415xx' found`, but macOS declares the bank with the `artery`
+    driver (`native/macos/oocd/scripts/target/artery/*.cfg`), so that marker
+    never matched there either — in the retry gate AND in the live progress
+    surface. It is now driver-agnostic, `flash '<any>' found`. The macOS CLI
+    mode-D entry from 2026-07-21 already recorded `flash 'artery' found` as the
+    expected evidence; the GUI had not picked that up.
+  - Generalise from this: a marker set validated on Windows is not validated.
+    The three GUI platforms bundle different OpenOCD builds with different
+    output, and `-d0` is quiet. Prefer several independent markers over one
+    canonical line, and prefer the operation's own evidence over the
+    connect banner.
+  - The copies also used substring `contains` where the engine already had
+    word-boundary regexes (`\bdumped\b` and friends). The shared predicate
+    reuses those.
+  - Regression the widening introduced and that is now fixed — worth reading
+    before adding any marker: `run()` echoes its own command line
+    (`> openocd <args>`) into the SAME stream the line handler parses, and
+    those args carry the user's backup and firmware paths. A backup folder
+    named `verified`, `dumped`, or `erased` therefore matched the new markers
+    on line 1, before OpenOCD had started, and auto-retry would have been
+    silently disarmed for that user on every run. Verified: all three paths
+    return true from the predicate. `_onRealLine` now derives `fromTarget`
+    (`!clean.startsWith('> ')`) and gates both the sticky flag and
+    `_advanceOpenOcdStage` on it — the RDP runner echoes the same way
+    (`> powershell rdp.ps1 …`, `> bash …`). It failed safe rather than
+    dangerous, but it was invisible, which is worse to diagnose.
+  - Same family as the `_openOcdExitFallback` ordering bug fixed above: the
+    command line looks like output. Any future check on this stream must ask
+    whether it is reading target output or the echo of our own arguments.
+  - Answers the RDP open question left above: `rdp.ps1` output IS routed
+    through `_onRealLine` (`driveOpenOcdProgress: false`, but the sticky flag
+    still sets), and the script does print OpenOCD's text to stdout. So if the
+    `rdp_check` / `rdp_rescue` exclusions are ever lifted, the sticky gate
+    blocks auto-retry after contact on that path anyway. Code-read, not
+    hardware-checked.
+  - Tests: `test/auto_retry_test.dart` is 20 tests, up from 5. New coverage for
+    every past-connect marker (both driver spellings), the three echoed-path
+    regression cases above, the countdown actually firing a re-run, the
+    10-attempt cap, a manual Retry restarting the budget, and setting
+    Auto-retry to 0 mid-countdown disarming it. That is unit
+    coverage for four of the items listed as "not yet exercised" on 2026-07-28
+    — it does not replace the hardware pass, and Enter-while-armed is still
+    uncovered.
+  - Honest limit on the two new RDP tests: they pass vacuously. With an
+    injected runner `_rdp` is null, so `_runRdp` fails at the availability
+    check before anything could arm a timer, and the `actionId` guard in
+    `_autoRetryEligible` is never reached. They pin "a protection failure
+    leaves no countdown running" and assert the OpenOCD runner was never
+    called; the guard itself stays untested by design, since no code path
+    reaches `_finishReal` with an `rdp_*` action.
+  - `flutter analyze` clean, 163 tests pass. No hardware run.

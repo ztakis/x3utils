@@ -41,8 +41,26 @@ final _dumpedEvidence = RegExp(r'\bdumped\b');
 final _erasedEvidence = RegExp(r'\berased\b');
 final _writeEvidence = RegExp(r'\b(wrote|written)\b');
 final _verifiedEvidence = RegExp(r'\bverified\b');
+// The flash-bank driver name is per-OS — at32f415xx on Windows/Linux, artery
+// on macOS — so match any driver rather than one platform's.
+final _probeEvidence = RegExp(r"flash '[^']+' found");
 
 bool _hasWriteEvidence(String low) => _writeEvidence.hasMatch(low);
+
+/// True once a line proves the run got past connect: the core answered, the
+/// flash bank probed, or an operation reported progress. Shared so the live
+/// progress surface and the auto-retry gate read the same vocabulary — the
+/// gate must treat *any* of these as "a flash operation may have started".
+bool hasTargetProgressEvidence(String low) =>
+    low.contains('target halted') ||
+    low.contains('caught; hold power') ||
+    low.contains('x3_caught_hold_power') ||
+    low.contains('ready to flash') ||
+    _probeEvidence.hasMatch(low) ||
+    _dumpedEvidence.hasMatch(low) ||
+    _erasedEvidence.hasMatch(low) ||
+    _hasWriteEvidence(low) ||
+    _verifiedEvidence.hasMatch(low);
 
 /// Spawns the frozen OpenOCD and streams stdout+stderr line-by-line.
 ///
