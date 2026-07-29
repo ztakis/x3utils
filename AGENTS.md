@@ -237,6 +237,42 @@ Dump output is validated before it is allowed to look like a backup:
   firmware inputs and dump destinations, and destinations are checked before the
   run. Keep that pre-run check when touching dump paths.
 
+### The x3utils Folder
+
+Everything a GUI run produces lands under ONE user-chosen root, so "send me your
+backup and the log" is one place to look:
+
+- `Firmware.root` is the single setting. Subfolder names are fixed and there are
+  no per-folder overrides: `backup/`, `compat/`, `unpacked_zip3/`,
+  `packed_zip3/`, `logs/`. Do not add a second path preference, and do not
+  reintroduce a per-call destination override on the path helpers.
+- The default is `C:\x3utils` on Windows and `~/x3utils` on Linux/macOS.
+  Deliberately outside Documents, which OneDrive redirects, and deliberately not
+  `~/.local/share`: the user has to be able to find these files and send them.
+- The 2nd copy stays outside the root and hidden (`%LOCALAPPDATA%\x3utils_backup`,
+  `~/.x3utils_backup`, `~/Library/Application Support/x3utils_backup`). A
+  redundant copy must not share a parent the user can move or empty.
+- The old `backupFolder` preference (GUI v1.2.1 and earlier) is never read
+  again. Its string meant
+  "where dumps go", not "the parent of `backup/`", so adopting it would move a
+  user's backups a level down. There is no migration and none is wanted.
+- Never move existing files on a root change. Write to the new place and leave
+  the old tree alone.
+- A picked root is validated in Settings (`Firmware.validateRootFolder`:
+  OpenOCD path rules plus a real write probe). That is in addition to, not
+  instead of, the pre-run destination check.
+- The RDP toolkit writes its own transcript, separately from the GUI's console
+  log. `RdpRunner` passes `X3UTILS_RDP_LOG_DIR` (config.cmd / config.sh) so it
+  lands in the same `<root>/logs/<action>/` folder, and the bundled scripts name
+  theirs `<prefix>_toolkit_<stamp>.log` — the two stamps can land on the same
+  second, so the suffix is what keeps them from colliding. The console log is
+  the superset (and UTF-8), so it is the one to ask a user for; the toolkit file
+  is kept only because the script's on-screen `Full log:` line names it. With the variable
+  unset the scripts keep their own local default, which is what a hand-run
+  outside the GUI needs. This lives only in the bundled copies under
+  `x3utils_flutter/native/`; the standalone CLIs log beside their own scripts
+  and must not be changed to follow a GUI setting they do not have.
+
 ### Flutter Firmware Identity and Make zip3 Safety
 
 The guarded Flutter flash paths are stricter than the shared structural

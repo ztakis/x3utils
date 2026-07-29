@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:x3utils_flutter/engine/firmware.dart';
 import 'package:x3utils_flutter/engine/openocd_paths.dart';
 import 'package:x3utils_flutter/engine/rdp_runner.dart';
 import 'package:x3utils_flutter/models.dart';
@@ -126,6 +127,11 @@ Future<void> _expectUnixRetryPrompts(String platformDir) async {
   final fakeOpenOcd = File(p.join(binDir.path, 'openocd'))
     ..writeAsStringSync(openOcdScript.replaceAll('@STATE@', statePath));
   Process.runSync('chmod', ['+x', fakeOpenOcd.path]);
+
+  // The runner sends the toolkit's own log to <x3utils root>/logs/<action>.
+  // Keep that inside the fixture: a test must not write into the real folder.
+  Firmware.setRoot(root.path);
+  addTearDown(() => Firmware.setRoot(null));
 
   return (
     root: root,

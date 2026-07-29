@@ -64,14 +64,19 @@ List<int> _image(int length, {int? fill}) => List<int>.generate(
 );
 
 void main() {
+  // A temporary x3utils root, so a test never writes into the real one.
+  // Backups land in its fixed `backup/` subfolder, created on first use.
+  late Directory rootDir;
   late Directory backupDir;
 
   setUp(() {
-    backupDir = Directory.systemTemp.createTempSync('x3utils_backup_test');
+    rootDir = Directory.systemTemp.createTempSync('x3utils_root_test');
+    backupDir = Directory(p.join(rootDir.path, 'backup'));
   });
 
   tearDown(() {
-    if (backupDir.existsSync()) backupDir.deleteSync(recursive: true);
+    Firmware.setRoot(null); // never leave the static root pointing at temp
+    if (rootDir.existsSync()) rootDir.deleteSync(recursive: true);
   });
 
   List<File> filesIn(Directory d, String suffix) => d
@@ -171,7 +176,7 @@ void main() {
       final c = AppController(runner: runner);
       addTearDown(c.dispose);
       await Future<void>.delayed(Duration.zero); // let _loadPrefs settle
-      c.setBackupFolder(backupDir.path);
+      c.setX3utilsRoot(rootDir.path);
       c.setSecondCopy(false); // never touch the real 2nd-copy folder in a test
       c.selectAction('dump');
       return c;
@@ -295,7 +300,7 @@ void main() {
       final c = AppController(runner: runner);
       addTearDown(c.dispose);
       await Future<void>.delayed(Duration.zero);
-      c.setBackupFolder(backupDir.path);
+      c.setX3utilsRoot(rootDir.path);
       c.setSecondCopy(false);
       c.selectAction('flash_backup');
 

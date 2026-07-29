@@ -265,11 +265,11 @@ class Firmware {
     return true;
   }
 
-  /// A fresh timestamped dump. [folder] overrides the default backup dir;
-  /// [prefix] is prepended to the filename (`<prefix>_dump_<ts>.bin`).
-  static String newDumpPath({String? folder, String prefix = ''}) {
-    final dir = folder ?? _dir('backup');
-    Directory(dir).createSync(recursive: true);
+  /// A fresh timestamped dump under `<root>/backup`. [prefix] is prepended to
+  /// the filename (`<prefix>_dump_<ts>.bin`). There is no per-call folder
+  /// override: the destination follows the one x3utils root.
+  static String newDumpPath({String prefix = ''}) {
+    final dir = _dir('backup');
     return p.join(dir, '${_pre(prefix)}dump_${_stamp()}.bin');
   }
 
@@ -301,7 +301,7 @@ class Firmware {
   }
 
   /// Firmware decrypted from a zip3 package, kept under
-  /// `Documents/x3utils/unpacked_zip3` so the flash flow can read it by path
+  /// `<root>/unpacked_zip3` so the flash flow can read it by path
   /// and the user can re-flash it later via Choose .bin. [name] seeds the
   /// filename (sanitised); [prefix] follows the usual rule.
   static String newUnpackedBinPath({
@@ -350,7 +350,7 @@ class Firmware {
   }) => '${model}_${type}_${_sourceStem(sourceFilename)}';
 
   /// Validate an operator-edited output filename for the fixed
-  /// `Documents/x3utils/unpacked_zip3` folder. Path components are deliberately
+  /// `<root>/unpacked_zip3` folder. Path components are deliberately
   /// refused: this field names one local `.bin`, not an arbitrary destination.
   static FirmwareCheck validateUnpackedFilename(String input) {
     final trimmed = input.trim();
@@ -427,8 +427,8 @@ class Firmware {
     required String type,
   }) => '${model}_${type}_${_stamp()}';
 
-  /// Output path for a "Make zip3" package under
-  /// `Documents/x3utils/packed_zip3`, named after the (possibly edited)
+  /// Output path for a "Make zip3" package under `<root>/packed_zip3`,
+  /// named after the (possibly edited)
   /// [displayName], sanitised, with a `.zip` extension.
   static String packedZip3Path(String displayName, {String prefix = ''}) {
     final dir = _dir('packed_zip3');
@@ -441,7 +441,7 @@ class Firmware {
   }
 
   /// Raw + patched paths for the SHU-compat workflow — kept SEPARATE from
-  /// regular backups, under Documents/x3utils/compat (mirrors flash_compat.bat).
+  /// regular backups, under `<root>/compat` (mirrors flash_compat.bat).
   static (String raw, String patched) newCompatPaths({String prefix = ''}) {
     final dir = _dir('compat');
     final ts = _stamp();
@@ -464,7 +464,10 @@ class Firmware {
     }
   }
 
-  /// Resolved 2nd-copy dir — each OS mirrors its CLI sibling's location:
+  /// Resolved 2nd-copy dir — deliberately OUTSIDE the x3utils root, and
+  /// deliberately hidden: it is a redundant copy, so it must not share a
+  /// parent the user can point somewhere else, empty, or sync. Each OS mirrors
+  /// its CLI sibling's location:
   /// `%LOCALAPPDATA%\x3utils_backup` (Windows, dump.bat),
   /// `~/Library/Application Support/x3utils_backup` (macOS, x3utils_mac/dump.sh),
   /// hidden `~/.x3utils_backup` (Linux, x3utils_linux/dump.sh).
@@ -483,7 +486,7 @@ class Firmware {
     return p.join(home, '.x3utils_backup');
   }
 
-  /// Write a per-run console log under `Documents/x3utils/logs/{action}/`.
+  /// Write a per-run console log under `<root>/logs/{action}/`.
   /// Returns the path.
   static String writeLog(String action, String content) {
     final dir = _dir(p.join('logs', action));
@@ -498,31 +501,86 @@ class Firmware {
     return clean.isEmpty ? '' : '${clean}_';
   }
 
-  // ── UI display labels (per-OS, so the settings panel never lies) ──────────
-  // Windows keeps the bare `Documents\…` hint; unix shows a `~/`-prefixed path
-  // with native separators. Kept in sync with _dir / secondCopyDir above.
-  static String get backupDirLabel =>
-      _homeLabel(p.join('Documents', 'x3utils', 'backup'));
-  static String get packedZip3DirLabel =>
-      _homeLabel(p.join('Documents', 'x3utils', 'packed_zip3'));
-  static String get unpackedZip3DirLabel =>
-      _homeLabel(p.join('Documents', 'x3utils', 'unpacked_zip3'));
-  static String get logsDirLabel =>
-      _homeLabel(p.join('Documents', 'x3utils', 'logs'));
+  // ── The x3utils folder ────────────────────────────────────────────────────
+  // ONE user-chosen root holds everything a run produces, under fixed
+  // subfolder names and with no per-folder overrides: `backup/`, `compat/`,
+  // `unpacked_zip3/`, `packed_zip3/`, `logs/`. "Send me your backup and the
+  // log" has to be one place to look. The 2nd-copy dir is deliberately NOT in
+  // here — see [secondCopyDir].
+  //
+  // Static because every path helper on this class is static and the root is
+  // one process-wide setting; `AppController` pushes the stored preference in
+  // at startup and whenever the user changes it.
+  static String? _rootOverride;
+
+  /// The folder used when the user has not chosen one: `C:\x3utils` on
+  /// Windows, `~/x3utils` on Linux and macOS. Deliberately outside Documents,
+  /// which OneDrive redirects on many machines — the app would then write to a
+  /// different Documents than the one Explorer shows — and deliberately not
+  /// `~/.local/share`, because the user has to be able to find these files and
+  /// send them.
+  static String get defaultRoot {
+    if (Platform.isWindows) return r'C:\x3utils';
+    final home = Platform.environment['HOME'] ?? Directory.current.path;
+    return p.join(home, 'x3utils');
+  }
+
+  /// The active root: the user's chosen folder, else [defaultRoot].
+  static String get root => _rootOverride ?? defaultRoot;
+
+  static bool get rootIsDefault => _rootOverride == null;
+
+  /// Whether the root is on disk yet. It is created by the first run that
+  /// needs it, so before then there is nothing to open.
+  static bool get rootExists => Directory(root).existsSync();
+
+  /// null or blank restores [defaultRoot].
+  static void setRoot(String? path) {
+    final v = path?.trim();
+    _rootOverride = (v == null || v.isEmpty) ? null : v;
+  }
+
+  /// Check a folder the user is about to make the root, WHEN IT IS PICKED:
+  /// usable by OpenOCD (the brace/non-ASCII rules every dump destination under
+  /// it inherits) and actually writable. The pre-run destination check stays as
+  /// the safety net; this only moves the bad news to the moment of the choice.
+  static FirmwareCheck validateRootFolder(String path) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return FirmwareCheck.fail('Choose a folder.');
+    final safe = validateOpenOcdPath(trimmed);
+    if (!safe.ok) return safe;
+    try {
+      final dir = Directory(trimmed)..createSync(recursive: true);
+      File(p.join(dir.path, '.x3utils_write_test'))
+        ..writeAsStringSync('')
+        ..deleteSync();
+    } catch (_) {
+      return FirmwareCheck.fail(
+        'That folder cannot be written to. Pick one you own, '
+        'such as $defaultRoot.',
+      );
+    }
+    return FirmwareCheck.valid;
+  }
+
+  // ── UI display labels ─────────────────────────────────────────────────────
+  // Real absolute paths: with one root that the settings panel can show and
+  // reveal, a hint no longer has to stand in for a path the app kept to itself.
+  static String get backupDirLabel => _path('backup');
+  static String get packedZip3DirLabel => _path('packed_zip3');
+  static String get unpackedZip3DirLabel => _path('unpacked_zip3');
+  static String get logsDirLabel => _path('logs');
   static String get secondCopyLabel {
     if (Platform.isWindows) return r'%LOCALAPPDATA%\x3utils_backup';
     if (Platform.isMacOS) return '~/Library/Application Support/x3utils_backup';
     return r'~/.x3utils_backup';
   }
 
-  static String _homeLabel(String sub) => Platform.isWindows ? sub : '~/$sub';
+  /// Where a subfolder is, without creating it (labels must not make folders).
+  static String _path(String sub) => p.join(root, sub);
 
   static String _dir(String sub) {
-    final home =
-        Platform.environment['USERPROFILE'] ??
-        Platform.environment['HOME'] ??
-        Directory.current.path;
-    final dir = Directory(p.join(home, 'Documents', 'x3utils', sub));
+    final dir = Directory(_path(sub));
     dir.createSync(recursive: true);
     return dir.path;
   }

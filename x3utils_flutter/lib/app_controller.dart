@@ -39,7 +39,7 @@ class AppController extends ChangeNotifier {
 
   // ── Backups settings (persisted) ──────────────────────────────────────────
   SharedPreferences? _prefs;
-  String? backupFolder; // null = default Documents/x3utils/backup
+  String? x3utilsRoot; // null = the per-OS default (Firmware.defaultRoot)
   String backupPrefix = '';
   bool secondCopy = true; // redundant %LOCALAPPDATA%\x3utils_backup copy
 
@@ -49,7 +49,13 @@ class AppController extends ChangeNotifier {
 
   Future<void> _loadPrefs() async {
     _prefs = await SharedPreferences.getInstance();
-    backupFolder = _prefs!.getString('backupFolder');
+    // The old `backupFolder` key (v1.2.1 and earlier) is never read again. The
+    // same string meant "where dumps go", not "the parent of backup/", so
+    // carrying it over would move a user's backups a level down and scatter
+    // four more folders into a place picked for one purpose. The orphan key is
+    // inert; there is no migration.
+    x3utilsRoot = _prefs!.getString('x3utilsRoot');
+    Firmware.setRoot(x3utilsRoot);
     backupPrefix = _prefs!.getString('backupPrefix') ?? '';
     secondCopy = _prefs!.getBool('secondCopy') ?? true;
     final adv = _prefs!.getStringList('advancedModes');
@@ -101,12 +107,16 @@ class AppController extends ChangeNotifier {
     _prefs?.setInt('accent', idx);
   }
 
-  void setBackupFolder(String? f) {
-    backupFolder = f;
-    if (f == null) {
-      _prefs?.remove('backupFolder');
+  /// Point the whole x3utils folder somewhere else; null restores the default.
+  /// Nothing is moved — an existing tree is left exactly where it is and the
+  /// app simply starts writing to the new one.
+  void setX3utilsRoot(String? folder) {
+    x3utilsRoot = folder;
+    Firmware.setRoot(folder);
+    if (folder == null) {
+      _prefs?.remove('x3utilsRoot');
     } else {
-      _prefs?.setString('backupFolder', f);
+      _prefs?.setString('x3utilsRoot', folder);
     }
     notifyListeners();
   }
@@ -1948,22 +1958,18 @@ class AppController extends ChangeNotifier {
   // or be offered by a `.bin` file picker. A partial dump is not a degraded
   // backup: identity lives in the last 4 KB, so a short file can never hold it.
 
-  /// The staging path for this run, or null when the backup folder itself is
+  /// The staging path for this run, or null when the destination itself is
   /// unusable — checked BEFORE the run, while nothing has happened yet.
-  String? _stagedDumpPath({String? folder, String? explicitPath}) {
+  String? _stagedDumpPath({String? explicitPath}) {
     final finalPath =
-        explicitPath ??
-        Firmware.newDumpPath(
-          folder: folder ?? backupFolder,
-          prefix: backupPrefix,
-        );
+        explicitPath ?? Firmware.newDumpPath(prefix: backupPrefix);
     final staged = Firmware.stagedDumpPath(finalPath);
     final safe = Firmware.validateOpenOcdPath(staged);
     if (!safe.ok) {
       _setInputFailure(
-        'Backup folder',
+        'x3utils folder',
         'Cannot write the backup',
-        '${safe.message} Choose a different backup folder in Settings, then '
+        '${safe.message} Choose a different x3utils folder in Settings, then '
             'start again.',
       );
       return null;

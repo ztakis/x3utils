@@ -30,6 +30,8 @@ Record one row per meaningful test run.
 | Date | OS | Board | ST-LINK | Mode | Action | Result | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TBD | TBD | TBD | TBD | TBD | dump / flash / compat / slot0 / rdp | pass / fail |  |
+| 2026-07-29 | Windows home primary | ZT3 VCU test board | ST-LINK | A / Default SWD | GUI v1.2.2 packaged installer — root folder + RDP toolkit log | pass | `flutter build windows --release` then Inno Setup 6.7.1 produced `x3utils-setup-1.2.2.exe`; the compile listing confirms the edited `native\windows\special\rdp\rdp.ps1` was packaged and that the gitignored runtime `config.cmd` was excluded. On the per-user install (`%LOCALAPPDATA%\Programs\x3utils`, no UAC): the installed `rdp.ps1` carries the `_toolkit` change, `config.cmd` was absent until the first run, and Check protection from the installed app wrote BOTH logs into `C:\x3utils\logs\rdp_check` (`rdp_check_2026-07-29_17-56-25.log` + `rdp_check_toolkit_2026-07-29_17-56-24.log` — one second apart, so the folder now shows why the suffix is needed). Nothing newer than the pre-fix `17-10-25` file appeared under `Documents\x3utils`, which is the regression check. This supersedes the offline-only status of the Windows half of the RDP log fix; Linux and macOS are still owed. |
+| 2026-07-29 | Windows home primary | ZT3 VCU test board | ST-LINK | A / Default SWD | GUI v1.2.2 x3utils root folder, full action sweep | pass with one defect found and fixed | Check connection, Backup, SHU compat (auto-zip3 refused on the first run for lack of trustworthy ZP, then produced the package on the second after a BLE-derived slot 0 was in place), Backup + Flash, guarded Flash slot 0 from a zip3 import, Check protection, and Make zip3 all wrote under `C:\x3utils` in the five expected subfolders; 2nd copies went to `%LOCALAPPDATA%\x3utils_backup`. Explorer showed exactly `backup, compat, logs, packed_zip3, unpacked_zip3`. Defect: Check protection also wrote the RDP toolkit's own transcript to `Documents\x3utils\logs\rdp_check\`, with the SAME basename as the console log (`rdp_check_2026-07-29_17-10-25.log`, identical second). Fixed the same session via `X3UTILS_RDP_LOG_DIR` plus a `_toolkit` filename suffix in the bundled scripts; the Windows fix is offline-verified only, so this row does not cover the fixed behavior on hardware. |
 | 2026-07-29 | Linux Mint home primary / x86_64 | AT32F415 X3 testbed, empty flash | ST-LINK | A / Default SWD | Flutter v1.2.1 invalid-backup handling (Backup) + restore from `.bin` | pass | The board read back all zeros, so Backup took the evidence path rather than the short-read one: staged `.bin.part`, no `.bin` created, and the trash move worked. Maintainer reported no behavioral difference from the Windows runs below. Per-run figures were not captured. First real exercise of the freedesktop trash path (`~/.local/share/Trash` `files/` + `info/*.trashinfo`). The board was then restored from a `.bin` on this machine and passed. FAP was reported not enabled, so the all-zero read here was an empty chip rather than a masked one — the verdict keys on the byte pattern, not on the chip's protection state. |
 | 2026-07-29 | macOS | AT32F415 X3 testbed, empty flash | ST-LINK | A / Default SWD | Flutter v1.2.1 invalid-backup handling (Backup) | pass | Same all-zero read and same behavior as the Linux row above, with no difference from the Windows runs. Per-run figures were not captured. First real exercise of the `~/.Trash` move. |
 | 2026-07-29 | Windows home primary | AT32F415 X3 testbed, deliberately FAP'd via CLI `rdp.ps1 -Enable` | ST-LINK | A / Default SWD | Flutter v1.2.1 masked-read evidence path (Backup) | pass | The dump completed normally — 131072 bytes in 1.97 s, exit 0, `xPSR/pc/msp` all zero — and inspection returned the masked verdict. No `.bin` was created; the file stayed `.bin.part`. The screen named the readout-protection signature and pointed at Check protection, the console logged `chip finding, file left at →`, and the single button read `Dismiss` rather than "Back to setup". The cleanup modal used the finding title, and `Move to Recycle Bin` moved it and showed the note. Still to cover: `Keep it`, the pre-flash-backup abort, the all-0xFF blank verdict after a rescue erase, and the Linux/macOS trash moves. |
@@ -65,7 +67,7 @@ Record one row per meaningful test run.
 
 - Select the intended connection mode.
 - Run full 128 KB dump.
-- Confirm output file exists in the platform backup folder.
+- Confirm output file exists in `<x3utils folder>/backup`.
 - Confirm secondary backup exists if that option is enabled.
 - Confirm validator accepts the dumped file.
 - Confirm no `.bin.part` file is left behind after a successful dump.
@@ -76,12 +78,12 @@ Record one row per meaningful test run.
 Pull the SWD contact mid-dump, after `target halted`, to produce a short read.
 Repeat for Backup and for Backup + Flash.
 
-- Confirm the backup folder gets a `.bin.part` file and no new `.bin`.
+- Confirm `<x3utils folder>/backup` gets a `.bin.part` file and no new `.bin`.
 - Confirm the failure screen names the shortfall (`n of 131072 bytes`).
 - Confirm the cleanup modal appears, and that `Keep it` leaves the file exactly
   where it is.
-- Confirm `Move to Recycle Bin` / `Move to Trash` removes it from the backup
-  folder and that it is recoverable from the OS trash.
+- Confirm `Move to Recycle Bin` / `Move to Trash` removes it from `backup/` and
+  that it is recoverable from the OS trash.
 - Confirm Backup + Flash aborted before any erase or write.
 - On a read-protected board, confirm the full-size all-zero read gets the
   finding wording ("This read is a finding, not a backup"), points at Check
@@ -124,10 +126,34 @@ Repeat for Backup and for Backup + Flash.
 - Confirm dump success requires `dumped`.
 - Confirm flash success requires `wrote` plus `verified`.
 
+## x3utils Folder Test
+
+No hardware needed; Settings plus one Backup run.
+
+- Confirm a fresh install shows the per-OS default (`C:\x3utils`, `~/x3utils`)
+  with the "default location" hint, and that creating it needs no elevation.
+- Run one Backup and confirm `backup/` appears under the shown folder, and that
+  Save log puts the log under `logs/` in the same tree.
+- Confirm `Browse…` to a writable folder switches the path and that a later run
+  writes there; confirm `Reset` returns to the default.
+- Confirm nothing was moved: the previous tree still holds its old files.
+- Confirm a folder the app cannot write to, or one with `{`/`}` (and non-ASCII
+  on Windows), is refused in Settings with the reason shown and the setting
+  unchanged.
+- Confirm the reveal action opens the folder once it exists.
+- Confirm the 2nd copy still goes to its own hidden location outside the root.
+- Run Check protection and confirm BOTH logs land in `<root>/logs/rdp_check`:
+  the console log `rdp_check_<stamp>.log` and the toolkit's own
+  `rdp_check_toolkit_<stamp>.log`. Nothing may appear under `Documents/x3utils`.
+  Still owed on Linux and macOS — the runner tests for those paths no-op on
+  Windows.
+
 ## Non-Hardware Port Checks
 
 | Date | OS | Scope | Result | Notes |
 | --- | --- | --- | --- | --- |
+| 2026-07-29 | Windows home primary | RDP toolkit log follows the x3utils root | pass (offline) | `rdp.ps1` parses clean; its real `Get-RdpConfig` and `New-LogPath` were AST-extracted from the shipped bundled file and run: the backslash path parses out of config.cmd, a supplied dir is created and yields `rdp_check_toolkit_<stamp>.log`, and an absent one still falls back to the old Documents path for a hand-run outside the GUI. `bash -n` clean on both unix `rdp_check.sh` copies; their runtime path is NOT covered, because `rdp_runner_test.dart` no-ops on Windows — one Check protection run each is still owed on Linux and macOS. Full suite 174/174 and `flutter analyze` clean. Only files under `x3utils_flutter/native/` changed; the standalone CLIs were not touched. |
+| 2026-07-29 | Windows home primary | Flutter x3utils root folder (replaces the Backup folder setting) | pass | Offline only. `flutter analyze` clean and the full suite passed 174/174, including the new `test/x3utils_root_test.dart` (all five outputs follow the root under fixed names, 2nd copy outside it, blank restores the per-OS default, labels create nothing, a stored `backupFolder` is not adopted). Incidental confirmation of the Windows default's ACLs: the test run created `C:\x3utils\unpacked_zip3` from a non-elevated process with no UAC prompt. Not covered by tests and still owed on the running app: the Browse/Reset row, the red refusal line for an unwritable or brace-bearing pick, and Reveal. No hardware command ran. |
 | 2026-07-26 | Windows home primary | Flutter v1.2.1 three-way ZIP3 Slice / Pack / Unpack | pass | Offline-only verification. The focused ZIP3 engine, controller, confirmed-write, and widget suite passed 86/86; `flutter analyze` and `git diff --check` were clean. Coverage includes strict 128 KB Slice routing; VCU/MCU/BMS/BLE Pack metadata and round trips; rejection of full dumps, non-byte-exact NinebotTEA lengths, VCU/MCU ceiling violations, and missing/unsupported/contradictory banner evidence; page-state isolation; and the three-position locked workspace. After disabling the outdated entry modal, the widget suite passed 3/3 and the analyzer remained clean. No packaged-app build, BLE operation, or hardware command was run. |
 | 2026-07-25 | Windows home primary | Flutter v1.2.1 Pack / Unpack zip3 offline validation | pass | `flutter analyze` was clean; the focused ZIP3, confirmed-write, and widget suite passed 65/65. A temporary private-corpus probe passed 3/3: real BMS and BLE packages decrypted, including a roughly 1.85 MB BLE archive; 13 malformed packages were rejected at their intended gates; and a valid VCU package with an extra padding member was accepted by the extraction-only policy. Tests also confirm flash ZIP import remains VCU/MCU-only and size-gated. No packaged-app build, BLE operation, or hardware command was run. |
 | 2026-07-24 | macOS 15.7.7 / Intel x86_64 | Flutter v1.2.0 BETA minimum packaged validation | pass | The focused test set and `flutter analyze` passed. `tool/package_macos.sh` produced `dist/x3utils-1.2.0-macos-universal.zip` and passed the x86_64/arm64, deep-signature, embedded-backend, RDP-script, and Power-race-cfg checks. The packaged app opened at 1024x768 and passed the truncated-full refusal, ZT3/VCU Make zip3 preselection and creation, unchanged existing output after Replace/Cancel, valid ZIP3 round-trip import with matching evidence cancelled before flash, and prompt Finder reveal. Saved app logs corroborate the 58460-byte package creation, existing-package Cancel, and 58460-byte decrypted import. The generated package is structurally accepted by x3utils, not yet BLE-proven. Minimum macOS validation is closed. |

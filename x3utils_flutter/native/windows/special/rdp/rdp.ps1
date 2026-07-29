@@ -124,6 +124,7 @@ function Get-RdpConfig {
     $target  = 'target\at32f415xx_c45.cfg'
     $timeout = 3
     $race    = $false
+    $logDir  = ''   # empty = fall back to this script's own default (New-LogPath)
 
     $cfgCmd = Join-Path $ScriptDir 'config.cmd'
     if (Test-Path $cfgCmd) {
@@ -131,6 +132,7 @@ function Get-RdpConfig {
             if ($line -match '^\s*set\s+"TARGET=([^"]+)"')          { $target  = $Matches[1].Trim() }
             elseif ($line -match '^\s*set\s+"CONNECT_TIMEOUT=([^"]+)"') { $timeout = $Matches[1].Trim() }
             elseif ($line -match '^\s*set\s+"RACE=([^"]+)"')        { $race = ($Matches[1].Trim() -ieq 'true') }
+            elseif ($line -match '^\s*set\s+"X3UTILS_RDP_LOG_DIR=([^"]+)"') { $logDir = $Matches[1].Trim() }
         }
     }
 
@@ -144,6 +146,7 @@ function Get-RdpConfig {
         Target    = $target
         Timeout   = $timeout
         Race      = $race
+        LogDir    = $logDir
     }
 }
 
@@ -315,13 +318,20 @@ function Invoke-WithRace {
 }
 
 function New-LogPath {
-    param([string]$Prefix)
-    # Logs live under the user's Documents, one subdir per process.
-    $logs = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'x3utils\logs'
-    $dir  = Join-Path $logs $Prefix
+    param([string]$Prefix, [string]$Dir)
+    # The GUI passes X3UTILS_RDP_LOG_DIR in config.cmd so this transcript lands
+    # in the x3utils folder beside the run's console log. Without it (run by
+    # hand), keep the old Documents location, one subdir per process.
+    if ($Dir) {
+        $dir = $Dir
+    } else {
+        $dir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) "x3utils\logs\$Prefix"
+    }
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
-    return (Join-Path $dir ("{0}_{1}.log" -f $Prefix, $stamp))
+    # `_toolkit`: the GUI writes its own <prefix>_<stamp>.log in the same folder,
+    # and the two stamps can land on the same second. Never collide.
+    return (Join-Path $dir ("{0}_toolkit_{1}.log" -f $Prefix, $stamp))
 }
 
 # ===========================================================================
@@ -332,7 +342,7 @@ $FAP_UNLOCKED = 0xA5
 function Invoke-Check {
     param($cfg, $conn)
 
-    $log = New-LogPath 'rdp_check'
+    $log = New-LogPath 'rdp_check' $cfg.LogDir
 
     Write-Host ''
     Say $D
@@ -536,7 +546,7 @@ function Invoke-Rewrite {
         }
     }
 
-    $log = New-LogPath $prefix
+    $log = New-LogPath $prefix $cfg.LogDir
     $ops = $rewrite + @(
         '-c', 'echo {--- option area after rewrite (masked 0x00 until reload if still protected) ---}',
         '-c', 'mdw 0x1FFFF800 8',

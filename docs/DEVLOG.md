@@ -1861,3 +1861,270 @@ Linux/macOS get the same code but were not rebuilt this session.
     called; the guard itself stays untested by design, since no code path
     reaches `_finishReal` with an `rdp_*` action.
   - `flutter analyze` clean, 163 tests pass. No hardware run.
+- Non-ASCII path guard: diagnosis and decisions. Nothing implemented — this
+  entry exists so neither the diagnosis nor the reasoning is re-derived.
+  - THE GUARD HAS A FOUNDING CASE, and it had never been written down, which is
+    exactly why a re-check of the backup-validation commit read it as inherited
+    superstition and came close to recommending it away. A shared dump in the
+    private corpus, `MEMORY_G3_<serial>_1.5.4.bin`, carries U+0421 CYRILLIC
+    CAPITAL LETTER ES inside what reads as a plain ASCII serial. It is a
+    homoglyph of Latin C, invisible in every font, and OpenOCD could not open
+    the file. Record founding cases here, not in anyone's head.
+  - Mechanism, measured on the Windows box with the bundled
+    `x3utils_win/oocd/bin/openocd.exe` and no hardware — `openocd -f <cfg> -c exit`
+    against directories with different names. OpenOCD is a mingw build and its
+    CRT converts `argv` from UTF-16 down to the system ANSI codepage before
+    `main()` runs. The console `chcp` is irrelevant; the registry ACP applies,
+    and that machine is ACP 1253 (Greek). `Pruefung` LOADED, `Δοκιμή` LOADED,
+    `Prüfung` FAILED, the Cyrillic name FAILED, a name carrying U+200E FAILED.
+  - So the real constraint is "representable in THIS PC's ANSI codepage", which
+    differs per machine: Greek paths work on a Greek Windows and fail on a
+    German one, umlauts the reverse. The blanket ASCII rule is therefore a
+    deliberate locale-independent SAFE SUPERSET. Do not narrow it into a
+    per-codepage test.
+  - The umlaut row is the dangerous one. `ü` did not become `?` — it best-fit
+    mapped to `u`, i.e. a VALID but different path. It failed only because no
+    `Prufung` directory existed. Had one existed, OpenOCD would have opened the
+    wrong file, and for a dump destination that means writing a backup where
+    the app never looks. Loud in practice, silently wrong in principle.
+  - Linux and macOS have no ANSI codepage: POSIX paths are opaque bytes, `argv`
+    is unconverted, locales are UTF-8. Measured at that layer under WSL — six
+    path shapes including `Jörg/Documents/x3utils/backup` all opened, and the
+    bytes on disk are raw UTF-8 (`303 274` for `ü`). The bundled Linux OpenOCD
+    imports no `iconv` or `wcstombs`; its only locale symbol is `mbstowcs`,
+    which is jimtcl string handling, not path handling. The binary itself could
+    not be run there (that WSL lacks `libhidapi-hidraw.so.0`), so this is the
+    layer proven, not the binary. The maintainer also recalls testing non-ASCII
+    paths OK on Linux/macOS; that cannot have gone through the GUI, since the
+    guard refuses before OpenOCD launches, so it was the CLI or raw OpenOCD.
+    Ten-second probe that would turn it into a `docs/testing.md` row:
+    `openocd -f /tmp/Prüfung/probe.cfg -c exit`.
+  - Neither Unix CLI has ever carried the check — `validate_bin.sh` rejects
+    `{}` and nothing else — and the Windows CLI has no path-character check at
+    all. The rule exists in exactly one of the four codebases, the GUI, ported
+    from the old C# `FirmwareValidator.cs`. That is consistent with German
+    users never complaining: on their own CP1252 machine `C:\Users\Jörg` is
+    representable, so OpenOCD handles it, and the GUI blocked it as collateral.
+  - Corpus pattern behind the founding case: the characters arrive from other
+    people's keyboards. Alongside the Cyrillic dump the private corpus holds a
+    German `für` package name and four community packages carrying `⚡`,
+    mathematical-bold-italic letters, and a zero-width U+200E. By the time such
+    a file reaches a German or Greek user's disk the character is unseeable, so
+    "ask users to rename their files" cannot reach this failure.
+  - AN EXTERNAL `openocd.exe.manifest` DECLARING `activeCodePage` UTF-8 DOES
+    FIX IT — retested on a scratchpad copy of the bundled binary, and both
+    `Prüfung` and the founding Cyrillic name loaded. RECORDED AS MECHANISM
+    PROOF AND DELIBERATELY NOT ADOPTED. Do not resurrect it as the fix. It is a
+    process-wide behaviour change rather than a path fix, covering every
+    narrow-char API in OpenOCD/jimtcl under an ACP upstream never tested; an
+    external manifest stops applying, silently, if a future OpenOCD build
+    embeds its own; it needs Win10 1903+, silently; it is a loose file beside an
+    exe that antivirus or a careless zip can remove, silently; and it is
+    invisible to the next reader, who might drop the guard because it exists.
+    Three silent failure modes is the wrong trade for a tool whose value is not
+    bricking controllers.
+  - DECISION: the non-ASCII half of `Firmware.validateOpenOcdPath` becomes
+    Windows-only. The brace check stays unconditional on every platform — `{}`
+    is Tcl quoting syntax and breaks everywhere. This is not a policy change:
+    `AGENTS.md` already reads "On Windows, keep the non-ASCII path guard", and
+    the function's own doc comment already scopes it to the bundled Windows
+    build. The code was simply stricter than the rule it implements. No test
+    asserts the rejection today, so nothing breaks.
+  - One expectation moves with it: `tool/gen_test_bins.dart` emits a `Prüfung/`
+    case whose manifest verdict is "reject non-ASCII path before OpenOCD
+    starts". That becomes Windows-only, and per the standing rule about
+    behaviour-pinning manifest rows it is updated in the same change.
+  - Whatever Windows still refuses needs a message naming the offending
+    character and its offset (`'С' U+0421 at position 15`). "Use English letters
+    only" is unactionable when the name looks like English — precisely the
+    founding case.
+- x3utils ROOT FOLDER: replacing the "Backup folder" setting. DECIDED AND NOW
+  BUILT — see the build note at the end of this entry. The driver is NOT the
+  codepage issue, which only exposed it: "Backup folder choice was enough for
+  the early GUI versions, now it's not."
+  - What is actually wrong today. One run scatters across three trees — backup
+    in the chosen folder, `compat/` and `logs/` hardcoded under
+    `Documents/x3utils`, second copy in `%LOCALAPPDATA%` — so "send me your
+    backup and the log" is two navigation paths. Only backups are settable at
+    all. And `_dir()` joins `home + 'Documents'` literally instead of asking
+    Windows where Documents is, so on a OneDrive-redirected machine the app
+    writes to a different Documents than Explorer shows and the user finds
+    nothing where they look. SHU compat is the sharpest case: it writes to the
+    fixed `Documents/x3utils/compat`, so its "choose a different backup folder
+    in Settings" message points at a setting it does not use.
+  - One root, fixed subfolder names, no per-folder overrides. The subfolder set
+    is unchanged: `backup/`, `compat/`, `unpacked_zip3/`, `packed_zip3/`,
+    `logs/`.
+  - Defaults: `C:\x3utils` on Windows, `~/x3utils` on Linux and macOS. The
+    Windows root was ACL-checked — `C:\` grants Authenticated Users
+    `CreateDirectories`, so a non-elevated user creates it with no UAC prompt.
+    `~/x3utils` over `~/Documents/x3utils` for symmetry and visibility;
+    `~/.local/share/x3utils` is the freedesktop-correct answer and the wrong one
+    here, because users must be able to find these files and send them. Cloud
+    sync agents (OneDrive, iCloud Desktop & Documents) are explicitly the user's
+    problem, and both defaults sit outside Documents anyway.
+  - This is the first real per-OS divergence in the main tree, which until now
+    was uniformly `Documents/x3utils`. `_dir()` gains a branch, and `_homeLabel`
+    stops fitting because it assumes a home-relative path and prefixes `~/`.
+  - The second copy stays exactly as it is — `%LOCALAPPDATA%\x3utils_backup`,
+    `~/.x3utils_backup`, `~/Library/Application Support/x3utils_backup`.
+    Deliberately hidden, deliberately elsewhere, mirrors the CLI siblings, and
+    written with Dart `copySync` rather than handed to OpenOCD. Do not fold it
+    into the root.
+  - New prefs key `x3utilsRoot`; `backupFolder` is never read again. That is
+    ZERO migration code — an orphan key in the same store is inert. Rejected:
+    a second prefs FILE beside the existing one, because the plugin offers no
+    filename knob and macOS uses NSUserDefaults, so there is no json to sit
+    beside; owning a settings file is a separate feature to judge on its own
+    support merits, not a migration trick. Reusing the old value would also be
+    WRONG rather than merely lazy: the same string means "where dumps go" as a
+    backup folder and "the parent of backup/" as a root, so carrying it over
+    would move a user's backups one directory level and scatter four new
+    folders into a place picked for one purpose.
+  - Never move files. On a root change or an upgrade, write to the new place
+    and leave the old one alone; the user deals with it. Existing installs are
+    not adopted. One release-note line is owed, since a user who deliberately
+    pointed backups elsewhere goes quiet without warning.
+  - Validate the root WHEN PICKED (writable, braces, ASCII on Windows).
+    `setBackupFolder` currently stores whatever it is given with no check. Keep
+    the pre-run destination check as the safety net; `AGENTS.md` pins it.
+  - Settings label: "x3utils folder", not "root". The panel's voice is plain
+    ("Backup folder", "Filename prefix", "Default location") and the audience is
+    largely non-native English speakers, for whom "root" reads as the Linux root
+    user. The precision belongs in the hint line under the path, naming what
+    lands inside.
+- Reversing the same-day "left as-is" call on the all-zero dump message. The
+  `masked` verdict's wording will become neutral: all zeros may mean protection
+  masking or an empty/unreadable target, with Check protection sent to
+  distinguish them. Message only — refusing to promote, keeping it as evidence,
+  `reseat: false` and the `Dismiss` button are all correct either way. Three
+  places move together or the code still asserts what the message no longer
+  does: the message, the `DumpVerdict.masked` doc comment, and the test's name
+  (its assertion only checks for "Check protection" and still passes).
+- Still open, unrelated to any of the above: `Firmware.promoteDump` swallows
+  every rename failure and returns the unchanged `.part` path, and all three
+  callers treat that as success. Backup then reports "Backed up and verified"
+  with no `.bin`, and a guarded flash proceeds on a `.part` file. Low
+  probability, but it is a wrong-success claim, which is the class the
+  evidence-based verdicts exist to prevent. Fix is to return a result rather
+  than a path and abort guarded writes when promotion failed.
+- Agreed build order: scope the ASCII guard to Windows, then the root folder
+  setting, then the all-zero message, then the promotion result.
+- BUILT: the x3utils root folder, exactly as decided above. Taken out of order —
+  the ASCII scoping is still open and unaffected, because the root check calls
+  `validateOpenOcdPath` rather than restating the rule, so it inherits the
+  Windows scoping whenever that lands.
+  - `Firmware` gained the root: `defaultRoot` (`C:\x3utils` / `~/x3utils`),
+    `root`, `setRoot`, `rootIsDefault`, `rootExists`, `validateRootFolder`.
+    `_dir(sub)` now joins the root, and a non-creating `_path(sub)` sits under
+    it so a UI label can never make a folder. `_homeLabel` is gone and the four
+    `…DirLabel` getters return real absolute paths — with one root the panel can
+    show and reveal the actual path instead of a hint standing in for one.
+  - `newDumpPath` lost its `folder:` override; no caller passed one, and a
+    per-call destination is exactly what the single root replaces. Both remaining
+    dump destinations (`backup/`, and compat's explicit path) still go through
+    `_stagedDumpPath`, so the pre-run check is unchanged and now — the point of
+    the whole change — its "choose a different x3utils folder in Settings"
+    message finally names a setting that governs compat too.
+  - `AppController.backupFolder` → `x3utilsRoot`, prefs key `x3utilsRoot`,
+    `setBackupFolder` → `setX3utilsRoot`, which also pushes the value into
+    `Firmware`. `backupFolder` is not read anywhere; zero migration code, as
+    decided. The root is process-wide static state in a class of statics; the
+    controller owns pushing it, and the tests reset it in `tearDown`.
+  - Settings panel: label "x3utils folder", the hint under the path names what
+    lands inside (`backup · compat · unpacked_zip3 · packed_zip3 · logs`, plus
+    "default location" while it is the default). A picked folder is validated on
+    the spot — braces/non-ASCII plus a real write probe that is deleted again —
+    and a refusal replaces the hint in red without changing the setting. Reveal
+    is offered only once the root exists, since the subfolders are created by the
+    first run that needs them, not by opening Settings.
+  - Confirmed incidentally on this Windows box: `flutter test` created
+    `C:\x3utils\unpacked_zip3` from a non-elevated process with no UAC prompt,
+    which is the ACL claim above holding in practice rather than on paper.
+  - 174 tests pass, `flutter analyze` clean. New `test/x3utils_root_test.dart`
+    pins the parts a later change could quietly undo: all five outputs follow the
+    root under fixed names, the 2nd copy stays outside it, blank restores the
+    per-OS default, labels create nothing, and a stored `backupFolder` is NOT
+    adopted as a root.
+  - Version bumped to 1.2.2 (+8) with `dart run tool/version.dart 1.2.2`, so the
+    root folder lands in GUI v1.2.2 and `backupFolder` is "v1.2.1 and earlier"
+    as the code and AGENTS.md now say. All 7 places check in sync.
+  - Owed at release: the one line warning that a user who deliberately pointed
+    backups elsewhere is now writing to the new root. Not written yet — there is
+    no changelog file, so it belongs in the v1.2.2 release notes.
+  - Not covered by tests, so it needs eyes on the running app: the Browse/Reset
+    row, the red refusal line, and Reveal.
+  - HARDWARE PASS on the Windows testbed the same evening, and it found the one
+    leak. Check connection, Backup, SHU compat (twice), Backup + Flash, guarded
+    Flash slot 0 from a zip3 import, Check protection, and Make zip3 all wrote
+    into `C:\x3utils` under the five expected subfolders, with the 2nd copy
+    still in `%LOCALAPPDATA%`. The maintainer's prefs file also showed the
+    migration decision working literally: an orphan `flutter.backupFolder`
+    pointing at an old test dir sitting inert beside `flutter.x3utilsRoot`,
+    which had been repointed to another drive (`I:\...`) through Browse.
+  - THE LEAK, now fixed: the RDP toolkit wrote its own transcript outside the
+    root — `Documents\x3utils\logs` on Windows (which is what kept re-creating
+    that tree), the discarded temporary run tree on Linux/macOS. `RdpRunner` now
+    passes `X3UTILS_RDP_LOG_DIR` through config.cmd / config.sh at
+    `<root>/logs/rdp_check|rdp_rescue`. Only the bundled copies under
+    `x3utils_flutter/native/` changed; the standalone CLIs log beside their own
+    scripts, have no root setting, and must stay untouched.
+  - The scripts now name their file `<prefix>_toolkit_<stamp>.log`, and that is
+    NOT cosmetic. In the maintainer's run both logs were already
+    `rdp_check_2026-07-29_17-10-25.log` — same basename, same second, saved only
+    by being in different trees. Moving them into one folder without the suffix
+    would have had one silently overwrite the other.
+  - Which of the two to ask a user for: the CONSOLE log. Checked against real
+    pairs afterwards — for a clean run the toolkit file is a strict subset of
+    the console log, and on a 5-attempt retry run both hold all 5 attempts while
+    the console log also has the header and the verdict. The toolkit file is
+    also UTF-16LE. The one path where the script logs something the GUI does not
+    show is Power-race (winning attempt only), and Power-race RDP is blocked
+    before the script starts, so in the GUI it is unreachable. So the second
+    file is redundant, not extra evidence — an earlier note here claimed the
+    opposite. Kept anyway because it is what the script's own on-screen
+    `Log file:` / `Full log:` lines name, and suppressing it would make those
+    lines point at nothing useful. Rarely-used action, tiny files, not worth
+    code churn.
+  - Offline-verified only (details in `docs/testing.md`): `rdp.ps1` parses and
+    its real config/log-path functions were run out of the shipped file, `bash -n`
+    passes on both unix copies, but the unix RUNTIME path is uncovered because
+    `rdp_runner_test.dart` no-ops on Windows — one Check protection run each is
+    owed on Linux and macOS. Those tests now pin the root to their fixture, or
+    they would write into the real x3utils folder.
+  - NOTED FROM THE RUNNING APP, not fixed: the folder row wastes vertical space.
+    `DesktopPathDisplay` is built for a long file path — leaf on the first line,
+    parent dim underneath, plus the action button — so a root like `C:\x3utils`
+    gets a tall two-line box ("x3utils" over "c:\") for eight characters, and it
+    is now the largest block in Settings. The widget is right for run output
+    where the filename is the point; the root is short by design and reads fine
+    on one line. Left as is for now — a one-line variant for short directory
+    paths is the obvious direction whenever the panel is next touched.
+- HANDOFF — Linux and macOS, GUI v1.2.2. Windows is done (hardware sweep above
+  plus the installer). What is untested off Windows: the x3utils root itself and
+  the RDP toolkit log path. Both are per-OS by construction, so neither carries
+  over from the Windows pass.
+  - Build the real package, not a bare `flutter build`: Linux
+    `tool/build_appimage.sh`, macOS `tool/package_macos.sh` (the plain build does
+    not assemble a complete app). `package_macos.sh` refuses if VERSION,
+    pubspec.yaml and theme.dart disagree — all three are 1.2.2.
+  - Check the exec bits after the bundle is assembled. The standing gotcha is
+    that the native bundle loses `+x`; `special/rdp/rdp_check.sh` in particular
+    must be executable or Check protection dies before it can log anything.
+  - ROOT: first launch shows `~/x3utils` with "default location" and NO
+    `~/Documents/x3utils` is created. Run Backup → `~/x3utils/backup`, 2nd copy
+    to `~/.x3utils_backup` (Linux) or `~/Library/Application Support/x3utils_backup`
+    (macOS). Then Browse elsewhere, run again, and Reset. Nothing is ever moved.
+  - RDP LOG (the actually-uncovered one): run Check protection in mode A (B or C
+    is fine; Power-race RDP is blocked by design) and confirm BOTH files land in
+    `~/x3utils/logs/rdp_check/` — the console log `rdp_check_<stamp>.log` and the
+    toolkit's `rdp_check_toolkit_<stamp>.log`.
+  - What failure looks like, so it is not misread as a pass: the `_toolkit` file
+    MISSING while the console log is present means `X3UTILS_RDP_LOG_DIR` never
+    reached the script and it logged into the temporary run tree, which is then
+    deleted. That is the macOS risk specifically — config.sh is written at the
+    temporary run root and the scripts load `../../config.sh`, so macOS is the
+    one platform where the variable travels a different route than Linux's. A
+    `Failed to create log directory` line means the root is not writable.
+  - Worth capturing in the testing.md row: the paths from the console, and
+    `ls ~/x3utils/logs/rdp_check`.

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../models.dart';
 import 'cfg.dart';
+import 'firmware.dart';
 import 'openocd_paths.dart';
 
 /// Runs the bundled, vetted read-protection toolkit — `rdp.ps1` on Windows,
@@ -28,6 +29,18 @@ class RdpRunner {
     if (Platform.isWindows) return 'rdp.ps1';
     return verb == 'Rescue' ? 'rescue_unlock.sh' : 'rdp_check.sh';
   }
+
+  /// Where the toolkit writes its OWN transcript: the same per-action folder
+  /// under the x3utils root that this run's console log goes to, so one action
+  /// leaves its evidence in one place. The scripts suffix their filename with
+  /// `_toolkit`, so the two files cannot collide. Passed through config.cmd /
+  /// config.sh as `X3UTILS_RDP_LOG_DIR`; without it the scripts keep their own
+  /// local default, which is what a hand-run outside the GUI should do.
+  String _logDirFor(String verb) => p.join(
+    Firmware.root,
+    'logs',
+    verb == 'Rescue' ? 'rdp_rescue' : 'rdp_check',
+  );
 
   bool get available => File(p.join(_rdpDir, _scriptFor('Check'))).existsSync();
 
@@ -59,8 +72,10 @@ class RdpRunner {
     final String exe;
     final List<String> args;
 
+    final logDir = _logDirFor(verb);
+
     if (Platform.isWindows) {
-      _writeConfigCmd(mode, timeout);
+      _writeConfigCmd(mode, timeout, logDir);
       exe = 'powershell';
       args = [
         '-NoProfile',
@@ -79,7 +94,7 @@ class RdpRunner {
       // Linux GUI scripts load config.sh beside themselves. The macOS scripts
       // preserve the CLI layout and load ../../config.sh from special/rdp.
       final configDir = Platform.isMacOS ? runRoot : runRdpDir;
-      _writeConfigSh(mode, timeout, configDir, runRoot);
+      _writeConfigSh(mode, timeout, configDir, logDir);
       final script = _scriptFor(verb);
       exe = 'bash';
       args = [p.join(runRdpDir, script), '--launcher', if (yes) '--yes'];
@@ -130,13 +145,14 @@ class RdpRunner {
   }
 
   // Windows: config.cmd beside rdp.ps1 (our rdp.ps1 reads from its ScriptDir).
-  void _writeConfigCmd(ConnectionMode mode, int timeout) {
+  void _writeConfigCmd(ConnectionMode mode, int timeout, String logDir) {
     final target = Cfg.target(mode).replaceAll('/', '\\');
     // Mode D: the ported rdp.ps1 honors RACE=true (power-race respawn connect).
     final race = mode == ConnectionMode.powerRace ? 'set "RACE=true"\r\n' : '';
     File(p.join(_rdpDir, 'config.cmd')).writeAsStringSync(
       'set "TARGET=$target"\r\n'
       'set "CONNECT_TIMEOUT=$timeout"\r\n'
+      'set "X3UTILS_RDP_LOG_DIR=$logDir"\r\n'
       '$race',
     );
   }
@@ -148,6 +164,8 @@ class RdpRunner {
     final runRoot = Directory.systemTemp.createTempSync('x3utils_rdp_').path;
     final runRdpDir = p.join(runRoot, 'special', 'rdp');
     Directory(runRdpDir).createSync(recursive: true);
+    // The scripts' own log fallback, used only if X3UTILS_RDP_LOG_DIR is ever
+    // missing from config.sh. The GUI always sets it (see _logDirFor).
     Directory(p.join(runRoot, 'backup')).createSync(recursive: true);
     _copyDirectory(Directory(_rdpDir), Directory(runRdpDir));
     return runRoot;
@@ -169,7 +187,7 @@ class RdpRunner {
     ConnectionMode mode,
     int timeout,
     String configDir,
-    String runRoot,
+    String logDir,
   ) {
     final oocd = paths.openOcdExe;
     final scripts = paths.scriptsDir;
@@ -187,7 +205,7 @@ class RdpRunner {
       'INTERFACE="${Cfg.interface}"\n'
       'TARGET="${Cfg.target(mode)}"\n'
       'CONNECT_TIMEOUT=$timeout\n'
-      'X3UTILS_RDP_LOG_DIR="${p.join(runRoot, 'backup')}"\n'
+      'X3UTILS_RDP_LOG_DIR="$logDir"\n'
       '$race'
       'EXPECTED_SIZE=131072\n',
     );

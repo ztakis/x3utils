@@ -2078,6 +2078,11 @@ class _UnpackZip3PageState extends State<_UnpackZip3Page> {
     super.dispose();
   }
 
+  /// A path as readable crumbs for a helper line. Empty segments are dropped,
+  /// so a POSIX absolute path does not open with a stray separator.
+  String _breadcrumb(String path) =>
+      path.split(RegExp(r'[\\/]')).where((s) => s.isNotEmpty).join(' › ');
+
   @override
   Widget build(BuildContext context) {
     final c = widget.c;
@@ -2269,7 +2274,7 @@ class _UnpackZip3PageState extends State<_UnpackZip3Page> {
                               : null,
                           helperText:
                               '.bin is added automatically. Output folder: '
-                              '${Firmware.unpackedZip3DirLabel.split(RegExp(r'[\\/]')).join(' › ')}',
+                              '${_breadcrumb(Firmware.unpackedZip3DirLabel)}',
                           helperStyle: const TextStyle(
                             fontSize: 11,
                             color: AppColors.mut,
@@ -4032,6 +4037,9 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
     text: widget.c.backupPrefix,
   );
 
+  // Set when a picked folder is refused, cleared by the next pick.
+  String? _rootError;
+
   @override
   void dispose() {
     _prefix.dispose();
@@ -4040,10 +4048,10 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
 
   Future<void> _browse() async {
     final dir = await getDirectoryPath();
-    if (dir != null) {
-      widget.c.setBackupFolder(dir);
-      setState(() {});
-    }
+    if (dir == null) return;
+    final check = Firmware.validateRootFolder(dir);
+    setState(() => _rootError = check.ok ? null : check.message);
+    if (check.ok) widget.c.setX3utilsRoot(dir);
   }
 
   String _clean(String s) =>
@@ -4052,7 +4060,7 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
   @override
   Widget build(BuildContext context) {
     final c = widget.c;
-    final folder = c.backupFolder ?? Firmware.backupDirLabel;
+    final root = Firmware.root;
     final pre = _clean(_prefix.text);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4061,7 +4069,7 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
           children: [
             const Expanded(
               child: Text(
-                'Backup folder',
+                'x3utils folder',
                 style: TextStyle(
                   color: AppColors.txt,
                   fontSize: 13,
@@ -4070,13 +4078,13 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
               ),
             ),
             _ConsoleAction(label: 'Browse…', onTap: () => _browse()),
-            if (c.backupFolder != null) ...[
+            if (c.x3utilsRoot != null) ...[
               const SizedBox(width: 14),
               _ConsoleAction(
                 label: 'Reset',
                 onTap: () {
-                  c.setBackupFolder(null);
-                  setState(() {});
+                  c.setX3utilsRoot(null);
+                  setState(() => _rootError = null);
                 },
               ),
             ],
@@ -4084,18 +4092,23 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
         ),
         const SizedBox(height: 6),
         DesktopPathDisplay(
-          path: folder,
-          action: c.backupFolder == null
-              ? DesktopPathAction.none
-              : DesktopPathAction.reveal,
+          path: root,
+          // Reveal only once it is really there — the subfolders are created on
+          // the first run that needs them, not by opening Settings.
+          action: Firmware.rootExists
+              ? DesktopPathAction.reveal
+              : DesktopPathAction.copy,
         ),
-        if (c.backupFolder == null) ...[
-          const SizedBox(height: 5),
-          const Text(
-            'Default location',
-            style: TextStyle(fontSize: 11, color: AppColors.mut),
+        const SizedBox(height: 5),
+        Text(
+          _rootError ??
+              'Holds backup · compat · unpacked_zip3 · packed_zip3 · logs'
+                  '${Firmware.rootIsDefault ? ' · default location' : ''}',
+          style: TextStyle(
+            fontSize: 11,
+            color: _rootError == null ? AppColors.mut : AppColors.danger,
           ),
-        ],
+        ),
         const SizedBox(height: 14),
         Row(
           children: [

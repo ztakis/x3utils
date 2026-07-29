@@ -4,7 +4,7 @@
 <dict>
 	<!-- Sandbox intentionally OFF: this self-distributed tool spawns the bundled
 	     openocd, reaches the ST-LINK over USB (libusb), and writes backups to
-	     ~/Documents/x3utils. The App Sandbox blocks all three. (macOS analogue of
+	     ~/x3utils. The App Sandbox blocks all three. (macOS analogue of
 	     the Linux udev rule.) -->
 	<key>com.apple.security.app-sandbox</key>
 	<false/>

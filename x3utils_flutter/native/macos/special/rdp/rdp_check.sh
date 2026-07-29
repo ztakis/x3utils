@@ -44,9 +44,13 @@ for a in "$@"; do
 done
 resolve_connect
 
-LOG_DIR="$SCRIPT_DIR/../../backup"
+# The GUI sets X3UTILS_RDP_LOG_DIR in config.sh so this transcript lands in the
+# x3utils folder beside the run's console log; run by hand, it stays local.
+# `_toolkit` in the name: the GUI writes its own rdp_check_<stamp>.log in that
+# same folder and the two stamps can land on the same second.
+LOG_DIR="${X3UTILS_RDP_LOG_DIR:-$SCRIPT_DIR/../../backup}"
 RUN_ID="$(date +"%Y-%m-%d_%H-%M-%S")"
-LOG_FILE="$LOG_DIR/rdp_check_${RUN_ID}.log"
+LOG_FILE="$LOG_DIR/rdp_check_toolkit_${RUN_ID}.log"
 
 # FAP byte value that means "access/read protection disabled" on Artery AT32.
 FAP_UNLOCKED=0xA5
