@@ -2198,6 +2198,161 @@ Linux/macOS get the same code but were not rebuilt this session.
     check would still refuse it. macOS does have a real equivalent if it is ever
     wanted for its own sake — `/Users/Shared` is mode 1777 on every Mac and the
     app is unsandboxed by design — but the same limitation applies.
+- macOS v1.2.2 VALIDATED, which closes the handoff above and makes v1.2.2 done
+  on all three platforms. Rows in `docs/testing.md`. Two rounds on the Intel
+  Mac: the dev tree first, then the packaged universal app run from
+  `~/Desktop/x3utils.app`. Four actions — Check connection, Backup, guarded
+  Flash slot 0, Check protection.
+  - Both handoff items passed. The root behaved exactly as on Linux: `.bin.part`
+    staged and promoted, two 131072-byte dumps under `~/x3utils/backup`, 2nd
+    copies in `~/Library/Application Support/x3utils_backup`, logs under
+    `~/x3utils/logs/`, and nothing new under `~/Documents/x3utils`.
+  - The RDP log was the one flagged as a genuine macOS risk, because config.sh
+    is written at the temporary run root and the scripts load `../../config.sh`,
+    so `X3UTILS_RDP_LOG_DIR` travels a different route than on Linux. It did not
+    bite: both files landed in `~/x3utils/logs/rdp_check/` from the PACKAGED
+    bundle. The console log is 1603 B UTF-8, the toolkit file 622 B ASCII — so
+    the UTF-16LE noted earlier is Windows-only, exactly as Linux found. Same
+    stamp again; the `_toolkit` suffix has now been load-bearing four times out
+    of four.
+  - AUTO-RETRY's first hardware exercise on macOS, and it recovered: `open
+    failed`, `auto-retry 1 of 10`, `open failed`, `auto-retry 2 of 10`, then a
+    clean connect at the third attempt, no click. The dev round did the same
+    once. It also correctly did not arm on any of the successful runs.
+  - THE GATE-WIDENING REASONING IS NOW HARDWARE-PROVEN, not code-read. Every
+    macOS log from this session prints `[at32f4x.cpu] halted due to
+    debug-request` and never the literal `target halted`, and declares the bank
+    as `flash 'artery' found` and never `at32f415xx`. Those are the two strings
+    the pre-widening gate keyed on, so `_sawTargetHalted` really would have been
+    inert here and a mid-erase failure really would have been eligible for an
+    unattended repeat. The 2026-07-29 entry above inferred this from the binary
+    slices and the 2026-07-21 CLI issue; this is the direct observation.
+  - The Windows-scoped ASCII guard is hardware-confirmed on macOS too, the same
+    way Linux confirmed it: guarded Flash slot 0 took the
+    `Prüfung/16a_slot_zt3_vcu_SYNTHETIC.bin` fixture through the real
+    brace-quoted `write_image erase` AND `verify_image` commands — wrote 58436 B
+    in 21.6 s, verified 58436 B, exit 0, in both rounds. Note the figure differs
+    from the Linux run, which reported `wrote 59392` (2 KB page rounding) for the
+    same fixture while verifying the same 58436; only the wrote line differs, and
+    both verified and exited 0. The identity gate passed on the way through.
+    The fixture is a synthetic unbootable payload, so the board needs a reflash.
+  - The offline four-path probe asked for in OPEN was also run, against both
+    `native/macos/oocd/bin/openocd` and the packaged app's separate re-signed
+    copy: `Prüfung/`, `Δοκιμή/`, `MEMORY_G3_С45/`, `zip⚡3/` plus an ASCII
+    control, read and write, all ten checks passing each time. The hardware run
+    above is the stronger evidence; the probe still earns its place because it
+    covers the read path and the three shapes the fixture does not.
+  - Exec bits survived packaging — the standing bundle gotcha did not bite on
+    macOS either. `rdp_check.sh`, `rescue_unlock.sh`, `rdp_lib.sh` and
+    `oocd/bin/openocd` are all `-rwxr-xr-x` inside the app, and the packaged
+    `rdp_check.sh` is byte-identical to the source tree. `flutter analyze` clean
+    and 177/177 tests pass on this Mac, matching the other two platforms.
+  - EXTENDED THE SAME EVENING (20:30–20:36, packaged app), which closes the
+    action gap the first pass left. Flash only restored the board from
+    `zt3_vcu_rescue.bin` (erased, wrote and verified 131072 B, exit 0). SHU
+    compat created `~/x3utils/compat/` for the first time on macOS — dump
+    promoted, signature patched at `0x1420`, reflashed and verified — and its
+    optional auto-zip3 correctly REFUSED for want of a trustworthy BLE
+    firmware-length record, the same guard Linux hit, which is part of the pass.
+    Full Backup + Flash matched identity and reflashed. macOS is now level with
+    Linux on everything except the ZIP3 tools.
+  - THE UMLAUT ROOT THROUGH SETTINGS, which is the half of the ASCII-guard bug
+    that was still unproven anywhere. Linux confirmed the SOURCE side on
+    hardware (firmware read out of a `Prüfung/` directory); this is the
+    DESTINATION side, the one the entry above called "a dead end out of the box"
+    because the default root carries the username and Settings then refused
+    every folder the user owned. Browse accepted
+    `…/gen_test_bins/Prüfung/x3utils` as the root, the Backup dumped and
+    promoted into `Prüfung/x3utils/backup/`, and the log followed to
+    `Prüfung/x3utils/logs/dump/`. The 2nd copy still went to
+    `~/Library/Application Support/x3utils_backup`, outside the custom root,
+    which is the invariant `x3utils_root_test.dart` pins.
+  - macOS NORMALISATION, recorded so it is not re-derived: the stored pref is
+    `flutter.x3utilsRoot = ".../Pru\U0308fung/x3utils"` — NFD, `u` + U+0308
+    COMBINING DIAERESIS, not the NFC `ü` that was typed. The macOS file picker
+    returns decomposed paths. Harmless here (OpenOCD took those bytes, and the
+    `codeUnits > 127` guard catches either form), but any future code that
+    COMPARES root paths as strings has to expect the two forms to be unequal
+    while naming the same directory.
+  - TESTBED STATE CHANGED, which affects later identity tests: the rescue image
+    cleared the serial, so the board now reads `SCOOTER_VCU_xxU2 · serial:
+    cleared` rather than its previous generic-replacement serial (model zt3),
+    and guarded flashes now compare cleared against cleared.
+  - FINISHED THE SWEEP at 20:43–20:44 with the ZIP3 tools, which created the
+    last subfolder and put macOS at TEN ACTIONS, the same set Linux ran. Make
+    zip3 from a full dump (source identity `SCOOTER_VCU_xxG3`, packed g3/VCU,
+    60356 B), Make zip3 from a payload bin (`SCOOTER_MCU_0001`, slot bin, packed
+    zt3/MCU, 59028 B), and Unpack zip3 (inspected then wrote zt3/VCU, 58460 B,
+    matching the Linux figure). Three different model/component combinations
+    with `enforceModel=true`, so the preselection logic was actually exercised
+    rather than repeated. All three log into `logs/make_zip3/`, unpack included.
+  - AND THE SETTINGS ROW IS FINALLY DONE, on macOS, after being carried past
+    three sweeps on every platform. Browse was the umlaut root above; Reveal
+    works; Reset REMOVES the `flutter.x3utilsRoot` key rather than writing the
+    default path — worth knowing, because it means a future change to
+    `defaultRoot` follows the user instead of being pinned by a stale stored
+    string. That is the "blank restores the per-OS default" behaviour
+    `x3utils_root_test.dart` pins, now seen in the real prefs file.
+  - The brace half was confirmed live too, on the Flash Only screen: `Path
+    contains an unsupported character: { or }.`, file rejected, field left at
+    "No firmware chosen". Put beside the accepted `Prüfung` root, that is the
+    running macOS app demonstrating what the three new tests assert — the two
+    halves of `validateOpenOcdPath` are SEPARATELY scoped. Non-ASCII accepted
+    off Windows, braces refused everywhere. This is the specific thing a later
+    cleanup would re-merge, and it now has UI evidence, not just unit tests.
+  - HONEST SCOPE after all three passes. No row on file for the `Keep it` branch
+    of the cleanup modal, the pre-flash-backup abort, the all-`0xFF` blank
+    verdict, or the red refusal line in Settings. READ THAT AS "NOT WRITTEN
+    DOWN", NOT "NOT TESTED" — the maintainer reports having exercised `Keep it`
+    and restored from a `.bin` before this session. This is a hobby project and
+    its notes are a maintainer's log, not a QA matrix; earlier drafts of these
+    rows kept converting a missing row into a claimed gap, which is an inference
+    the evidence does not support and which puts invented work on someone's
+    plate. Gatekeeper is the one item genuinely established as unobserved, and
+    only because the testbed's own configuration proves it. No `.bin.part`
+    orphan was left anywhere by any pass.
+  - Existing-package collision, checked at 20:52 by re-running the zt3/MCU pack
+    onto its own output: the dialog named the exact path and warned that Replace
+    permanently overwrites, Cancel was taken, and the existing file was verified
+    UNTOUCHED at the filesystem level — same 59484 B, same 20:44:22 mtime — with
+    `make zip3 cancelled: existing package kept` in the log. The v1.2.0 rows
+    covered this on the old layout; this is the first check of it inside the
+    v1.2.2 root, where the destination is `<root>/packed_zip3` rather than a
+    fixed Documents path.
+  - STANDING RULE, worth stating once because a first draft of these rows got
+    both halves wrong in opposite directions: full serials do NOT go into the
+    public markdown under `docs/`. Describe them — "generic replacement",
+    "non-generic", "cleared", or the prefix if the prefix is the point — and
+    leave the digits in the logs. Separately, a serial being non-generic is NOT
+    evidence that the device is real: corpus serials may be synthetic, and only
+    the prefix is known to carry meaning at this point. The first draft
+    published one serial and withheld another, each for a reason that does not
+    survive this rule. Before committing docs, grep the diff for serial-shaped
+    strings.
+  - The rule is about serials that identify a DEVICE, and the existing DEVLOG
+    text is consistent with it, which is worth spelling out so nobody scrubs the
+    wrong thing. `1K1E0000000001` and `1CGC0000000001` already appear in this
+    file at the v1.5.5 layout and identity-gate entries, deliberately: they are
+    the published FACTORY serials of generic replacement boards and are hard-
+    coded in the app as `kGenericSerials`. A constant that means "this board has
+    no individual identity" is documentation, not disclosure. What must not land
+    here is a serial read out of somebody's dump.
+  - GATEKEEPER IS A HOLE, and the reason it went unnoticed is that the testbed
+    hides it. The app is ad-hoc signed and not notarized (`Signature=adhoc`,
+    `TeamIdentifier=not set`; `package_macos.sh` signs with `-` and never
+    notarizes), the tested app carried no `com.apple.quarantine` because the zip
+    was made and unzipped locally, and this Mac reports `spctl --status` =
+    assessments disabled, so `spctl -a` returns `accepted (override=security
+    disabled)`. No macOS row on this project says anything about first launch.
+    The 2026-07-01 entry above judging unsigned distribution viable because
+    "the only friction is the Gatekeeper open anyway step" was formed on this
+    same machine and inherits the same blind spot — treat it as an assumption,
+    not a measurement. Procedure and the macOS 15 caveat are in
+    `docs/testing.md`.
+  - Incidental, and the same as the Windows note: `flutter test` creates a real
+    `~/x3utils/unpacked_zip3` in the user's actual root. Harmless and empty, but
+    it is the suite writing outside its fixtures, and it is now confirmed on two
+    platforms.
 - OPEN ITEMS, carried forward explicitly. The previous handoff was written as a
   validation checklist and dropped these, which is why the ASCII scoping sat
   unstarted through two sessions. Keep this list at the tail.
@@ -2215,9 +2370,24 @@ Linux/macOS get the same code but were not rebuilt this session.
     lands, the message should name the character and offset (`'С' U+0421 at
     position 15`) — "use English letters only" is unactionable when the name
     looks like English, which is the founding case exactly.
-  - macOS v1.2.2 validation, per the handoff above, PLUS the four-path probe run
-    against the xPack OpenOCD. Linux is measured now; macOS scoping still rests
-    on the POSIX-argv reasoning alone. Same probe, different binary.
+  - CLOSED 2026-07-29: macOS v1.2.2 validation — the four-path probe, the ten
+    action sweep at parity with Linux, and the x3utils folder Settings row. See
+    the macOS entry above. v1.2.2 is now validated on all three platforms.
+  - macOS GATEKEEPER / notarization. Nothing on this project has ever tested the
+    first-launch experience, because the testbed has Gatekeeper assessments
+    disabled and the tested app never carried a quarantine attribute. Decide
+    whether ad-hoc signing is the shipping answer only AFTER running the
+    procedure in `docs/testing.md` on a machine with assessments enabled. This
+    is a release-blocking unknown for the macOS artifact, not a polish item.
+  - The red refusal line in Settings — a folder the app genuinely cannot write
+    to. Browse, Reset and Reveal are all covered now (macOS, 2026-07-29), and
+    the brace refusal was seen on the run side, but the unwritable-folder
+    refusal has never been triggered on any platform.
+  - The deliberate-failure paths have no rows on file: the `Keep it` branch of
+    the cleanup modal, the pre-flash-backup abort, and the all-`0xFF` blank
+    verdict (free right after a rescue mass erase, before reflashing). `Keep it`
+    has been exercised at least once without being written up, so treat this as
+    a documentation gap rather than a work item until someone says otherwise.
   - The all-zero dump message: make the `masked` verdict neutral (protection
     masking OR an empty/unreadable target). Three places move together — the
     message, the `DumpVerdict.masked` doc comment, and the test's name.
