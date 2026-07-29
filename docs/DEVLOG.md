@@ -2357,17 +2357,30 @@ Linux/macOS get the same code but were not rebuilt this session.
   validation checklist and dropped these, which is why the ASCII scoping sat
   unstarted through two sessions. Keep this list at the tail.
   - WINDOWS non-ASCII strategy. The guard is still blanket ASCII on Windows,
-    which refuses `C:\Users\Jörg\Desktop\fw.bin` even though a German machine's
-    CP1252 represents it and OpenOCD would open it correctly. Three candidates,
-    to be judged on the Windows box where the ACP can actually be observed:
+    which refuses `C:\Users\Jörg\Desktop\fw.bin` before OpenOCD starts.
+    Re-probed 2026-07-30 with the current bundled Windows
+    `openocd.exe` (`0.11.0+dev-snapshot`, 2026-06-22), ACP 1253, and no
+    hardware: a jimtcl `open` read an ASCII path; `Jörg` arrived inside OpenOCD
+    as `Jorg` and failed `No such file or directory`; Greek `Άκης` opened
+    successfully even though the captured console rendered it as `����`; and
+    Cyrillic `Саша` arrived as `????` and failed `Invalid argument`. Each case
+    was isolated so a best-fit ASCII sibling could not produce a false pass.
+    This confirms the earlier diagnosis: success depends on exact
+    representability in THIS PC's ACP, not whether the path is broadly called
+    "non-ASCII", and garbled console rendering alone is not failure evidence.
+    Four candidates:
     (a) an ACP round-trip test — convert wide→ANSI→wide via `WideCharToMultiByte`
     and compare; identical means OpenOCD gets the right file, different catches
     both unrepresentable and best-fit mapping. Correct in general, needs ~30
     lines of `dart:ffi` plus a `package:ffi` dependency, and is unit-testable
     with known strings. (b) exempt characters that also occur in `%USERPROFILE%`,
     which are representable by construction; no FFI, ~5 lines, fixes the username
-    case only. (c) keep blanket ASCII and only improve the message. Whichever
-    lands, the message should name the character and offset (`'С' U+0421 at
+    case only. (c) keep blanket ASCII and only improve the message. (d) stage a
+    validated flash input under an ASCII-only temporary name, verify the staged
+    digest, and pass only that path to OpenOCD. ACP testing safely broadens what
+    is accepted on each machine; staging is the option that supports arbitrary
+    Unicode source paths independent of machine locale. Whichever refusal
+    remains, the message should name the character and offset (`'С' U+0421 at
     position 15`) — "use English letters only" is unactionable when the name
     looks like English, which is the founding case exactly.
   - CLOSED 2026-07-29: macOS v1.2.2 validation — the four-path probe, the ten
