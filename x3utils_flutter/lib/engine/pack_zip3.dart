@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -7,7 +6,6 @@ import 'package:crypto/crypto.dart';
 
 import 'device_spec.dart';
 import 'firmware.dart';
-import 'firmware_inspection.dart';
 import 'ninebot_tea.dart';
 import 'zp_extract.dart';
 
@@ -248,143 +246,6 @@ class PackV3 {
     );
   }
 
-  // ── Sliced slot-0 bin → zip3 (advisory findings, operator decides) ──────────
-
-  /// Slot 0's flash base — a sliced payload's first two words are its vector
-  /// table, whose targets resolve against this address.
-  static const int _slot0Base = 0x08001000;
-
-  /// Advisory pre-pack findings for a hand-sliced slot-0 [binBytes]. A sliced
-  /// bin is the modder's own work, so — Flash Only's philosophy, not the
-  /// guarded path's — nothing here refuses: the UI presents the findings and
-  /// the operator decides. Checks, per docs/plan-zip3-inputs.md: exact-cut
-  /// length (≡ 4 mod 8), the observed size window (the confirmed 61436
-  /// physical ceiling is a HARD gate in [buildZip3FromSlotBin], not a finding
-  /// here; the unconfirmed MCU 59388 ceiling only warns), banner agreement
-  /// with the operator-declared [type]/[model], vector-table sanity, and the
-  /// slot-relative SHU key (warns — older repo builds hold unrelated bytes at
-  /// 0x420 yet BLE-flash fine, and that is the motivating round-trip case).
-  /// An empty list means nothing fired — still not a BLE-acceptance promise.
-  static List<CompatibilityFinding> inspectSlotBinForPack(
-    List<int> binBytes, {
-    required String type,
-    required String model,
-  }) {
-    final findings = <CompatibilityFinding>[];
-    final len = binBytes.length;
-    final t = type.trim().toUpperCase();
-
-    if (len % 8 != 4) {
-      findings.add(
-        CompatibilityFinding(
-          'slice_not_exact_cut',
-          'Every known exact slot-0 payload is 4 bytes more than a multiple '
-              'of 8; this file is $len bytes, so the cut points are probably '
-              'off. The encrypted payload is padded to whole 8-byte blocks, '
-              'so what the device receives will not be byte-identical.',
-        ),
-      );
-    }
-    if (len < Firmware.slot0MinBytes) {
-      findings.add(
-        CompatibilityFinding(
-          'slice_below_window',
-          'Smaller than any known slot-0 firmware: $len bytes (observed '
-              'payloads start around ${Firmware.slot0MinBytes}).',
-        ),
-      );
-    } else if (t == 'MCU' && len > Firmware.slot0MaxPayloadMcu) {
-      findings.add(
-        CompatibilityFinding(
-          'slice_over_mcu_region',
-          'Larger than the observed MCU slot-0 region: $len bytes (region '
-              'fits ${Firmware.slot0MaxPayloadMcu}). The MCU ceiling is '
-              'corpus-derived and less proven than the VCU one.',
-        ),
-      );
-    }
-
-    final banner = DeviceSpec.verifyBanner(binBytes, model, t);
-    if (!banner.consistent) {
-      findings.add(CompatibilityFinding('slice_banner', banner.message));
-    }
-
-    var vectorsOk = false;
-    if (len >= 8) {
-      final sp = _leWord(binBytes, 0);
-      final reset = _leWord(binBytes, 4);
-      final resetTarget = reset & ~1;
-      vectorsOk =
-          sp % 4 == 0 &&
-          sp > 0x20000000 &&
-          sp <= 0x20010000 &&
-          (reset & 1) == 1 &&
-          resetTarget >= _slot0Base &&
-          resetTarget < _slot0Base + len;
-    }
-    if (!vectorsOk) {
-      findings.add(
-        const CompatibilityFinding(
-          'slice_vector_table',
-          'The first 8 bytes do not look like a slot-0 vector table (initial '
-              'stack pointer in RAM, reset vector inside the payload) — this '
-              'may not be firmware sliced at 0x1000.',
-        ),
-      );
-    }
-
-    if (!CompatPatch.keyState(binBytes, slotBin: true).bleFlashable) {
-      findings.add(
-        const CompatibilityFinding(
-          'slice_no_shu_key',
-          'Neither the default SHU key nor a blank key at 0x420. OEM/stock '
-              'firmware looks like this and may not BLE-flash — but some '
-              'older repo firmware does too and flashes fine.',
-        ),
-      );
-    }
-
-    return List<CompatibilityFinding>.unmodifiable(findings);
-  }
-
-  /// Pack a hand-sliced slot-0 [binBytes] as-is: the file IS the payload, so
-  /// there is no ZP step and no slicing. Hard gates are deliberately minimal
-  /// (the structural file checks ran at pick time; the advisory checks live in
-  /// [inspectSlotBinForPack], already shown to the operator): an unsupported
-  /// identity selection, and a payload over the confirmed 61436-byte physical
-  /// slot-0 ceiling — that one cannot fit the region for any type, so it is a
-  /// stop, not a finding. Throws [FormatException] for either.
-  static Zip3BuildResult buildZip3FromSlotBin(
-    List<int> binBytes, {
-    required String type,
-    required String model,
-    required bool enforceModel,
-    String? displayName,
-  }) {
-    final t = type.trim().toUpperCase();
-    final m = model.trim().toLowerCase();
-
-    final verdict = DeviceSpec.evaluateZip3(m, t);
-    if (!verdict.ok) {
-      throw FormatException(verdict.reason);
-    }
-    if (binBytes.length > Firmware.slot0MaxPayloadVcu) {
-      throw FormatException(
-        'This file is ${binBytes.length} bytes — larger than the slot-0 '
-        'region itself (${Firmware.slot0MaxPayloadVcu} bytes). It cannot be '
-        'slot-0 firmware, so Make zip3 was stopped.',
-      );
-    }
-
-    return _finishBuild(
-      payload: binBytes,
-      type: t,
-      model: m,
-      enforceModel: enforceModel,
-      displayName: displayName,
-    );
-  }
-
   /// Fail-closed checks for a complete Pack payload.
   ///
   /// A full controller dump is recognized only at its exact 128 KB size and
@@ -525,39 +386,6 @@ class PackV3 {
       displayName: name,
       payloadLength: payload.length,
     );
-  }
-
-  static int _leWord(List<int> b, int off) =>
-      b[off] | (b[off + 1] << 8) | (b[off + 2] << 16) | (b[off + 3] << 24);
-
-  // ── Convenience: read a .bin, write the .zip ────────────────────────────────
-
-  /// Read [binPath], build the package, and write it to [outputZipPath].
-  static void packBinToZip({
-    required String binPath,
-    required String outputZipPath,
-    required String name,
-    required String typeFlag,
-    required String model,
-    required List<String> boards,
-    required bool enforceModel,
-    required String enc,
-    int schemaVersion = 1,
-    String? params,
-  }) {
-    final data = File(binPath).readAsBytesSync();
-    final zip = makeZipV3(
-      data: data,
-      name: name,
-      typeFlag: typeFlag,
-      model: model,
-      boards: boards,
-      enforceModel: enforceModel,
-      enc: enc,
-      schemaVersion: schemaVersion,
-      params: params,
-    );
-    File(outputZipPath).writeAsBytesSync(zip);
   }
 
   // ── Unpacking (the inverse: read a v3 ZIP, hand back flashable firmware) ────

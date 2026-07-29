@@ -234,8 +234,8 @@ entirely. Validation is strong:
   small change: `CompatPatch.offset` is hardcoded to the dump-absolute `0x1420`,
   so a slot bin needs `0x420` — add a base parameter or a slot-relative variant.
 
-Plumbing largely exists (`PackV3.makeZipV3`, `packBinToZip`). This is a
-validator plus a UI path.
+At the time, low-level packaging plumbing existed (`PackV3.makeZipV3` plus a
+file-to-file wrapper). This candidate still required a validator and a UI path.
 
 ## Candidate B — ZP-less dumps via a slicing ladder
 

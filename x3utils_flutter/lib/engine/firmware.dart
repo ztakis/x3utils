@@ -576,16 +576,12 @@ class CompatPatch {
   /// (a backup dump). Used to gate "Make zip3": only [FwKeyState.bleFlashable]
   /// dumps — repo/Compat (default key) or newer repo default (blank) — can be
   /// repackaged; OEM firmware is refused. See flash_compat's 0x1420 patch.
-  /// [slotBin] reads the slot-relative 0x420 instead (a sliced slot-0 payload
-  /// starts at dump offset 0x1000, so the same region sits 0x1000 earlier);
-  /// there the state is advisory, never a gate.
-  static FwKeyState keyState(List<int> image, {bool slotBin = false}) {
-    final base = slotBin ? offset - 0x1000 : offset;
-    if (image.length < base + signature.length) return FwKeyState.oem;
+  static FwKeyState keyState(List<int> image) {
+    if (image.length < offset + signature.length) return FwKeyState.oem;
     var isKey = true;
     var isBlank = true;
     for (var i = 0; i < signature.length; i++) {
-      final b = image[base + i];
+      final b = image[offset + i];
       if (b != signature[i]) isKey = false;
       if (b != 0xFF) isBlank = false;
     }
