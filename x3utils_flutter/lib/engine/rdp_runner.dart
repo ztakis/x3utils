@@ -120,26 +120,36 @@ class RdpRunner {
     void Function(String chunk)? onChunk,
   ) {
     var pending = '';
+    // Lenient decoding + a logging-only guard, for the same reason as
+    // OpenOcdRunner: the other end here is PowerShell or bash relaying OpenOCD,
+    // so undecodable bytes are just as reachable, and a console failure must
+    // never abort a protection check or a rescue.
     return stream
-        .transform(utf8.decoder)
+        .transform(const Utf8Decoder(allowMalformed: true))
         .listen(
           (text) {
-            onChunk?.call(text);
-            pending += text;
-            while (true) {
-              final idx = pending.indexOf('\n');
-              if (idx < 0) break;
-              final line = pending
-                  .substring(0, idx)
-                  .replaceFirst(RegExp(r'\r$'), '');
-              pending = pending.substring(idx + 1);
-              onLine(line);
+            try {
+              onChunk?.call(text);
+              pending += text;
+              while (true) {
+                final idx = pending.indexOf('\n');
+                if (idx < 0) break;
+                final line = pending
+                    .substring(0, idx)
+                    .replaceFirst(RegExp(r'\r$'), '');
+                pending = pending.substring(idx + 1);
+                onLine(line);
+              }
+            } catch (_) {
+              // Presentation cannot decide the verdict.
             }
           },
           onDone: () {
-            if (pending.isNotEmpty) {
-              onLine(pending.replaceFirst(RegExp(r'\r$'), ''));
-            }
+            try {
+              if (pending.isNotEmpty) {
+                onLine(pending.replaceFirst(RegExp(r'\r$'), ''));
+              }
+            } catch (_) {}
           },
         );
   }

@@ -6,6 +6,36 @@ import '../models.dart';
 import 'cfg.dart';
 import 'openocd_paths.dart';
 
+/// OpenOCD writes its console output in the platform's own encoding, and it
+/// ECHOES PATHS BACK — `wrote N bytes from file <path>`. On Windows the mingw
+/// build emits those bytes in the ANSI codepage, which is not valid UTF-8, and
+/// the strict `utf8.decoder` THROWS on them. That error propagates out of the
+/// stream and out of [OpenOcdRunner.run]: measured 2026-07-30, a Greek firmware
+/// path aborted a flash BETWEEN `flash erase_address` and `flash write_bank`,
+/// reporting "Could not start OpenOCD" for a run that had already erased the
+/// chip. Lenient decoding substitutes U+FFFD instead of throwing.
+///
+/// Not a Windows-only concern: POSIX filenames are arbitrary bytes, so a `.bin`
+/// whose name carries Latin-1 from an old archive does the same thing there.
+///
+/// The evidence regexes are unaffected — `wrote`, `verified`, `dumped` and the
+/// byte counts are ASCII and appear BEFORE the path on every line.
+///
+/// Rendering those bytes correctly (Windows ANSI → real characters) is a
+/// separate refinement; this one only guarantees the stream cannot throw.
+const _console = Utf8Decoder(allowMalformed: true);
+
+/// Reading the log must never be able to fail the operation being logged. The
+/// listeners feed the console and the evidence scanner, neither of which is
+/// worth a run: an exception in here would surface as a flash failure.
+void _loggingOnly(void Function() body) {
+  try {
+    body();
+  } catch (_) {
+    // Deliberately swallowed — presentation cannot decide the verdict.
+  }
+}
+
 /// Per-attempt classification of a power-race respawn miss (mirrors
 /// race_grade.cmd) — how far the attempt got, for the live "hammering" indicator.
 enum RaceTier { searching, noisy, nearCatch, adapterGone, timedOut }
@@ -110,18 +140,22 @@ class OpenOcdRunner {
     _active = proc;
 
     final out = proc.stdout
-        .transform(utf8.decoder)
+        .transform(_console)
         .transform(const LineSplitter())
         .listen((line) {
-          evidence.record(line);
-          onLine(line);
+          _loggingOnly(() {
+            evidence.record(line);
+            onLine(line);
+          });
         });
     final err = proc.stderr
-        .transform(utf8.decoder)
+        .transform(_console)
         .transform(const LineSplitter())
         .listen((line) {
-          evidence.record(line);
-          onLine(line);
+          _loggingOnly(() {
+            evidence.record(line);
+            onLine(line);
+          });
         });
     final outDone = out.asFuture<void>();
     final errDone = err.asFuture<void>();
@@ -208,18 +242,18 @@ class OpenOcdRunner {
 
       armWatchdog(_racePreCatchTimeout);
       final out = proc.stdout
-          .transform(utf8.decoder)
+          .transform(_console)
           .transform(const LineSplitter())
           .listen((line) {
-            handle(line);
+            _loggingOnly(() => handle(line));
             if (caught && !timedOut) armWatchdog(_racePostCatchTimeout);
           });
       final outDone = out.asFuture<void>();
       final err = proc.stderr
-          .transform(utf8.decoder)
+          .transform(_console)
           .transform(const LineSplitter())
           .listen((line) {
-            handle(line);
+            _loggingOnly(() => handle(line));
             if (caught && !timedOut) armWatchdog(_racePostCatchTimeout);
           });
       final errDone = err.asFuture<void>();
