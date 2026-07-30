@@ -2353,6 +2353,215 @@ Linux/macOS get the same code but were not rebuilt this session.
     `~/x3utils/unpacked_zip3` in the user's actual root. Harmless and empty, but
     it is the suite writing outside its fixtures, and it is now confirmed on two
     platforms.
+
+## 2026-07-30
+
+- HANDOFF TO THE WINDOWS BOX. NOTHING IN THIS ENTRY WAS MEASURED. It is code
+  reading and design discussion done on the Linux machine, so every claim about
+  Windows behaviour below is inference from the source plus the probes already
+  recorded on 2026-07-29 and 2026-07-30. Marked here so no later reader mistakes
+  it for a validation result. Written as work items with the reasoning attached,
+  NOT as a checklist — that framing is what left the ASCII scoping unstarted for
+  two sessions.
+- DECISION: ASCII STAGING, IN BOTH DIRECTIONS. This closes the four-way choice
+  left open under `WINDOWS non-ASCII strategy`; that item now carries only its
+  measured probe data and the work list.
+  - What it is: OpenOCD is never handed a user-chosen path again. A flash input
+    is copied to a fixed ASCII staging path, the copy's digest is compared
+    against the source, and only the staging path goes into `argv`. A dump is
+    written by OpenOCD to a staging path and MOVED to the user's destination by
+    the app afterwards. Dart's file APIs use the wide Win32 calls, so the app
+    can read and write any path the user can create; only OpenOCD's `argv`
+    cannot survive the trip.
+  - Why not (a), the ACP round-trip via `WideCharToMultiByte`. It is correct —
+    it accepts exactly what this PC's codepage can represent, which is the real
+    constraint — but its correctness is per-machine. `Jörg` on a German box is
+    helped; `Jörg` on the Greek box is still refused, correctly, and still has
+    no way to flash a file out of his own Downloads. It broadens acceptance
+    where the machine happens to allow it instead of removing the dependency.
+    Keep it on file as the fallback if staging turns out to be impossible, not
+    as the plan.
+  - (b), exempting characters that occur in `%USERPROFILE%`, is DROPPED, not
+    deferred. It infers representability from "Windows created this path", which
+    is not a guarantee: an account whose profile directory is unrepresentable in
+    the machine ACP would have exactly the dangerous characters whitelisted, and
+    that is the silent wrong-file write the guard exists to prevent. Five lines
+    that make the guard unsound in its founding case.
+  - BOTH DIRECTIONS ARE REQUIRED, because the root is user-settable in Settings.
+    Input-only staging would leave a relocated root under a non-ASCII profile
+    path still refused, and the refusal is not academic — the Settings row exists
+    precisely so people can put backups where they want them.
+  - The staging directory must be a FIXED ASCII location chosen by the app, NOT
+    a subfolder of the configured root. If the user relocated the root under
+    their profile, staging inside it inherits the problem. `C:\x3utils`
+    regardless of the configured root is the obvious candidate.
+  - It resolves the founding case rather than refusing it. The shared
+    `MEMORY_G3_<serial>_1.5.4.bin` with U+0421 hiding in the serial gets staged
+    under an ASCII name and flashes. The guard was never about file CONTENTS —
+    the name is incidental — and staging is the only candidate that treats it
+    that way.
+  - PREREQUISITE, already on the OPEN list and now load-bearing:
+    `Firmware.promoteDump` swallows every rename failure and returns the
+    unchanged `.part` path, and all three callers read that as success. Once
+    dumps route through a staging directory that may sit on a DIFFERENT DRIVE
+    than the destination — where rename fails outright and needs copy-then-delete
+    — that swallowed failure stops being latent and becomes the thing that loses
+    a backup. Fix it before staging outputs, not after.
+  - END STATE: `validateOpenOcdPath` stops applying to user-chosen paths on
+    every platform, because the only paths reaching OpenOCD are ones the app
+    constructed and are ASCII and brace-free by construction.
+    `validateRootFolder` drops to the writable probe alone. The backup filename
+    prefix is already ASCII by construction — `main.dart` `_clean` strips to
+    `[A-Za-z0-9_-]`.
+  - WHAT STAGING DOES NOT FIX: the app's own install path. See the `-s` item
+    below; it needs its own answer.
+- THE INTERIM IS ALREADY SHIPPED ON WINDOWS, with two gaps. No new refusal needs
+  building while staging is written.
+  - `_browse()` in `main.dart` runs the picked folder through
+    `validateRootFolder`, which calls `validateOpenOcdPath`, so a non-ASCII root
+    is refused on Windows, the red line shows, and `setX3utilsRoot` is never
+    reached — the root does not move. There is no typed-path field; the native
+    directory picker is the only way in. Every run then re-validates the
+    destination before OpenOCD starts, so there is a second net.
+  - GAP 1, the message. Still "Path has non-ASCII characters — use English
+    letters only." For a folder the user can see this is merely blunt; for the
+    founding case it fails completely, because the offending character is a
+    Cyrillic homoglyph inside a name that READS as English and the user is being
+    told to use English letters. Name the character and offset — `'С' U+0421 at
+    position 15`. This is worth doing on its own, before staging, because it is
+    the message a confused user reports from.
+  - GAP 2, the load path is not validated. `AppController` reads the persisted
+    root from prefs and calls `Firmware.setRoot` directly, and `setRoot` only
+    trims. A root persisted before `validateRootFolder` existed, or a hand-edited
+    prefs entry, comes back unchecked; Settings will display a root the app will
+    then refuse to use, and the user meets the refusal mid-run instead of at the
+    moment of the choice. Validate on load and fall back to `defaultRoot` with a
+    note. This one survives staging: whatever the rule ends up being, a persisted
+    root should be checked against it at startup.
+- THE APP'S OWN INSTALL PATH IS UNGUARDED, and never has been. FOUND BY READING
+  THE SOURCE ON LINUX, NOT OBSERVED — this is the first item to verify on the
+  Windows box, because if it reproduces it affects users who did nothing unusual.
+  - `OpenOcdRunner._base()` puts `-s <scriptsDir>` in EVERY invocation, and
+    `scriptsDir` comes from `OpenOcdPaths.find()`, which walks up from
+    `Platform.resolvedExecutable`. So the argument is an absolute path rooted at
+    wherever the app was installed or unzipped.
+  - `installer/x3utils.iss` is a PER-USER install,
+    `DefaultDirName={localappdata}\Programs\x3utils`, so the DEFAULT install path
+    contains the account name: `C:\Users\<name>\AppData\Local\Programs\x3utils`.
+    No unusual user action is involved; that is simply where it installs.
+  - CORRECTION TO AN EARLIER DRAFT OF THIS ENTRY, which described a portable
+    build unzipped to the Desktop. There is no zip distribution — that scenario
+    was invented and is struck. The installer default above is the real one.
+  - It is also NARROWER than the default-path framing suggests. The failure needs
+    the account name to be UNREPRESENTABLE IN THAT PC'S OWN ACP, and accounts are
+    usually created under a matching locale — `Jörg` on a German CP1252 Windows
+    works. It bites on mismatch: a name from a different script than the system
+    locale, a locale changed after the account was created, a corporate image.
+  - It reaches OpenOCD by TWO independent routes, which is why it survives fixing
+    either one alone: `-s <scriptsDir>` from `OpenOcdRunner._base()`, and
+    `$scripts` + `rescue.cfg` built from `$WinRoot` inside `rdp.ps1`.
+  - It fails LOUDLY — no scripts, everything fails at once — rather than writing
+    the wrong file, so this is "the app does not work for this user, with a
+    confusing error", not a data-corruption bug.
+  - CANDIDATE FIX, UNTESTED: pass `-s` RELATIVE. `Process.start` already sets
+    `workingDirectory: paths.binDir`, and that travels through `CreateProcessW`,
+    wide, immune to the conversion. If `-s` were `..\scripts`, OpenOCD would
+    resolve it against a working directory that was set correctly and the
+    absolute install path would never enter `argv` at all. One line, no FFI, and
+    it removes the install-location dependency entirely. The exe path itself is
+    already safe for the same reason — `Process.start` launches it wide.
+  - PROBE, no hardware, same rig as the 2026-07-30 ACP probe: install a copy of
+    the packaged app under a directory the ACP-1253 box cannot represent, and
+    confirm an absolute `-s` fails to load the scripts where a relative `-s`
+    succeeds. If OpenOCD or jimtcl canonicalises `-s` to absolute internally the
+    trick will not hold, and that is exactly what the probe settles.
+- FULL PATH SWEEP OF THE WINDOWS GUI, done so this is never re-derived one path
+  at a time. Read from the source on Linux; nothing here was run.
+  - TWO DIFFERENT MECHANISMS ARE IN PLAY, and conflating them produces the wrong
+    fix. (A) argv → ANSI conversion, which affects ONLY `openocd.exe` because it
+    is the mingw build; Dart's `Process.start`, `powershell.exe` and
+    `explorer.exe` all take wide command lines and are immune. (B) FILE CONTENT
+    encoding: `config.cmd` is written UTF-8 by `writeAsStringSync` and read by
+    the GUI's `rdp.ps1` with `Get-Content` and NO `-Encoding`. The runner invokes
+    `powershell`, i.e. Windows PowerShell 5.1, whose `Get-Content` defaults to
+    the ANSI codepage. UTF-8 in, ANSI out. Dormant only because the root refusal
+    keeps `logDir` ASCII today; it goes live the moment that refusal lifts.
+  - INSTALL DIR — `%LOCALAPPDATA%\Programs\x3utils`, always carries the username,
+    reaches OpenOCD by both routes above. THE ONLY GENUINELY BROKEN ONE.
+  - FIRMWARE INPUT — user-picked, always able to be non-ASCII, reaches
+    `write_image`/`verify_image`. Hard stop; only staging fixes it.
+  - DATA ROOT and everything under it (`backup/`, `compat/`, `logs/`,
+    `packed_zip3/`, `unpacked_zip3/`) — `C:\x3utils` by default, non-ASCII only
+    if the user relocates it, which the Windows picker refuses today.
+  - RDP TRANSCRIPT DIR — `<root>/logs/rdp_check/`, root-derived, and the one path
+    that travels through mechanism (B).
+  - SECOND COPY — `%LOCALAPPDATA%\x3utils_backup`, ALWAYS profile-derived and so
+    always able to be non-ASCII, but written exclusively by Dart `copySync`.
+    SAFE. LEAVE IT. Recorded because it looks like a hole and is not.
+  - PREFS — `shared_preferences`, profile-derived, plugin-written through wide
+    APIs. SAFE. LEAVE IT. Storing them in the root instead was considered and
+    rejected as circular: the root is itself a stored preference.
+  - RECYCLE BIN — `trash.dart` builds a `powershell -Command` string containing
+    the path; PowerShell takes `GetCommandLineW`, so no conversion. SAFE.
+  - `Directory.systemTemp` is Unix-only here (`_prepareUnixRunRoot`); the Windows
+    path never uses it.
+- DECIDED RELEASE SPLIT.
+  - v1.2.3 IS A DIRECTORY RENAME AND NOTHING ELSE: `.iss` `DefaultDirName` to an
+    ASCII, space-free, user-writable location (`C:\x3utils_app` — a SIBLING of
+    the data root, not inside it, so app binaries never land in the folder
+    Settings reveals to users), plus `UsePreviousAppDir=no` and cleanup of the
+    old directory. Zero code change, keeps the no-UAC install, keeps `config.cmd`
+    working exactly as it does now.
+  - THE `UsePreviousAppDir` GOTCHA, which is what makes this non-obvious: `AppId`
+    is fixed and `UsePreviousAppDir` defaults to YES, so `DefaultDirName` only
+    applies to FRESH installs. Everyone already installed stays put on upgrade —
+    and that is exactly the broken population, since the app installs and
+    launches fine and it is only OpenOCD that fails. Without
+    `UsePreviousAppDir=no` the hotfix reaches nobody who needs it.
+  - v1.3.0 TAKES FOUR CHANGES THAT EACH UNLOCK THE NEXT: delete `config.cmd` →
+    the bundle becomes read-only → the install can move to Program Files →
+    plus ASCII staging. They ship together because they need one validation
+    sweep, and because the RDP path is read-protection code that was just
+    validated at v1.2.2.
+- DELETE `config.cmd` FROM THE GUI (v1.3.0 entry point). The mechanism was
+  inherited from the CLI, where `launcher.bat` writes it; the GUI has moved on
+  and the CLI is bugfix-only, so the GUI's copy is ours to rewrite.
+  - THE TWO COPIES HAVE ALREADY FORKED, which is the licence to do this: the CLI
+    reads `$cfgCmd` from `$WinRoot`, the GUI's copy from `$ScriptDir`. This is
+    not creating a fork, it is continuing one.
+  - The change: `rdp.ps1` already has a `param()` block — add `[string]$Target`,
+    `[int]$ConnectTimeout`, `[string]$LogDir`, `[switch]$Race`, delete the
+    config-reading block, and have `RdpRunner` pass them as arguments.
+    `-Launcher` becomes redundant, and the `.iss` loses its
+    `Excludes: "special\rdp\config.cmd"`.
+  - WHAT IT BUYS, and why it is the hinge for the rest: `rdp_runner.dart:152` is
+    the ONLY runtime write into the bundle — verified, everything else touching
+    the install dir is a read. Remove it and the install directory is read-only,
+    which is exactly the precondition Program Files needs. It also DELETES
+    mechanism (B) rather than mitigating it, since there is no longer a file to
+    encode. The `-Config <path>` parameter considered earlier is unnecessary.
+  - The `rdp.ps1` hand-run log fallback is `MyDocuments`, not the bundle, so it
+    does not break under a read-only install either.
+  - PROGRAM FILES CARRIES A NEW, NEVER-TESTED RISK: `C:\Program Files\x3utils`
+    contains a SPACE, and that path reaches OpenOCD's argv twice — `-s` from the
+    Dart runner and the `-f <rescue.cfg>` built inside `rdp.ps1`, which the
+    script itself notes wants forward slashes. Nothing in this codebase has ever
+    run with a space in those paths, because `%LOCALAPPDATA%\Programs\x3utils`
+    has none. It should be fine — single argv elements, Dart quotes correctly —
+    but that is what was said about the ASCII guard on Linux. Probe it on the
+    same box, in the same session, as the `-s` probe.
+  - Signing is NOT what kept the app out of Program Files. The `.iss` header says
+    the reason was `config.cmd` needing to stay writable. Unsigned-app SmartScreen
+    friction is accepted for this project and was never the constraint.
+  - THE SAME KNOT EXISTS ON UNIX and is worth pulling while in here, UNVERIFIED:
+    `_writeConfigSh` does the identical thing, and `_prepareUnixRunRoot()` exists
+    ONLY because the signed bundle is read-only and `config.sh` has to be written
+    somewhere. Passing those values via `Process.start`'s `environment:` looks
+    close to drop-in, because the shell scripts already reference `TARGET`,
+    `CONNECT_TIMEOUT` and `X3UTILS_RDP_LOG_DIR` as shell variables and would pick
+    them up from the environment unchanged — which would retire the whole
+    per-run temp-directory copy. READ THE SCRIPTS FIRST for defaults and `set -u`
+    before promising this.
 - OPEN ITEMS, carried forward explicitly. The previous handoff was written as a
   validation checklist and dropped these, which is why the ASCII scoping sat
   unstarted through two sessions. Keep this list at the tail.
@@ -2368,21 +2577,30 @@ Linux/macOS get the same code but were not rebuilt this session.
     This confirms the earlier diagnosis: success depends on exact
     representability in THIS PC's ACP, not whether the path is broadly called
     "non-ASCII", and garbled console rendering alone is not failure evidence.
-    Four candidates:
-    (a) an ACP round-trip test — convert wide→ANSI→wide via `WideCharToMultiByte`
-    and compare; identical means OpenOCD gets the right file, different catches
-    both unrepresentable and best-fit mapping. Correct in general, needs ~30
-    lines of `dart:ffi` plus a `package:ffi` dependency, and is unit-testable
-    with known strings. (b) exempt characters that also occur in `%USERPROFILE%`,
-    which are representable by construction; no FFI, ~5 lines, fixes the username
-    case only. (c) keep blanket ASCII and only improve the message. (d) stage a
-    validated flash input under an ASCII-only temporary name, verify the staged
-    digest, and pass only that path to OpenOCD. ACP testing safely broadens what
-    is accepted on each machine; staging is the option that supports arbitrary
-    Unicode source paths independent of machine locale. Whichever refusal
-    remains, the message should name the character and offset (`'С' U+0421 at
-    position 15`) — "use English letters only" is unactionable when the name
-    looks like English, which is the founding case exactly.
+    DECIDED 2026-07-30: ASCII staging in both directions, with the ACP
+    round-trip kept only as the fallback if staging proves impossible and the
+    `%USERPROFILE%` exemption dropped as unsound. Reasoning is in the
+    2026-07-30 entry; do not re-open the four-way choice without reading it.
+    Remaining work, in order: (1) the message names the character and offset
+    (`'С' U+0421 at position 15`) — independent of staging and worth landing
+    first, since "use English letters only" is unactionable when the name looks
+    like English, which is the founding case exactly; (2) validate the persisted
+    root on load, which `setRoot` does not do today; (3) fix `promoteDump` (its
+    own item below) — it is a prerequisite for staging dumps, not a parallel
+    task; (4) stage inputs; (5) stage outputs. The Windows refusal stays exactly
+    as it ships until (4) and (5) land.
+  - WINDOWS INSTALL PATH reaching OpenOCD by two routes (`-s <scriptsDir>` from
+    the Dart runner, `$scripts`/`rescue.cfg` from `rdp.ps1`), absolute and
+    unguarded, so an account name the machine ACP cannot represent stops the app
+    finding its own scripts. Read from the source on Linux, NEVER OBSERVED —
+    VERIFY THIS FIRST on the Windows box; it is cheap, needs no hardware, and it
+    is the only genuinely broken path in the sweep. PLAN: v1.2.3 renames the
+    install directory (`.iss`, zero code); v1.3.0 moves to Program Files after
+    `config.cmd` is deleted. A relative `-s ..\scripts` against the
+    already-correct `workingDirectory` remains a belt-and-braces candidate for
+    dev builds and wizard-changed directories, still untested. Staging does not
+    fix this one. Full reasoning, the sweep and the release split are in the
+    2026-07-30 entry.
   - CLOSED 2026-07-29: macOS v1.2.2 validation — the four-path probe, the ten
     action sweep at parity with Linux, and the x3utils folder Settings row. See
     the macOS entry above. v1.2.2 is now validated on all three platforms.
