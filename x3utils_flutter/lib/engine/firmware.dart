@@ -128,13 +128,24 @@ class Firmware {
   /// directory and an emoji directory all succeeded. Applying it there refused
   /// every dump for a user like `/home/Jörg`, whose `~/x3utils` root carries the
   /// username, and refused firmware picked from their own home as well.
+  /// BETA BENCH SWITCH, off by default. Skips the non-ASCII half below so the
+  /// REAL `write_image` / `verify_image` / `dump_image` command path can be
+  /// measured against a non-ASCII path on actual hardware — the offline probes
+  /// only ever exercised a jimtcl `open`. The brace half is NEVER skipped: it
+  /// is a Tcl quoting rule on every OS, a different cause from the encoding
+  /// one. The UI offers this only in a staged build (`kAppStage`), so a plain
+  /// release cannot reach it and a stored preference goes inert there.
+  static bool allowNonAsciiPaths = false;
+
   static FirmwareCheck validateOpenOcdPath(String path) {
     if (path.contains('{') || path.contains('}')) {
       return FirmwareCheck.fail(
         'Path contains an unsupported character: { or }.',
       );
     }
-    if (Platform.isWindows && path.codeUnits.any((c) => c > 127)) {
+    if (Platform.isWindows &&
+        !allowNonAsciiPaths &&
+        path.codeUnits.any((c) => c > 127)) {
       return FirmwareCheck.fail(
         'Path has non-ASCII characters — use English letters only.',
       );

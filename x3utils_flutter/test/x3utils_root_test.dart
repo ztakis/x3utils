@@ -131,6 +131,30 @@ void main() {
     test('plain ASCII passes everywhere', () {
       expect(Firmware.validateOpenOcdPath('/home/a/x3utils/d.bin').ok, isTrue);
     });
+
+    // The beta bench switch governs ONE half. Braces are a Tcl quoting rule
+    // with a different cause, and letting the switch reach them would hand
+    // OpenOCD a command it cannot parse — so that pairing is pinned here.
+    group('allowNonAsciiPaths (beta bench switch)', () {
+      tearDown(() => Firmware.allowNonAsciiPaths = false);
+
+      test('lets non-ASCII through when on', () {
+        Firmware.allowNonAsciiPaths = true;
+        expect(
+          Firmware.validateOpenOcdPath('/home/Jörg/x3utils/dump.bin').ok,
+          isTrue,
+        );
+      });
+
+      test('never lets braces through', () {
+        Firmware.allowNonAsciiPaths = true;
+        expect(Firmware.validateOpenOcdPath('/tmp/a{b}/fw.bin').ok, isFalse);
+      });
+
+      test('defaults to off', () {
+        expect(Firmware.allowNonAsciiPaths, isFalse);
+      });
+    });
   });
 
   group('AppController', () {

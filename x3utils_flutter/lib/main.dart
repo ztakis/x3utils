@@ -4202,6 +4202,47 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
             fontFamily: kMono,
           ),
         ),
+        // Bench instrument, staged builds only: `kAppStage` is empty in a plain
+        // release, so this row does not exist there and a stored preference
+        // goes inert. Lets the REAL write/verify/dump command path be run
+        // against a non-ASCII path on hardware, which no offline probe covers.
+        if (kAppStage.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Allow non-ASCII paths',
+                  style: TextStyle(
+                    color: AppColors.txt,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Transform.scale(
+                scale: 0.8,
+                alignment: Alignment.centerRight,
+                child: Switch(
+                  value: c.allowNonAsciiPaths,
+                  activeThumbColor: AppColors.brand,
+                  onChanged: (v) {
+                    c.setAllowNonAsciiPaths(v);
+                    setState(() {});
+                  },
+                ),
+              ),
+            ],
+          ),
+          const Text(
+            '$kAppStage bench switch. Hands non-ASCII paths straight to '
+            'OpenOCD. On Windows a path this PC’s codepage cannot '
+            'represent can silently resolve to a DIFFERENT file — and verify '
+            'would confirm that one. Braces stay refused. Every run logs that '
+            'it was on.',
+            style: TextStyle(color: AppColors.mut, fontSize: 12),
+          ),
+        ],
       ],
     );
   }

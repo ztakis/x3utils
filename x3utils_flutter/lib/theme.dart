@@ -99,11 +99,11 @@ const kMono = 'Consolas';
 const kHeroBlockWidth = 500.0;
 
 /// App version — single source of truth (keep pubspec.yaml `version:` in sync).
-const kAppVersion = '1.2.2';
+const kAppVersion = '1.2.3';
 // Release channel shown after the version (e.g. "v1.2.0 BETA"); '' for stable.
 // Kept OUT of kAppVersion so VERSION / pubspec / kAppVersion stay byte-equal —
 // package_macos.sh asserts that three-way match.
-const kAppStage = '';
+const kAppStage = 'BETA2';
 // What the UI renders after the leading "v".
 final kAppVersionLabel = kAppStage.isEmpty
     ? kAppVersion

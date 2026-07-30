@@ -43,6 +43,11 @@ class AppController extends ChangeNotifier {
   String backupPrefix = '';
   bool secondCopy = true; // redundant %LOCALAPPDATA%\x3utils_backup copy
 
+  /// BETA bench switch — see [Firmware.allowNonAsciiPaths]. Persisted so a test
+  /// session survives a restart; inert in a build whose `kAppStage` is empty,
+  /// because the settings panel does not offer it there.
+  bool allowNonAsciiPaths = false;
+
   // Connection modes the user moved to the Advanced rail (persisted). Empty = all
   // in the standard "Connection" group; rendering order is always canonical.
   final Set<ConnectionMode> _advancedModes = <ConnectionMode>{};
@@ -58,6 +63,8 @@ class AppController extends ChangeNotifier {
     Firmware.setRoot(x3utilsRoot);
     backupPrefix = _prefs!.getString('backupPrefix') ?? '';
     secondCopy = _prefs!.getBool('secondCopy') ?? true;
+    allowNonAsciiPaths = _prefs!.getBool('allowNonAsciiPaths') ?? false;
+    Firmware.allowNonAsciiPaths = allowNonAsciiPaths;
     final adv = _prefs!.getStringList('advancedModes');
     _advancedModes.clear();
     if (adv == null) {
@@ -130,6 +137,15 @@ class AppController extends ChangeNotifier {
   void setSecondCopy(bool v) {
     secondCopy = v;
     _prefs?.setBool('secondCopy', v);
+    notifyListeners();
+  }
+
+  /// BETA bench switch — see [Firmware.allowNonAsciiPaths]. Pushed into the
+  /// engine immediately so the next run uses it without a restart.
+  void setAllowNonAsciiPaths(bool v) {
+    allowNonAsciiPaths = v;
+    Firmware.allowNonAsciiPaths = v;
+    _prefs?.setBool('allowNonAsciiPaths', v);
     notifyListeners();
   }
 
@@ -1200,6 +1216,11 @@ class AppController extends ChangeNotifier {
     _runLog.clear();
     _capturing = true;
     _log(contextHeader());
+    // Loud in every transcript: a run made with the guard off is not evidence
+    // about the shipping build, and a saved log must say so on its own.
+    if (Firmware.allowNonAsciiPaths) {
+      _log('== BETA: non-ASCII path check DISABLED for this run ==');
+    }
     try {
       await _dispatch(confirmFileReplace: confirmFileReplace);
     } finally {
