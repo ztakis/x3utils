@@ -2632,3 +2632,318 @@ Linux/macOS get the same code but were not rebuilt this session.
   - Cosmetic: `DesktopPathDisplay` gives a short root like `C:\x3utils` a tall
     two-line box. A one-line variant for short directory paths whenever the
     settings panel is next touched.
+
+## 2026-07-30 — CLI v1.8.0: the rdp_check log omits its own verdict
+
+- FROM A REAL USER on GitHub, then reproduced on the maintainer's own board, so
+  this is a report AND a reproduction rather than either alone.
+- WHAT HAPPENS: `rdp_check`'s log file contains ONLY the teed OpenOCD output —
+  banner, guided-connect prompts, the two `mdw` reads, `shutdown command
+  invoked`. The header, connect mode, Evidence block and Verdict are NOT in it.
+  A healthy board's file ends identically, which is how it was confirmed: the
+  file is not truncated and the run did not stop, the conclusion simply never
+  reaches disk.
+- CAUSE, one line: `Say`/`SayOk`/`SayInfo`/`SayWarn`/`SayFail` in
+  `x3utils_win/special/rdp/rdp.ps1` are all bare `Write-Host`, and the single
+  `Tee-Object -FilePath $LogFile` sits on the OpenOCD pipeline alone.
+- WHY IT COSTS A ROUND TRIP: the script prints `Full log: <path>` DIRECTLY under
+  the verdict, and names the same file again at the top. Asked for a log, the
+  user sends the one file that cannot contain the answer, and it is labelled
+  "Full". The user did nothing wrong.
+- THE GUI IS NOT AFFECTED and that is why this was never noticed here: it
+  captures `rdp.ps1`'s console output through the child process, so a GUI run's
+  saved log DOES carry the verdict — that is where the `NOT PROTECTED` lines in
+  `docs/testing.md` come from. The incomplete log belongs to the tool that is
+  now bugfix-only.
+- FIX (agreed, bugfix-only scope): route Evidence + Verdict through the tee that
+  already exists. TWO GOTCHAS: `New-LogPath` runs AFTER the first `Say` calls,
+  so early lines need buffering or reordering; and the teed OpenOCD text already
+  lands with raw ANSI escapes in the file, so strip them on the way to disk in
+  the same pass. Also drop the word "Full" from the label if it is not.
+- THE REPORTED DEVICE IS READ PROTECTED, unambiguously: `0x1FFFF800` reads
+  `00000000` (FAP not `0xA5`, complement inconsistent) and `0x08000000` reads
+  all `0x00`. Two independent signals agreeing, so the contradiction guard does
+  not apply. All-zero `xPSR`/`pc`/`msp` and "halted due to breakpoint" fit the
+  same picture. LIKELY but NOT established from the log: a paid BLE unlock
+  product engaging FAP, which is the common real cause of an all-zeros X3 dump.
+  Ask whether they ran one and whether any pre-FAP dump of that board exists.
+- INCIDENTAL FIELD FACT, worth more than the bug: that user runs from a path
+  CONTAINING SPACES (a multi-word Dropbox folder), so `-s <scripts>` carried
+  spaces into OpenOCD's argv — and the guided connect, both `mdw` reads and the
+  shutdown all worked. The 2026-07-30 entry flagged spaces as a never-tested
+  risk against moving the install to Program Files, on the grounds that nothing
+  here had ever run with one. Something now has, on a stranger's machine.
+  Their box is German Windows with an ASCII path, so no encoding is involved
+  either way — and it is the first field data from a CP1252 machine.
+
+## 2026-07-30 — WINDOWS BOX: the non-ASCII question, measured
+
+- WHAT THIS IS: the probe the entry above asked for, run on the Windows box.
+  Measurement only — no hardware, no code change, no release work. Windows 10
+  Pro, ACP 1253, bundled `openocd.exe` 0.11.0+dev-snapshot (2026-06-22).
+  Re-runnable as `x3utils_flutter/tool/acp_probe.ps1`, which prints `USER`,
+  `ACP` and the OpenOCD version so any pasted result is self-describing.
+- THE TWO GUARDS ARE NOT ONE GUARD, restated because conflating them is what
+  produced the wrong work. The path-encoding problem is OpenOCD-on-WINDOWS,
+  and the CLI has always guarded it Windows-only. The `{}` guard is ALL-OS
+  because braces are the Tcl quoting characters the commands are built with.
+  Different cause, different scope. They share a function; they are not one
+  rule.
+- THE AXIS IS ACP REPRESENTABILITY, NOT "NON-ASCII". Greek passed every
+  position on this Greek box; German `ö` failed every position on the same box.
+  Blanket ASCII is a locale-independent superset that happens to be safe, not a
+  description of the mechanism.
+- THE MATRIX, ACP 1253:
+
+  | argv position | ASCII | Greek | `ö` | Cyrillic |
+  | --- | --- | --- | --- | --- |
+  | `-s <dir>` absolute | ok | ok | **wrong dir** | fail |
+  | `-f <cfg>` absolute | ok | ok | **wrong file** | fail |
+  | file read, jimtcl `open rb` | ok | ok | **wrong file** | fail |
+  | file write, jimtcl `open wb` | n/t | ok | **wrong dir** | fail |
+  | relative `-s ..\scripts`, exe + cwd in a bad tree | n/t | n/t | n/t | ok |
+
+  `fail` is a loud refusal (`Can't find …`, `Invalid argument`, non-zero exit).
+  **bold** is the silent case: OpenOCD used a DIFFERENT existing path without
+  saying so. `n/t` = not run, not "passed".
+- THE DISCRIMINATOR, which is the part worth keeping: best-fit does not invent a
+  path, it lands on one that already exists. With a `Jorg\` directory present, a
+  request for `Jörg\fw.bin` returned Jorg's file. With `Jorg\` moved out of the
+  way, the same request failed loudly. So the silent-wrong class needs a
+  colliding sibling to exist — which is exactly the shape of the founding case,
+  where a Cyrillic homoglyph sits inside a name that reads as Latin.
+- WHAT IS ACTUALLY NEW, against what was assumed before today:
+  - `-s` and `-f` are affected too, so best-fit can silently load a DIFFERENT
+    SCRIPTS TREE or cfg, not only a firmware file. Only the firmware-input case
+    had been described.
+  - The dump DESTINATION was measured rather than reasoned: a write addressed to
+    `Jörg\out.bin` landed in `Jorg\out.bin`.
+  - `-s ..\scripts` resolves correctly with the exe AND the working directory
+    inside an unrepresentable tree, and a bogus cfg name still fails from there,
+    so resolution really is coming from the relative path — OpenOCD does not
+    canonicalise `-s`. argv is the only channel that converts; `CreateProcessW`
+    paths do not. That makes relative `-s` a candidate for removing the
+    install-path dependency with no FFI. NOT tried in the app.
+- WHAT THESE NUMBERS DO NOT COVER. The file read/write cells are jimtcl `open`,
+  which is the same CRT call `write_image` / `verify_image` / `dump_image` use
+  but is NOT those commands — they need hardware and were not run here. The
+  Linux hardware row of 2026-07-29 is still the only place a real
+  `write_image` / `verify_image` went through an umlaut path, and that was on
+  Linux.
+- WHAT ONE BOX CANNOT ESTABLISH. Everything above is CP1253. That `ö` works on a
+  German CP1252 machine follows from the mechanism (`WideCharToMultiByte`
+  against the process ACP) and is NOT measured. The discriminating run is a
+  GREEK-named account on German Windows; a German-named account is the control
+  that should pass. Until that is run, no claim about German users is a
+  measurement.
+- FIELD EVIDENCE. No user has ever REPORTED a problem — but it was REPRODUCED
+  the same day, which overtakes the "zero evidence" line this entry first
+  carried. On the laptop, under a Greek-named Windows account, the PUBLISHED
+  v1.2.0 failed on Backup: OpenOCD completed the read and the file was written
+  to `C:\Users\<greek>\Documents\x3utils\backup\dump_<ts>.bin`, and the app then
+  refused its OWN output — *"Dump saved but failed validation — do not trust it.
+  Path has non-ASCII characters — use English letters only. (a read-protected or
+  blank chip reads back like this — try Check protection)."* So v1.2.0's
+  unconditional guard rejecting a profile-derived output path is OBSERVED, not
+  inferred, and the wording sends a user holding a good dump toward FAP. Note
+  the shape of it: nothing OpenOCD did failed. We refused ourselves.
+- THE LINUX EQUIVALENT LARGELY CANNOT BE BUILT, which corrects a line in
+  `docs/testing.md`. Attempting a Greek username on Linux Mint FAILED: `adduser`
+  enforces `NAME_REGEX` from `/etc/adduser.conf` (`^[a-z][-a-z0-9_]*$`) and the
+  GUI user manager offers nothing else. Root can force it, no ordinary user
+  will. So `/home/<user>` is ASCII in practice, the v1.2.0 default root under it
+  is ASCII, and the guard never fires on a Linux dump destination — the
+  Windows `Σοφία` reproduction has no easy Linux counterpart, because Windows
+  lets an account be named anything and Linux does not. The 2026-07-29 Linux row
+  says a `/home/Jörg` user "was refused every dump"; that sentence was reasoning
+  written alongside the fix, not an observed run, and it describes a user who
+  mostly cannot exist. What IS real off Windows is the narrower case the probe
+  and the hardware run actually covered: USER-CHOSEN paths — a firmware `.bin`
+  under `Prüfung/`, or a root browsed to a non-ASCII directory. Annoying
+  refusal, not a dead end. macOS DOES THE SAME, now checked rather than assumed:
+  the New User sheet accepts `Σοφία` as Full Name but auto-derives the Account
+  Name to `sophia` — transliterated, not stripped — and states that this is the
+  name used for the home folder. So on all three OSes only WINDOWS lets a
+  profile directory carry non-ASCII at all. That, not any difference in
+  OpenOCD, is why the reproduction is Windows-only.
+- NOT A v1.2.0 REGRESSION — IT IS ORIGINAL BEHAVIOUR. The maintainer reproduced
+  the identical failure on v1.1.3, and `git log -S` puts the unconditional
+  `codeUnits > 127` refusal in `057deb6`, the FIRST Flutter GUI commit (v0.9.0).
+  `Firmware.validate(outPath)` on the dump is in v1.1.3 too. So every GUI
+  release ever published — v0.9.0-beta, v1.0.0, v1.1.2, v1.1.3, v1.2.0 —
+  refuses its own backup for any user whose profile path is not ASCII, on all
+  three OSes. Nobody reported it across five releases and it took a deliberately
+  created account to see it. Two readings stay open and the evidence does not
+  choose between them: the affected population is very small, or it hits people
+  who quietly give up. Do not write either one down as the answer.
+- AND v1.2.2 PASSES ON THE SAME ACCOUNT — a clean A/B, same box, same Greek
+  profile, 13 minutes apart. v1.2.0 at `18:27:42` refused its own dump; v1.2.2
+  at `18:40:06` reported "Backup complete · Backed up and verified", TOOK 0:02,
+  into `C:\x3utils\backup`. The mechanism is the ROOT MOVE, not the Windows
+  scoping: the default root left the profile, so the destination stopped
+  carrying the user's name and the guard has nothing to fire on. The scoping
+  change is what frees Linux and macOS, where the root stays under `$HOME`.
+  So the fix for the one observed failure is built, unpublished, and now
+  verified on the affected account itself.
+- THE INSTALL PATH WAS GREEK IN BOTH RUNS, AND OPENOCD DID NOT CARE. Both
+  builds were installed to `%LOCALAPPDATA%\Programs\x3utils` under the Greek
+  profile, so `-s <scriptsDir>` carried Greek into argv on every invocation —
+  and OpenOCD resolved its cfg files and completed a full 128 KB dump both
+  times. This QUALIFIES the entry above, which called the install path "the
+  only genuinely broken one": it is a latent dependency, not an active fault,
+  and it bites only when the account name is unrepresentable in the machine's
+  own ACP (a Greek account on German/English Windows; `ö` on this Greek box).
+  When it does bite it fails LOUDLY — `Can't find target/…cfg`, every action
+  dead — because a silent best-fit hit would need a sibling install directory
+  with the mangled name to already exist. Still uncovered on that account: only
+  Backup was run, which is the Dart route; `rdp.ps1`'s `$scripts` +
+  `rescue.cfg` route is exercised by Check protection alone.
+- WHAT THAT A/B DOES NOT COVER: the guard is still live on Windows, so the same
+  user picking a firmware `.bin` out of her own `Documents` is still refused —
+  not exercised in this run. And Greek is representable in CP1253, so nothing
+  here touches the best-fit / silent-wrong class; that still needs a character
+  the machine ACP cannot represent.
+- STILL OPEN ON THAT RUN, and cheap: the `.bin` size was not checked, and
+  v1.2.0's `validate()` tests the path BEFORE size and content, so "the backup
+  is intact" is not yet established — only that the guard fired first. The
+  laptop's ACP was not recorded either, which is what decides whether OpenOCD
+  wrote that Greek path natively (expected on 1253) or something else happened.
+  `tool/acp_probe.ps1` under that account answers both in one run.
+- DECIDED: THE GUI DROPS `config.cmd`. Maintainer's call — the file is CLI
+  inheritance (`launcher.bat` writes it there) and the GUI no longer needs it;
+  the CLI is bugfix-only and the two copies have already forked, the CLI reading
+  `$cfgCmd` from `$WinRoot` and the GUI's from `$ScriptDir`. `RdpRunner` passes
+  the values as arguments instead. Checked while recording this: `rdp.ps1`
+  ALREADY has a `param()` block ending `[switch]$Launcher`, so `-Target`,
+  `-ConnectTimeout`, `-LogDir` and `-Race` slot in and `-Launcher` becomes
+  redundant; and `rdp_runner.dart:152` really is the ONLY runtime write into the
+  bundle on Windows — every other write in that file is under the Unix temp run
+  root. So this DELETES the file-content encoding mechanism rather than
+  mitigating it (no file, nothing to mis-decode), makes the install directory
+  read-only at runtime, and drops the `.iss` `Excludes:` line. The stray
+  `config.cmd` left behind in an uninstalled `Programs\x3utils` tree — Inno
+  never tracked it, so uninstall cannot remove it — stops being possible too.
+- THE UNIX HALF IS THE SAME KNOT, and it has its own DEFECT — measured, not
+  reasoned. `_writeConfigSh` wraps every value in DOUBLE quotes with no
+  escaping, so `$`, backtick, `"` and `\` stay live when the script sources it.
+  Tested in bash: a log dir of `…/x3$test/logs` came back as `…/x3/logs` — the
+  unset `$test` expanded to nothing and the transcript would land in a
+  DIFFERENT directory, silently. Same class as the Windows best-fit case,
+  different cause; `validateOpenOcdPath` refuses only `{` and `}`, so nothing
+  catches it. `OPENOCD_BIN` / `SCRIPTS_DIR` run through the same writer, where
+  it would fail loudly instead. Scope is small — Unix only, RDP only, costs a
+  transcript rather than a backup, and needs an unusual character in the root or
+  bundle path.
+  - UTF-8 is NOT part of this: the same test round-tripped `Prüfung` exactly and
+    the directory resolved. `source` is byte-transparent, so the Windows
+    ANSI-decode hazard has no Unix counterpart. Two different mechanisms; do not
+    merge them.
+  - So passing the values through `Process.start`'s `environment:` removes a
+    real quoting bug, not just a piece of inheritance — environment values are
+    never re-parsed by a shell. Still READ THE SCRIPTS FIRST: `rdp_check.sh`
+    hard-exits with `[FAIL] Missing config.sh` if the file is absent, and
+    `rdp_lib.sh` documents that it must be sourced after it for `INTERFACE`,
+    `TARGET`, `CONNECT_TIMEOUT`, `CL_*` and `D`. Neither script uses `set -u`,
+    so unset values expand empty rather than aborting. Retiring
+    `_prepareUnixRunRoot()` is a SEPARATE, larger change — it also carries exec
+    bits and the `backup/` fallback, and macOS places config.sh differently.
+- CORRECTION TO THE ENTRY DIRECTLY ABOVE. "DECISION: ASCII STAGING, IN BOTH
+  DIRECTIONS" and its ordered work list (1)–(5) were written on the Linux
+  machine, with no Windows box and no field input. Read cold it looks like a
+  commitment; it is not one, and nothing in it was ever weighed against user
+  reports. This session inherited that urgency, built a v1.2.x hotfix case on
+  top of code reading, and only then asked whether anyone had hit the bug.
+  Treat the staging plan as an option with its reasoning attached. The
+  OPEN ITEMS list above belongs to that entry, not to this one.
+
+## 2026-07-31 — GUI: OpenOCD output can no longer fail a run (v1.2.3 BETA2)
+
+- THE BUG, found by turning the beta path guard OFF on a Greek Windows account:
+  OpenOCD echoes the source path in `wrote N bytes from file <path>`, in the
+  platform's own encoding. On Windows that is ANSI bytes, the strict
+  `utf8.decoder` threw `FormatException: Missing extension byte (at offset 38)`,
+  and the error propagated out of `OpenOcdRunner.run`. The run died BETWEEN
+  `flash erase_address` and `flash write_bank`, showing "Could not start
+  OpenOCD" — for a run that had already erased the chip and, judging by where
+  the exception landed, completed the write. Offset 38 is exactly the length of
+  `wrote 131072 bytes from file C:/Users/`.
+- THE REAL DEFECT was not the encoding, it was the coupling: a byte needed only
+  to draw a console line could abort a flash. Reading the log must never decide
+  the operation.
+- FIX, five sites, no platform branches: `Utf8Decoder(allowMalformed: true)` in
+  place of the strict decoder in `OpenOcdRunner.run`, both `runRace` streams and
+  `RdpRunner._listenText`, plus a `_loggingOnly` guard so an exception in the
+  console/evidence path is swallowed instead of thrown into the run.
+- DELIBERATELY OS-AGNOSTIC. The trigger is Windows in practice — POSIX paths go
+  out and come back as UTF-8, which is why the 2026-07-29 Linux and macOS runs
+  pushed a `Prüfung/` path through the real `write_image`/`verify_image` without
+  trouble. But POSIX filenames are arbitrary bytes, so a `.bin` carrying Latin-1
+  in its name off an old archive reaches the same crash there. Framed as
+  robustness, not encoding, so no `Platform.isWindows` appears in it.
+- VERDICTS ARE UNAFFECTED, and that is tested rather than assumed: `wrote`,
+  `verified`, `dumped` and the byte counts are ASCII and precede the path on
+  every line. `test/openocd_output_decoding_test.dart` (4 tests) rebuilds the
+  exact CP1253 byte sequence, asserts that strict UTF-8 still throws on it at
+  offset 38 — a fixture guard, so the test cannot quietly stop reproducing the
+  reported failure — then pins that lenient decoding returns normally and that
+  write/verify evidence survives the mangling. 184 tests, analyze clean.
+- THIS IS NOT THE PROPER FIX, and should not be recorded as one. It guarantees
+  the stream cannot throw; it does NOT render the path correctly, which still
+  comes out as U+FFFD. The proper fix decodes in the platform's actual encoding
+  — `systemEncoding` is the ANSI codepage on Windows and would show `Σοφία` —
+  but its behaviour on undecodable input is unverified, and whether Dart
+  guarantees UTF-8 for it on POSIX under a non-UTF-8 locale is unchecked. Do
+  that deliberately, not as a drive-by.
+- Shipped as `1.2.3 BETA2` so bench transcripts say which build produced them:
+  every log line starts `x3utils v1.2.3 BETA2 · …`, and the BETA1 runs that hit
+  the crash remain distinguishable. Semver-style `1.2.3-1` was NOT used —
+  `tool/version.dart` keeps five x.y.z strings byte-equal and `package_macos.sh`
+  asserts that match, so the channel belongs in `kAppStage`, not the number.
+
+## 2026-07-31 — BEST-FIT SUBSTITUTION, ON HARDWARE, IN THE REAL FLASH PATH
+
+- THE RESULT THE WHOLE GUARD RESTS ON, finally observed rather than inferred.
+  Windows box, ACP 1253, beta path check off, `Flash slot 0` against a live
+  target. Sent
+  `…/gen_test_bins/Prüfung/16a_slot_zt3_vcu_SYNTHETIC.bin`; OpenOCD answered
+  `couldn't open …/gen_test_bins/Prufung/16a_slot_zt3_vcu_SYNTHETIC.bin`.
+  `ü` → `u`. Not a jimtcl `open` this time — `flash write_image erase` on a
+  halted chip.
+- BOTH WAYS ON ONE MACHINE, MINUTES APART, which is what makes it conclusive.
+  At 00:25 a Greek path worked end to end: dump INTO
+  `…/Σοφία/Documents/x3utils/backup/` and flash FROM `…/Σοφία/Desktop/`,
+  erased, wrote 131072, verified 131072, exit 0. At 00:30 the umlaut path
+  mangled. Greek is in CP1253; `ü` is not. Codepage membership decides it —
+  "non-ASCII" never did.
+- THE NEAR-MISS IS THE POINT. It failed LOUDLY only because no `Prufung`
+  directory exists. Had one been there — a stray copy, an ASCII-named sibling,
+  the sort of thing that accumulates in a test folder — OpenOCD would have
+  opened THAT file, written it to slot 0, and `verify_image` would have
+  verified the same wrong file and returned success. Green screen over wrong
+  firmware. That is the exact failure the Windows guard exists for, and it has
+  now been demonstrated end to end.
+- THREE-PLATFORM CONTRAST, same fixture: `Prüfung/16a_slot_zt3_vcu_SYNTHETIC.bin`
+  is the file that PASSED on Linux and macOS hardware on 2026-07-29 through
+  `write_image` and `verify_image`. Same bytes, same command — fine on POSIX,
+  mangled on Windows. The `Platform.isWindows` scoping of the guard is now
+  evidenced from both sides.
+- No harm done: OpenOCD opens the image before erasing, so the failure aborted
+  ahead of any write (no `wrote`, exit 1), and the run's own pre-flash backup
+  was already on disk.
+- DEFECT FOUND ALONGSIDE IT: the failure screen appended "Most failures are a
+  lost SWD / C45 contact — re-seat it, keep it steady, then press Retry." For
+  `couldn't open <path>` that is wrong and actively misleading — the SWD link
+  demonstrably worked seconds earlier (the backup succeeded), retrying will fail
+  identically forever, and the operator is sent to re-seat wiring that was never
+  at fault. Suppress the re-seat hint when OpenOCD reports it could not open a
+  file.
+- MAINTAINER'S POSITION, recorded so it is not re-litigated: there will probably
+  never be a FULL fix. The order is stay-out-of-trouble first — the Windows
+  guard stays as it ships — and only then look at whether acceptance can be
+  SAFELY widened for the CP1252 users who are the majority here, German and
+  French alike (`ö ä ü ß`, `é è ç` are all in 1252 and all refused today for no
+  reason those machines agree with). The ACP round-trip is the mechanism that
+  could do it, and tonight strengthens the case for it specifically: it would
+  have accepted `Prüfung` on a German box and refused it on this Greek one,
+  which is exactly right in both directions. Not a promise, and not before the
+  decoder work is finished properly.
