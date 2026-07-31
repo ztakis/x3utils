@@ -3138,7 +3138,33 @@ Linux/macOS get the same code but were not rebuilt this session.
   Windows cases execute on this host; the new GUI/direct/retry Unix cases are
   platform-gated and remain target-runtime evidence, not Windows evidence. The
   BETA5 stage/root test passes 20/20, the full suite passes 198/198, and
-  `flutter analyze` is clean. Still owed: rebuild the AppImage and macOS package,
-  run Check protection with Save log on, confirm one complete GUI log and no
-  `_toolkit`, exercise a retry, and confirm a direct script run without the flag
-  still creates its own transcript.
+  `flutter analyze` is clean. At this checkpoint, before the target-runtime
+  results below, both Unix packages, a retry, and a real direct-script run still
+  required coverage.
+- MACOS DEBUG/SOURCE-BUILD HANDOFF PASSED, commit `0fc483a`, on macOS 15.7.7 /
+  Intel x86_64 with the ZT3 VCU test board, ST-LINK, and launcher A / Default
+  SWD. The 14:16:48 GUI Check passed
+  `bash rdp_check.sh --launcher --no-toolkit-log` and created exactly one new
+  file, `~/x3utils/logs/rdp_check/rdp_check_2026-07-31_14-16-48.log` (1445 B).
+  No same-run `_toolkit` companion appeared; the two old July 29 pairs remained
+  visible in the directory, so this was not inferred from a cleaned folder.
+  The GUI log is complete: USD `ffff5aa5`, consistent FAP `0xA5`/comp `0x5A`,
+  readable main flash (MSP `0x20000550`, reset vector `0x08000121`), `NOT
+  PROTECTED`, and exit 0. No retry occurred in this run. On the same macOS
+  checkout, the focused RDP test passed 6/6 and `flutter analyze` was clean.
+  This closes source-build macOS evidence; the packaged pass below closes the
+  other macOS half. A real direct-script compatibility run without the flag and
+  Linux remain owed.
+- MACOS PACKAGED-APP HANDOFF PASSED from
+  `dist/x3utils-1.2.3-macos-universal/x3utils.app` on the same testbed. Check
+  connection resolved the backend through the bundle's
+  `Contents/MacOS/native/macos/oocd/scripts`, halted the target, found the
+  `artery` flash bank, exited 0, and saved
+  `check_2026-07-31_14-22-45.log` (745 B). The following Check protection passed
+  `bash rdp_check.sh --launcher --no-toolkit-log` and saved exactly one new GUI
+  log, `rdp_check_2026-07-31_14-22-52.log` (1445 B), with no new `_toolkit`
+  companion. Its evidence matches the debug run: USD `ffff5aa5`, FAP
+  `0xA5`/comp `0x5A`, readable main flash, `NOT PROTECTED`, and exit 0. No retry
+  occurred. This closes packaged macOS coverage for the BETA5 single-log
+  change. Linux, a live BETA5 retry, and a real direct-script compatibility run
+  remain separate.

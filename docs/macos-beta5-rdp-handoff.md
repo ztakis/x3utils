@@ -3,6 +3,53 @@
 This handoff validates the Flutter GUI's Unix RDP logging change in
 `1.2.3+11 BETA5` on macOS. The first pass uses a debug build from the source
 tree. That is source-build and hardware evidence, not packaged-app evidence.
+The separate packaged-app pass is also recorded below; both are complete.
+
+## Recorded result — source-build pass
+
+The debug/source-build Check passed on 2026-07-31 at commit `0fc483a` on
+macOS 15.7.7 / Intel x86_64, using the ZT3 VCU test board, ST-LINK, and
+A / Default SWD. Save log was enabled.
+
+- `flutter test test/rdp_runner_test.dart`: 6/6 passed on macOS.
+- `flutter analyze`: no issues found.
+- One new GUI log was created:
+  `rdp_check_2026-07-31_14-16-48.log` (1445 bytes).
+- No new `rdp_check_toolkit_*` file was created. The two older July 29 toolkit
+  logs were deliberately left in place, and the directory listing makes the
+  before/after distinction unambiguous.
+- The GUI command contained
+  `bash rdp_check.sh --launcher --no-toolkit-log`.
+- Evidence was complete: USD `ffff5aa5`, FAP `0xA5`, complement `0x5A`, and
+  readable main flash with MSP `0x20000550` and reset vector `0x08000121`.
+- Verdict: `NOT PROTECTED`; RDP exit 0.
+- Retry was not exercised in this run.
+
+This closes the debug/source-build macOS half. The separate packaged-app pass
+is recorded below. A real direct-script run without `--no-toolkit-log` remains
+separate; the focused test covers that compatibility path with fake OpenOCD.
+
+## Recorded result — packaged-app pass
+
+The packaged app under
+`dist/x3utils-1.2.3-macos-universal/x3utils.app` passed on 2026-07-31 on the
+same macOS 15.7.7 / Intel x86_64 testbed, using ST-LINK and A / Default SWD.
+
+- Check connection resolved the embedded OpenOCD scripts under the packaged
+  app's `Contents/MacOS/native/macos/oocd/scripts`, halted the target, found the
+  `artery` flash bank, and exited 0. Its GUI log is
+  `check_2026-07-31_14-22-45.log` (745 bytes).
+- Check protection passed
+  `bash rdp_check.sh --launcher --no-toolkit-log` and created exactly one new
+  GUI log, `rdp_check_2026-07-31_14-22-52.log` (1445 bytes).
+- No new `rdp_check_toolkit_*` file appeared. The directory still contains only
+  the two older July 29 toolkit logs.
+- Evidence was complete: USD `ffff5aa5`, FAP `0xA5`, complement `0x5A`, and
+  readable main flash with MSP `0x20000550` and reset vector `0x08000121`.
+- Verdict: `NOT PROTECTED`; RDP exit 0.
+- Retry was not exercised in this run.
+
+This closes packaged-app macOS coverage for the BETA5 single-log change.
 
 ## Commit before changing OS
 
@@ -90,8 +137,7 @@ ls -lt ~/x3utils/logs/rdp_check
 - `flutter analyze`: static analysis.
 - Debug GUI Check: source-build hardware evidence.
 - `tool/package_macos.sh` plus a Check from that app: packaged-app hardware
-  evidence, still separate and still required before claiming packaged macOS
-  coverage.
+  evidence, satisfied by the recorded packaged-app pass above.
 
 A green process exit alone is not enough. The hardware pass requires the
 action-specific option-byte and main-flash evidence plus the final verdict.
@@ -202,5 +248,6 @@ Main-flash evidence:
 Verdict and exit code:
 ```
 
-After that result is recorded, build with `./tool/package_macos.sh` for the
-separate packaged-app verification.
+The source-build and packaged-app results are both recorded above. Linux, a
+live BETA5 retry, and a real direct-script compatibility run without
+`--no-toolkit-log` remain separate follow-up coverage.
