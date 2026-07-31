@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 
+import 'windows_ansi_path.dart';
+
 class FirmwareCheck {
   const FirmwareCheck(this.ok, this.message);
   final bool ok;
@@ -82,6 +84,24 @@ class Firmware {
   static const int slot0MaxPayloadMcu = 59388;
 
   static FirmwareCheck validate(String path, {bool requireSize = true}) {
+    return _validateBin(path, requireSize: requireSize, forOpenOcd: true);
+  }
+
+  /// Structural validation for a bin read only by Dart. ZIP3 Slice and Pack
+  /// are offline file-to-file tools, so Tcl quoting and Windows OpenOCD argv
+  /// conversion do not apply to their source path.
+  static FirmwareCheck validateLocalBin(
+    String path, {
+    bool requireSize = true,
+  }) {
+    return _validateBin(path, requireSize: requireSize, forOpenOcd: false);
+  }
+
+  static FirmwareCheck _validateBin(
+    String path, {
+    required bool requireSize,
+    required bool forOpenOcd,
+  }) {
     if (path.trim().isEmpty) {
       return FirmwareCheck.fail('No firmware file selected.');
     }
@@ -89,8 +109,10 @@ class Firmware {
     if (!f.existsSync()) {
       return FirmwareCheck.fail('Firmware file does not exist.');
     }
-    final safe = validateOpenOcdPath(path);
-    if (!safe.ok) return safe;
+    if (forOpenOcd) {
+      final safe = validateOpenOcdPath(path);
+      if (!safe.ok) return safe;
+    }
     if (p.extension(path).toLowerCase() != '.bin') {
       return FirmwareCheck.fail('Invalid file type. Only .bin is allowed.');
     }
@@ -117,10 +139,10 @@ class Firmware {
   ///
   /// The non-ASCII rule is WINDOWS ONLY. The bundled Windows OpenOCD is a mingw
   /// build whose CRT converts `argv` from UTF-16 down to the machine's ANSI
-  /// codepage before `main()`, so a path survives only if this PC's codepage can
-  /// represent it — and `ü` best-fit maps to `u`, a valid but DIFFERENT path.
-  /// Blanket ASCII is a deliberate locale-independent safe superset there; do
-  /// not narrow it into a per-codepage test without reading the DEVLOG entry.
+  /// codepage before `main()`. A path is safe only when Windows converts it
+  /// through that codepage and back unchanged; this rejects best-fit mappings
+  /// such as the measured CP1253 `ü` → `u` wrong-file hazard while allowing
+  /// Greek on CP1253 and Western European names on CP1252.
   ///
   /// It does not apply off Windows: POSIX paths are opaque bytes and `argv` is
   /// unconverted. Measured 2026-07-29 against the bundled Linux OpenOCD — cfg
@@ -128,14 +150,19 @@ class Firmware {
   /// directory and an emoji directory all succeeded. Applying it there refused
   /// every dump for a user like `/home/Jörg`, whose `~/x3utils` root carries the
   /// username, and refused firmware picked from their own home as well.
-  /// BETA BENCH SWITCH, off by default. Skips the non-ASCII half below so the
-  /// REAL `write_image` / `verify_image` / `dump_image` command path can be
-  /// measured against a non-ASCII path on actual hardware — the offline probes
-  /// only ever exercised a jimtcl `open`. The brace half is NEVER skipped: it
-  /// is a Tcl quoting rule on every OS, a different cause from the encoding
-  /// one. The UI offers this only in a staged build (`kAppStage`), so a plain
-  /// release cannot reach it and a stored preference goes inert there.
-  static bool allowNonAsciiPaths = false;
+  /// BETA3 BENCH SWITCH, off by default. Skips only the Windows ACP half so the
+  /// safe rule and unrestricted OpenOCD behavior can be compared. The
+  /// controller stage-gates this before setting it; braces are NEVER skipped.
+  static bool bypassWindowsPathSafety = false;
+
+  static int? get windowsAnsiCodePage {
+    if (!Platform.isWindows) return null;
+    try {
+      return WindowsAnsiPath.activeCodePage;
+    } catch (_) {
+      return null;
+    }
+  }
 
   static FirmwareCheck validateOpenOcdPath(String path) {
     if (path.contains('{') || path.contains('}')) {
@@ -144,11 +171,36 @@ class Firmware {
       );
     }
     if (Platform.isWindows &&
-        !allowNonAsciiPaths &&
+        !bypassWindowsPathSafety &&
         path.codeUnits.any((c) => c > 127)) {
-      return FirmwareCheck.fail(
-        'Path has non-ASCII characters — use English letters only.',
-      );
+      try {
+        final result = WindowsAnsiPath.check(path);
+        if (!result.exact) {
+          final codePoint = result.offendingCodePoint;
+          final position = result.firstDifferenceIndex;
+          if (codePoint != null && position != null) {
+            final hex = codePoint
+                .toRadixString(16)
+                .toUpperCase()
+                .padLeft(4, '0');
+            final character = result.offendingCharacter;
+            return FirmwareCheck.fail(
+              "Windows code page ${result.codePage} cannot pass '$character' "
+              '(U+$hex) at character ${position + 1} to OpenOCD unchanged. '
+              'Choose a different folder or filename.',
+            );
+          }
+          return FirmwareCheck.fail(
+            'Windows code page ${result.codePage} cannot pass this path to '
+            'OpenOCD unchanged. Use a different folder or filename.',
+          );
+        }
+      } catch (_) {
+        return FirmwareCheck.fail(
+          'Could not verify this non-ASCII path against the Windows system '
+          'code page. Use an ASCII folder or filename.',
+        );
+      }
     }
     return FirmwareCheck.valid;
   }

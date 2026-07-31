@@ -4202,17 +4202,15 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
             fontFamily: kMono,
           ),
         ),
-        // Bench instrument, staged builds only: `kAppStage` is empty in a plain
-        // release, so this row does not exist there and a stored preference
-        // goes inert. Lets the REAL write/verify/dump command path be run
-        // against a non-ASCII path on hardware, which no offline probe covers.
-        if (kAppStage.isNotEmpty) ...[
+        // BETA3 Windows-only bench instrument. Safe ACP validation is the
+        // default; this restores unrestricted BETA2 behavior for comparison.
+        if (c.windowsPathBenchAvailable) ...[
           const SizedBox(height: 14),
           Row(
             children: [
               const Expanded(
                 child: Text(
-                  'Allow non-ASCII paths',
+                  'Bypass Windows path safety',
                   style: TextStyle(
                     color: AppColors.txt,
                     fontSize: 13,
@@ -4224,10 +4222,10 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
                 scale: 0.8,
                 alignment: Alignment.centerRight,
                 child: Switch(
-                  value: c.allowNonAsciiPaths,
+                  value: c.bypassWindowsPathSafety,
                   activeThumbColor: AppColors.brand,
                   onChanged: (v) {
-                    c.setAllowNonAsciiPaths(v);
+                    c.setBypassWindowsPathSafety(v);
                     setState(() {});
                   },
                 ),
@@ -4235,11 +4233,10 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
             ],
           ),
           const Text(
-            '$kAppStage bench switch. Hands non-ASCII paths straight to '
-            'OpenOCD. On Windows a path this PC’s codepage cannot '
-            'represent can silently resolve to a DIFFERENT file — and verify '
-            'would confirm that one. Braces stay refused. Every run logs that '
-            'it was on.',
+            'BETA3 bench switch. OFF allows only paths this PC’s Windows '
+            'code page passes to OpenOCD unchanged. ON hands non-ASCII paths '
+            'straight through and can silently resolve a DIFFERENT file. '
+            'Braces stay refused. Every run logs the selected mode.',
             style: TextStyle(color: AppColors.mut, fontSize: 12),
           ),
         ],

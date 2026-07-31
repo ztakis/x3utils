@@ -43,10 +43,12 @@ class AppController extends ChangeNotifier {
   String backupPrefix = '';
   bool secondCopy = true; // redundant %LOCALAPPDATA%\x3utils_backup copy
 
-  /// BETA bench switch — see [Firmware.allowNonAsciiPaths]. Persisted so a test
-  /// session survives a restart; inert in a build whose `kAppStage` is empty,
-  /// because the settings panel does not offer it there.
-  bool allowNonAsciiPaths = false;
+  /// BETA3 bench switch — safe ACP validation is the default; this deliberately
+  /// restores the unrestricted BETA2 behavior for comparison runs only.
+  bool bypassWindowsPathSafety = false;
+
+  bool get windowsPathBenchAvailable =>
+      Platform.isWindows && kAppStage == 'BETA3';
 
   // Connection modes the user moved to the Advanced rail (persisted). Empty = all
   // in the standard "Connection" group; rendering order is always canonical.
@@ -63,8 +65,13 @@ class AppController extends ChangeNotifier {
     Firmware.setRoot(x3utilsRoot);
     backupPrefix = _prefs!.getString('backupPrefix') ?? '';
     secondCopy = _prefs!.getBool('secondCopy') ?? true;
-    allowNonAsciiPaths = _prefs!.getBool('allowNonAsciiPaths') ?? false;
-    Firmware.allowNonAsciiPaths = allowNonAsciiPaths;
+    // Deliberately a new BETA3 key. A BETA2 "allow everything" preference must
+    // not carry forward silently, and no stored bench setting may activate in
+    // a later beta or stable build whose stage does not explicitly opt in.
+    bypassWindowsPathSafety =
+        windowsPathBenchAvailable &&
+        (_prefs!.getBool('beta3BypassWindowsPathSafety') ?? false);
+    Firmware.bypassWindowsPathSafety = bypassWindowsPathSafety;
     final adv = _prefs!.getStringList('advancedModes');
     _advancedModes.clear();
     if (adv == null) {
@@ -140,12 +147,13 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// BETA bench switch — see [Firmware.allowNonAsciiPaths]. Pushed into the
-  /// engine immediately so the next run uses it without a restart.
-  void setAllowNonAsciiPaths(bool v) {
-    allowNonAsciiPaths = v;
-    Firmware.allowNonAsciiPaths = v;
-    _prefs?.setBool('allowNonAsciiPaths', v);
+  /// BETA3 bench switch — see [Firmware.bypassWindowsPathSafety]. Pushed into
+  /// the engine immediately so the next run uses it without a restart.
+  void setBypassWindowsPathSafety(bool v) {
+    final enabled = windowsPathBenchAvailable && v;
+    bypassWindowsPathSafety = enabled;
+    Firmware.bypassWindowsPathSafety = enabled;
+    _prefs?.setBool('beta3BypassWindowsPathSafety', enabled);
     notifyListeners();
   }
 
@@ -584,12 +592,13 @@ class AppController extends ChangeNotifier {
     }
     final FirmwareCheck check;
     if (sliceZip3) {
-      check = _validateFirmwareFile(path, slot0: false, enforceBanner: false);
+      check = Firmware.validateLocalBin(path, requireSize: true);
     } else if (makeZip3) {
       // Pack treats the selected .bin as the complete component payload.
       // Component formats and sizes differ (especially BMS/BLE), so it applies
-      // only the common readable-bin structural checks here.
-      check = Firmware.validate(path, requireSize: false);
+      // only the common local-bin structural checks here. Neither ZIP3 source
+      // path reaches OpenOCD, so Tcl/Windows argv restrictions do not apply.
+      check = Firmware.validateLocalBin(path, requireSize: false);
     } else {
       check = _validateFirmwareFile(
         path,
@@ -1216,10 +1225,18 @@ class AppController extends ChangeNotifier {
     _runLog.clear();
     _capturing = true;
     _log(contextHeader());
-    // Loud in every transcript: a run made with the guard off is not evidence
-    // about the shipping build, and a saved log must say so on its own.
-    if (Firmware.allowNonAsciiPaths) {
-      _log('== BETA: non-ASCII path check DISABLED for this run ==');
+    // Every BETA3 Windows transcript identifies the comparison mode. A bypass
+    // run is not evidence about the default/shipping policy.
+    if (windowsPathBenchAvailable && actionId != 'make_zip3') {
+      if (Firmware.bypassWindowsPathSafety) {
+        _log('== BETA3 Windows path mode: UNRESTRICTED BYPASS ==');
+      } else {
+        final codePage = Firmware.windowsAnsiCodePage;
+        _log(
+          '== BETA3 Windows path mode: ACP-safe'
+          '${codePage == null ? '' : ' · code page $codePage'} ==',
+        );
+      }
     }
     try {
       await _dispatch(confirmFileReplace: confirmFileReplace);
@@ -2442,7 +2459,7 @@ class AppController extends ChangeNotifier {
     // Re-validate at run time (the picker already did, but the file could
     // have changed on disk). Slice always requires the exact full dump; Pack
     // accepts the differing payload sizes used by VCU, MCU, BMS, and BLE.
-    final v = Firmware.validate(src, requireSize: sliceMode);
+    final v = Firmware.validateLocalBin(src, requireSize: sliceMode);
     if (!v.ok) {
       _setInputFailure('Input invalid', 'Input invalid', v.message);
       return;

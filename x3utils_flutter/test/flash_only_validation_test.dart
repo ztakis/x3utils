@@ -602,6 +602,33 @@ void main() {
     expect(controller.zip3TypeOptions, ['VCU', 'MCU']);
   });
 
+  test('ZIP3 Slice and Pack do not inherit OpenOCD path restrictions', () {
+    SharedPreferences.setMockInitialValues({});
+    final temp = Directory.systemTemp.createTempSync('x3utils_zip3_paths_');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final offlineDir = Directory(p.join(temp.path, 'Prüfung{offline}'))
+      ..createSync();
+    final full = File(p.join(offlineDir.path, 'full.bin'))
+      ..writeAsBytesSync(
+        Uint8List.fromList(
+          List<int>.generate(Firmware.expectedSize, (i) => i & 0xff),
+        ),
+      );
+    final payload = File(p.join(offlineDir.path, 'payload.bin'))
+      ..writeAsBytesSync(
+        Uint8List.fromList(List<int>.generate(58436, (i) => i & 0xff)),
+      );
+    final controller = AppController();
+    addTearDown(controller.dispose);
+
+    expect(Firmware.validateOpenOcdPath(full.path).ok, isFalse);
+    controller.selectAction('make_zip3');
+    expect(controller.selectFirmwareBin(full.path).ok, isTrue);
+
+    controller.setZip3WorkspacePage(Zip3WorkspacePage.pack);
+    expect(controller.selectFirmwareBin(payload.path).ok, isTrue);
+  });
+
   test('ZIP3 Pack rechecks declared payload identity at Start', () async {
     SharedPreferences.setMockInitialValues({});
     final temp = Directory.systemTemp.createTempSync('x3utils_zip3_pack_');

@@ -7,6 +7,7 @@ import 'package:x3utils_flutter/app_controller.dart';
 import 'package:x3utils_flutter/engine/firmware.dart';
 import 'package:x3utils_flutter/engine/openocd_paths.dart';
 import 'package:x3utils_flutter/engine/openocd_runner.dart';
+import 'package:x3utils_flutter/engine/windows_ansi_path.dart';
 
 /// One x3utils folder holds everything a run produces. These pin the parts a
 /// later change could quietly undo: that every output follows the root, that
@@ -38,10 +39,12 @@ void main() {
   setUp(() {
     root = Directory.systemTemp.createTempSync('x3utils_root');
     Firmware.setRoot(root.path);
+    Firmware.bypassWindowsPathSafety = false;
   });
 
   tearDown(() {
     Firmware.setRoot(null);
+    Firmware.bypassWindowsPathSafety = false;
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
@@ -119,13 +122,17 @@ void main() {
       expect(Firmware.validateOpenOcdPath('/tmp/a}b/fw.bin').ok, isFalse);
     });
 
-    test('non-ASCII is refused on Windows and accepted elsewhere', () {
-      // The German username that started this, plus the founding case: a
-      // Cyrillic С homoglyph hiding inside an otherwise-ASCII serial.
-      const jorg = '/home/Jörg/x3utils/backup/dump.bin';
-      const homoglyph = '/home/a/MEMORY_G3_С45_1.5.4.bin';
-      expect(Firmware.validateOpenOcdPath(jorg).ok, !Platform.isWindows);
-      expect(Firmware.validateOpenOcdPath(homoglyph).ok, !Platform.isWindows);
+    test('Windows follows its exact ACP verdict; Unix accepts non-ASCII', () {
+      for (final path in [
+        r'C:\Users\Jörg\Desktop\firmware.bin',
+        r'C:\Users\Σοφία\Desktop\firmware.bin',
+        r'C:\bins\MEMORY_G3_С45_1.5.4.bin',
+      ]) {
+        final expected = Platform.isWindows
+            ? WindowsAnsiPath.check(path).exact
+            : true;
+        expect(Firmware.validateOpenOcdPath(path).ok, expected, reason: path);
+      }
     });
 
     test('plain ASCII passes everywhere', () {
@@ -135,11 +142,11 @@ void main() {
     // The beta bench switch governs ONE half. Braces are a Tcl quoting rule
     // with a different cause, and letting the switch reach them would hand
     // OpenOCD a command it cannot parse — so that pairing is pinned here.
-    group('allowNonAsciiPaths (beta bench switch)', () {
-      tearDown(() => Firmware.allowNonAsciiPaths = false);
+    group('bypassWindowsPathSafety (BETA3 bench switch)', () {
+      tearDown(() => Firmware.bypassWindowsPathSafety = false);
 
       test('lets non-ASCII through when on', () {
-        Firmware.allowNonAsciiPaths = true;
+        Firmware.bypassWindowsPathSafety = true;
         expect(
           Firmware.validateOpenOcdPath('/home/Jörg/x3utils/dump.bin').ok,
           isTrue,
@@ -147,14 +154,26 @@ void main() {
       });
 
       test('never lets braces through', () {
-        Firmware.allowNonAsciiPaths = true;
+        Firmware.bypassWindowsPathSafety = true;
         expect(Firmware.validateOpenOcdPath('/tmp/a{b}/fw.bin').ok, isFalse);
       });
 
       test('defaults to off', () {
-        expect(Firmware.allowNonAsciiPaths, isFalse);
+        expect(Firmware.bypassWindowsPathSafety, isFalse);
       });
     });
+  });
+
+  test('local bin validation does not inherit OpenOCD path restrictions', () {
+    final offlineDir = Directory(p.join(root.path, 'Prüfung{offline}'))
+      ..createSync();
+    final bin = File(p.join(offlineDir.path, 'firmware.bin'))
+      ..writeAsBytesSync(
+        List<int>.generate(Firmware.expectedSize, (i) => i & 0xFF),
+      );
+
+    expect(Firmware.validateLocalBin(bin.path).ok, isTrue);
+    expect(Firmware.validate(bin.path).ok, isFalse);
   });
 
   group('AppController', () {
@@ -176,6 +195,22 @@ void main() {
       final c = await load({'backupFolder': root.path});
       expect(c.x3utilsRoot, isNull);
       expect(Firmware.root, Firmware.defaultRoot);
+    });
+
+    test('BETA2 unrestricted preference is not carried into BETA3', () async {
+      final c = await load({'allowNonAsciiPaths': true});
+
+      expect(c.bypassWindowsPathSafety, isFalse);
+      expect(Firmware.bypassWindowsPathSafety, isFalse);
+    });
+
+    test('BETA3 bypass preference is stage- and Windows-gated', () async {
+      final c = await load({'beta3BypassWindowsPathSafety': true});
+      final expected = Platform.isWindows;
+
+      expect(c.windowsPathBenchAvailable, expected);
+      expect(c.bypassWindowsPathSafety, expected);
+      expect(Firmware.bypassWindowsPathSafety, expected);
     });
 
     test('choosing and resetting persists', () async {

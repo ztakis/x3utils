@@ -2947,3 +2947,106 @@ Linux/macOS get the same code but were not rebuilt this session.
   have accepted `Prüfung` on a German box and refused it on this Greek one,
   which is exactly right in both directions. Not a promise, and not before the
   decoder work is finished properly.
+
+## 2026-07-31 — Windows ACP-safe paths and the BETA3 comparison switch
+
+- THE BLANKET ASCII GATE IS REPLACED ON WINDOWS by an exact round-trip through
+  the active ANSI code page. The app gets the current ACP with `GetACP`, encodes
+  the whole UTF-16 path with `WideCharToMultiByte`, decodes it again with
+  `MultiByteToWideChar`, and accepts only when the result is byte-for-byte the
+  original Dart string. `WC_NO_BEST_FIT_CHARS` plus the used-default-character
+  result makes a best-fit such as CP1253 `ü` → `u` a hard rejection rather than
+  a silently different filename.
+- THIS IS LOCALE-SAFE, NOT GENERALLY UNICODE-SAFE. A CP1253 machine accepts
+  `Σοφία` and rejects `Prüfung`; a CP1252 machine accepts `Prüfung`, `Jörg` and
+  French accented names and rejects Greek or Cyrillic characters. ASCII still
+  takes the fast path. CP65001 is handled with its valid flag/default-character
+  combination and exact round-trip rule.
+- `1.2.3 BETA3` HAS A WINDOWS-ONLY BENCH SWITCH. OFF is the new ACP-safe policy;
+  ON is an explicitly labelled unrestricted non-ASCII bypass. Braces remain
+  forbidden in either mode because they are Tcl syntax, not an encoding issue.
+  The preference uses a BETA3-specific key and is honored only on Windows when
+  `kAppStage` is exactly `BETA3`; the old BETA2 preference is ignored, so the
+  experiment cannot silently survive into a stable or differently named build.
+  Every real run logs either the active code page or `UNRESTRICTED BYPASS`.
+- POSIX IS UNCHANGED: there is no ACP/non-ASCII gate on Linux or macOS. Braces
+  are still rejected for paths that will be inserted into an OpenOCD Tcl
+  command.
+- OFFLINE ZIP3 SOURCES NO LONGER INHERIT OPENOCD PATH RULES. Slice and Pack use
+  the same existence, extension, size/content and firmware-identity checks as
+  before, but their selected local `.bin` may now live in a Unicode or
+  brace-containing path. Unpack was already local. The shared x3utils output
+  root keeps its OpenOCD-safe validation because backups under that root are
+  passed to OpenOCD by hardware actions.
+- THE OUTPUT DECODER CHANGE FROM BETA2 REMAINS SEPARATE and intentionally
+  unchanged: malformed console bytes still cannot abort a run. This gate
+  prevents Windows from handing OpenOCD a different filename in the first
+  place; it does not try to render OpenOCD's ANSI output as Unicode.
+- SOFTWARE VERIFICATION: deterministic CP1252, CP1253, CP65001, best-fit and
+  homoglyph tests; controller preference-lifetime tests; ZIP3 call-site
+  regression tests; all 195 Flutter tests pass; `flutter analyze` is clean; and
+  `flutter build windows --release` produces the release executable. No
+  additional hardware command was run for this implementation pass; the
+  preceding real CP1253 flash results are the hardware evidence that motivated
+  it.
+
+## 2026-07-31 — BETA3 installed on the Greek Windows account
+
+- INSTALLED-PACKAGE AND HARDWARE EVIDENCE, not a dev-tree extrapolation. The
+  maintainer handoff contains ten saved logs plus two screenshots from Windows
+  11 Greek, a Greek-script account name, ACP 1253, Default SWD, against the ZT3
+  VCU test board. Every OpenOCD command uses the installed backend under
+  `%LOCALAPPDATA%\Programs\x3utils\native\windows\oocd`, and every hardware
+  transcript identifies `BETA3 Windows path mode: ACP-safe · code page 1253`.
+- THE POSITIVE PATH PASSES END TO END. Backup produced and promoted a 131072 B
+  dump under the default x3utils root; its second copy landed under
+  `%LOCALAPPDATA%\x3utils_backup`. Backup + Flash and Flash Only both read the
+  full rescue image from `%USERPROFILE%\Desktop`, erased, wrote and verified
+  131072 B, exit 0. SHU compatible dumped, promoted, patched, reflashed and
+  verified. ZIP3 import decrypted a 58460 B ZT3/VCU payload, then guarded slot
+  0 backed up, matched identity and verified it; a second guarded slot-0 run
+  read a 58220 B payload from deeper under `%USERPROFILE%\Desktop` and verified
+  it too.
+- THE NEGATIVE PATHS PASS TOO. A GT3 slot bin against the ZT3 target stopped
+  after the mandatory backup and before write. CP1253 refused `ü` (`U+00FC`,
+  character 51) in a `Prüfung` source path. Backup + Flash separately refused a
+  58436 B slot bin because that action requires a full 131072 B image. Those
+  last two are screenshot evidence; neither started a hardware write.
+- CHECK PROTECTION'S HARDWARE VERDICT PASSED: complete USD/main-flash evidence,
+  `ffff5aa5`, FAP `0xA5`/comp `0x5A`, readable firmware, `NOT PROTECTED`, exit
+  0. THE RDP LOGGING BEHAVIOR DID NOT PASS ACCEPTANCE. The maintainer reports
+  the GUI and CLI have the same logging problem on Windows, Linux and macOS.
+  Keep that as a separate cross-platform RDP issue TBD; do not fold it into the
+  ACP-path work or call it closed because the protection verdict was correct.
+
+## 2026-07-31 — Windows installation-path conclusion after BETA3
+
+- THE INSTALLER DID NOT CHANGE. Full history of
+  `x3utils_flutter/installer/x3utils.iss` shows that every edit after its
+  creation changed only `AppVer`; its per-user
+  `%LOCALAPPDATA%\Programs\x3utils` destination, fixed `AppId`, payload rules,
+  no-UAC policy and shortcuts are unchanged. BETA3 changed the application
+  payload, not the installer behavior.
+- THE GREEK INSTALLED RUN QUALIFIES THE OLD RISK. A profile name representable
+  in the active ACP works, including the install path itself and firmware under
+  that profile. The remaining install-path hole is the cross-locale case: an
+  account name that the machine's own ACP cannot represent. Unlike a firmware
+  best-fit collision, failure to find the app's own scripts should normally be
+  loud and global.
+- SECOND COPY AND PREFS STAY WHERE THEY ARE. The second copy now has direct
+  installed-app evidence under the Greek profile and is written by Dart file
+  APIs; preferences are plugin-written through Windows Unicode APIs. Neither is
+  handed to OpenOCD, so moving them buys nothing.
+- DO NOT CREATE TWO DIFFERENT BETA3 INSTALLERS. The ACP-safe BETA3 package has
+  now been exercised as installed; freeze that installer behavior. Any install
+  location experiment gets a new beta identity and its own fresh-install,
+  upgrade, uninstall, normal OpenOCD and RDP checks.
+- PROGRAM FILES IS THE PREFERRED LONG-TERM DESTINATION, AFTER THE BUNDLE IS
+  READ-ONLY. Greek Explorer localizes its display name to `Αρχεία Εφαρμογών`,
+  but the real filesystem path remains the ASCII `C:\Program Files`; locale is
+  not a path risk. The current blocker is that Windows `RdpRunner` writes
+  `config.cmd` beside the installed `rdp.ps1`. Remove that runtime bundle write
+  first. A Program Files package then needs elevation plus explicit validation
+  of the space-containing path in normal OpenOCD and RDP flows. Keep this
+  packaging decision separate from the cross-platform RDP logging defect even
+  if their cleanup stages happen to touch adjacent code.

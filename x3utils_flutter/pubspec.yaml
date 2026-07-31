@@ -38,6 +38,9 @@ dependencies:
   # Cross-platform path joining for locating the bundled OpenOCD.
   path: ^1.9.1
 
+  # Windows ACP round-trip validation for paths handed to bundled OpenOCD.
+  ffi: ^2.2.0
+
   # Native file picker for choosing firmware .bin files.
   file_selector: ^1.0.3
 
