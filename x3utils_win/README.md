@@ -4,6 +4,9 @@ This page is only for Windows-specific usage: how to start the scripts, how to c
 
 For wiring, connection modes, C45, backups, and flashing safety, use the main README and wiki.
 
+> [!CAUTION]
+> **SHU compatibility firmware limits:** Do not use Flash SHU Compatible with F3/G3 VCU 1.6.3 or newer, GT3 VCU 1.7.2 or newer, or ZT3 VCU 1.5.9 or newer. SHU compat saves the original backup first, but using it on newer firmware may require restoring that backup.
+
 ## Start From Explorer
 
 1. Download and unzip x3utils.
@@ -79,7 +82,7 @@ Useful signs that the driver side is probably okay:
 - OpenOCD starts instead of immediately failing to find an adapter;
 - option `1` gets as far as trying to connect to the target.
 
-## Launcher Menus (v1.8.0)
+## Launcher Menus (v1.8.1)
 
 The main menu is:
 

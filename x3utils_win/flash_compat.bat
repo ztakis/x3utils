@@ -10,10 +10,24 @@ if not exist "%~dp0config.cmd" (
 call "%~dp0config.cmd"
 if errorlevel 1 goto :fail_exit
 
+echo.
+echo [%CL_R%ATTENTION%CL_NC%]
+echo SHU compat cannot be used with recent VCU firmware.
+echo Only continue if your installed firmware is older than:
+echo.
+echo   F3 VCU  1.6.3
+echo   G3 VCU  1.6.3
+echo   GT3 VCU 1.7.2
+echo   ZT3 VCU 1.5.9
+echo.
+echo Continuing will be enabled in 5 seconds...
+powershell -NoProfile -Command "Start-Sleep -Seconds 5"
+echo.
+
 :: Prompt user for confirmation before proceeding with flash operation
 :prompt_loop
 set "user_choice="
-set /p "user_choice=Do you want to flash SHU compatible? [Y/N]: "
+set /p "user_choice=I understand. Continue with SHU-compatible flash? [Y/N]: "
 
 if /i "%user_choice%"=="y" goto :do_flash
 if /i "%user_choice%"=="yes" goto :do_flash

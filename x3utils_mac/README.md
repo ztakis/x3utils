@@ -6,6 +6,9 @@ Important expectation check: this is **not** a `.dmg` app and there is no drag-t
 
 If you only want the shortest path, follow the beginner steps below. If you already use Homebrew and Terminal, jump to the advanced quick start.
 
+> [!CAUTION]
+> **SHU compatibility firmware limits:** Do not use Flash SHU Compatible with F3/G3 VCU 1.6.3 or newer, GT3 VCU 1.7.2 or newer, or ZT3 VCU 1.5.9 or newer. SHU compat saves the original backup first, but using it on newer firmware may require restoring that backup.
+
 ## Beginner Path
 
 1. Install Homebrew from:
@@ -156,7 +159,7 @@ After installation:
 
 Run macOS scripts from Terminal. If something fails, keep the terminal open and copy the exact error text.
 
-## Launcher Menus (v1.8.0)
+## Launcher Menus (v1.8.1)
 
 The main menu is:
 

@@ -12,9 +12,23 @@ fi
 
 source "$CONFIG_FILE"
 
+echo
+echo -e "${CL_R}ATTENTION${CL_NC}"
+echo "SHU compat cannot be used with recent VCU firmware."
+echo "Only continue if your installed firmware is older than:"
+echo
+echo "  F3 VCU  1.6.3"
+echo "  G3 VCU  1.6.3"
+echo "  GT3 VCU 1.7.2"
+echo "  ZT3 VCU 1.5.9"
+echo
+echo "Continuing will be enabled in 5 seconds..."
+sleep 5
+echo
+
 # Prompt user confirmation
 while true; do
-    read -rp "Do you want to flash SHU compatible? [Y/N]: " user_choice
+    read -rp "I understand. Continue with SHU-compatible flash? [Y/N]: " user_choice
 
     case "${user_choice,,}" in
         y|yes)
