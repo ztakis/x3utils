@@ -37,28 +37,30 @@ source "$CONFIG_FILE"
 source "$SCRIPT_DIR/rdp_lib.sh"
 
 USE_LAUNCHER=0
+NO_TOOLKIT_LOG=0
 for a in "$@"; do
     case "$a" in
         -l|--launcher) USE_LAUNCHER=1 ;;
+        --no-toolkit-log) NO_TOOLKIT_LOG=1 ;;
     esac
 done
 resolve_connect
 
-# The GUI sets X3UTILS_RDP_LOG_DIR in config.sh so this transcript lands in the
-# x3utils folder beside the run's console log; run by hand, it stays local.
-# `_toolkit` in the name: the GUI writes its own rdp_check_<stamp>.log in that
-# same folder and the two stamps can land on the same second.
-LOG_DIR="${X3UTILS_RDP_LOG_DIR:-$SCRIPT_DIR/../../backup}"
+# The GUI passes --no-toolkit-log because its console log is the complete
+# persistent record. Direct/legacy callers keep this OpenOCD-only transcript.
 RUN_ID="$(date +"%Y-%m-%d_%H-%M-%S")"
-LOG_FILE="$LOG_DIR/rdp_check_toolkit_${RUN_ID}.log"
+LOG_FILE=""
+if [[ $NO_TOOLKIT_LOG -eq 0 ]]; then
+    LOG_DIR="${X3UTILS_RDP_LOG_DIR:-$SCRIPT_DIR/../../backup}"
+    LOG_FILE="$LOG_DIR/rdp_check_toolkit_${RUN_ID}.log"
+    mkdir -p "$LOG_DIR" || {
+        echo -e "[${CL_R}FAIL${CL_NC}] Failed to create log directory."
+        exit 1
+    }
+fi
 
 # FAP byte value that means "access/read protection disabled" on Artery AT32.
 FAP_UNLOCKED=0xA5
-
-mkdir -p "$LOG_DIR" || {
-    echo -e "[${CL_R}FAIL${CL_NC}] Failed to create log directory."
-    exit 1
-}
 
 # Returns 0 (true) if the output shows the adapter/target could not be opened,
 # or a guided connect-under-reset failed — a connection problem, not a
@@ -73,7 +75,9 @@ echo "          AT32F415 read-protection (FAP) check"
 echo "$D"
 echo
 echo "Connect mode:   $CONN_MODE"
-echo "Log file:       $LOG_FILE"
+if [[ -n "$LOG_FILE" ]]; then
+    echo "Log file:       $LOG_FILE"
+fi
 echo
 
 # Connect (guided by default), then read the FAP/USD word and the flash vector
@@ -100,7 +104,9 @@ while true; do
         -c "mdw 0x1FFFF800 1" \
         -c "mdw 0x08000000 4" \
         -c "shutdown" 2>&1 | tee -a "$attempt_log"
-    cat "$attempt_log" >> "$LOG_FILE"   # fold into the persistent log (full history)
+    if [[ -n "$LOG_FILE" ]]; then
+        cat "$attempt_log" >> "$LOG_FILE"   # persistent log for direct/legacy callers
+    fi
     scan="$(cat "$attempt_log")"        # parse THIS attempt only
     rm -f "$attempt_log"
 
@@ -288,8 +294,10 @@ else
     fi
 fi
 
-echo
-echo "Full log: $LOG_FILE"
+if [[ -n "$LOG_FILE" ]]; then
+    echo
+    echo "Full log: $LOG_FILE"
+fi
 echo
 
 exit "$rc"

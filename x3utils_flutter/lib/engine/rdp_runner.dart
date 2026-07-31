@@ -30,12 +30,11 @@ class RdpRunner {
     return verb == 'Rescue' ? 'rescue_unlock.sh' : 'rdp_check.sh';
   }
 
-  /// Where the toolkit writes its OWN transcript: the same per-action folder
-  /// under the x3utils root that this run's console log goes to, so one action
-  /// leaves its evidence in one place. Windows receives it as `-LogDir`; the
-  /// Unix scripts still receive it through config.sh. GUI-owned Windows runs
-  /// suppress the script's redundant toolkit transcript, while a hand-run of
-  /// rdp.ps1 without `-NoToolkitLog` keeps its own local log.
+  /// Where a toolkit transcript would go when one is enabled. Windows receives
+  /// it as `-LogDir`; the Unix scripts receive it through config.sh for direct
+  /// or legacy callers. GUI-owned Windows runs suppress the PowerShell file,
+  /// and GUI-owned Unix Check runs pass `--no-toolkit-log`. Hand-runs without
+  /// those switches keep their existing toolkit transcript.
   String _logDirFor(String verb) => p.join(
     Firmware.root,
     'logs',
@@ -110,9 +109,19 @@ class RdpRunner {
       final configDir = Platform.isMacOS ? runRoot : runRdpDir;
       _writeConfigSh(mode, timeout, configDir, logDir);
       final script = _scriptFor(verb);
+      final suppressToolkitLog = verb == 'Check';
       exe = 'bash';
-      args = [p.join(runRdpDir, script), '--launcher', if (yes) '--yes'];
-      onLine('> bash $script --launcher${yes ? ' --yes' : ''}');
+      args = [
+        p.join(runRdpDir, script),
+        '--launcher',
+        if (suppressToolkitLog) '--no-toolkit-log',
+        if (yes) '--yes',
+      ];
+      onLine(
+        '> bash $script --launcher'
+        '${suppressToolkitLog ? ' --no-toolkit-log' : ''}'
+        '${yes ? ' --yes' : ''}',
+      );
     }
 
     final proc = await Process.start(exe, args, workingDirectory: _root);

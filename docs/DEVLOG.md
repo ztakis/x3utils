@@ -3111,3 +3111,34 @@ Linux/macOS get the same code but were not rebuilt this session.
   `I:\SCOOTER\__bins4tests\W11GR\logs\rdp_check|rdp_rescue`. This closes the
   Windows BETA4 installed-upgrade, read-only-bundle, single-log Check and Rescue
   acceptance. Program Files remains the next separate packaging discussion.
+
+## 2026-07-31 — Unix GUI RDP also keeps one complete log
+
+- VERSIONED AS `1.2.3+11 BETA5`. BETA4 remains the packaged Windows baseline;
+  this follow-up changes only the Flutter GUI's Linux/macOS Check transcript
+  behavior. It is a separate commit-sized change before the Program Files work.
+- ROOT CAUSE AND SCOPE: bundled Linux/macOS `rdp_check.sh` tees every OpenOCD
+  attempt into a temporary file for verdict parsing, then copied that same
+  attempt into a persistent `_toolkit` file. The GUI already captures the live
+  stream and adds the command, prompts, evidence, verdict and exit code, so its
+  console log is the superset. Unix Rescue already had no toolkit transcript.
+- MINIMAL FIX: Unix GUI Check passes `--no-toolkit-log`. Both bundled Check
+  scripts still create and parse the temporary per-attempt file and still stream
+  normal A/B/C output through `tee`; they only skip persistent directory/file
+  creation, the append, and `Log file:` / `Full log:` lines. A direct or legacy
+  script run without the flag keeps the old toolkit transcript. The temporary
+  `config.sh` flow, RDP Tcl/connect behavior, rescue scripts and package assembly
+  are unchanged. Standalone `x3utils_linux` and `x3utils_mac` are untouched.
+- SAVE LOG now has one policy on every GUI platform: ON writes the complete GUI
+  RDP log; OFF writes no persistent GUI RDP log. Power-race RDP remains blocked
+  in `AppController`, so its Linux-only hidden-attempt transcript path is not a
+  reachable GUI compatibility concern.
+- WINDOWS-HOSTED NON-HARDWARE EVIDENCE: both edited shell scripts pass `bash -n`
+  under Git for Windows. The focused RDP file reports 6/6, but only its two
+  Windows cases execute on this host; the new GUI/direct/retry Unix cases are
+  platform-gated and remain target-runtime evidence, not Windows evidence. The
+  BETA5 stage/root test passes 20/20, the full suite passes 198/198, and
+  `flutter analyze` is clean. Still owed: rebuild the AppImage and macOS package,
+  run Check protection with Save log on, confirm one complete GUI log and no
+  `_toolkit`, exercise a retry, and confirm a direct script run without the flag
+  still creates its own transcript.

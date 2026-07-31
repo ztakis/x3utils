@@ -155,6 +155,10 @@ checklist:
 - macOS also uses a temporary tree, but its CLI-derived scripts load
   `../../config.sh`; Flutter must therefore write config at the temporary run
   root.
+- Linux/macOS GUI Check passes `--no-toolkit-log`, so the complete GUI console
+  log is the only persistent file. The temporary attempt files still drive
+  verdict parsing and guided retries. Unix Rescue never created a toolkit log,
+  and a direct script run without the suppression flag keeps its own transcript.
 - Flutter macOS Check protection passes `--launcher` and honors selected modes
   A Default SWD, B C45 Clone, and C C45 Genuine. This intentionally differs
   from the standalone macOS CLI read-only check, where `-l` is globally disabled
@@ -262,12 +266,13 @@ backup and the log" is one place to look:
 - A picked root is validated in Settings (`Firmware.validateRootFolder`:
   OpenOCD path rules plus a real write probe). That is in addition to, not
   instead of, the pre-run destination check.
-- The Windows GUI suppresses the PowerShell toolkit's partial `_toolkit` file;
-  when Save log is enabled, the GUI console log is the one complete persistent
-  record (command, raw OpenOCD output, evidence, verdict, and exit code). A
-  hand-run of the bundled script without `-NoToolkitLog` keeps its own transcript.
-  Linux/macOS still use their existing config.sh and toolkit-log behavior. The
-  standalone CLIs have no GUI root setting and must remain unchanged.
+- Every GUI RDP run has one complete persistent record when Save log is enabled:
+  the GUI console log (command, raw OpenOCD output, evidence, verdict, and exit
+  code). Windows passes `-NoToolkitLog`; Linux/macOS Check passes
+  `--no-toolkit-log`, while Unix Rescue never created a second transcript.
+  Hand-runs without the suppression flag keep their own toolkit log. The Unix
+  GUI still uses its existing temporary config.sh flow, and the standalone CLIs
+  have no GUI root setting and must remain unchanged.
 
 ### Flutter Firmware Identity and Make zip3 Safety
 

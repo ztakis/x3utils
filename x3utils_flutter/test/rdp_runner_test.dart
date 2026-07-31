@@ -142,6 +142,68 @@ void main() {
     expect(toolkitLogs.single.lengthSync(), greaterThan(0));
   });
 
+  test('Unix bundled RDP suppresses only the GUI toolkit log', () async {
+    if (Platform.isWindows) return;
+
+    final platformDir = Platform.isMacOS ? 'macos' : 'linux';
+    final fixture = _makeUnixFixture(
+      platformDir: platformDir,
+      openOcdScript:
+          '#!/bin/bash\n'
+          'echo "0x1ffff800: ffff5aa5"\n'
+          'echo "0x08000000: 20001000 08000101 00000000 00000000"\n',
+    );
+    addTearDown(() => fixture.root.deleteSync(recursive: true));
+
+    final guiLines = <String>[];
+    expect(
+      await fixture.runner.run(
+        'Check',
+        ConnectionMode.defaultSwd,
+        3,
+        onLine: guiLines.add,
+      ),
+      0,
+    );
+    final guiOutput = guiLines.join('\n');
+    expect(
+      guiLines,
+      contains('> bash rdp_check.sh --launcher --no-toolkit-log'),
+    );
+    expect(guiOutput, contains('NOT PROTECTED'));
+    expect(guiOutput, isNot(contains('Log file:')));
+    expect(guiOutput, isNot(contains('Full log:')));
+    expect(
+      Directory(p.join(fixture.root.path, 'logs', 'rdp_check')).existsSync(),
+      isFalse,
+    );
+
+    final handLogDir = p.join(fixture.root.path, 'manual_toolkit_logs');
+    _writeManualUnixConfig(fixture.root, platformDir, handLogDir);
+    final handRun = await Process.run(
+      'bash',
+      [
+        p.join(fixture.root.path, 'special', 'rdp', 'rdp_check.sh'),
+        '--launcher',
+      ],
+      workingDirectory: fixture.root.path,
+    ).timeout(const Duration(seconds: 10));
+    final handOutput = '${handRun.stdout}\n${handRun.stderr}';
+    expect(handRun.exitCode, 0);
+    expect(handOutput, contains('NOT PROTECTED'));
+    expect(handOutput, contains('Log file:'));
+    expect(handOutput, contains('Full log:'));
+    final toolkitLogs = Directory(
+      handLogDir,
+    ).listSync().whereType<File>().toList();
+    expect(toolkitLogs, hasLength(1));
+    expect(
+      p.basename(toolkitLogs.single.path),
+      startsWith('rdp_check_toolkit_'),
+    );
+    expect(toolkitLogs.single.lengthSync(), greaterThan(0));
+  });
+
   test('macOS RDP check finds root config and honors A/B/C mode', () async {
     if (!Platform.isMacOS) return;
 
@@ -168,7 +230,10 @@ void main() {
       final output = lines.join('\n');
 
       expect(code, 0);
-      expect(lines, contains('> bash rdp_check.sh --launcher'));
+      expect(
+        lines,
+        contains('> bash rdp_check.sh --launcher --no-toolkit-log'),
+      );
       expect(output, isNot(contains('Missing config.sh')));
       expect(output, contains(label));
       expect(output, contains('NOT PROTECTED'));
@@ -270,7 +335,20 @@ Future<void> _expectUnixRetryPrompts(String platformDir) async {
     await promptSeen.future.timeout(const Duration(seconds: 5));
     expect(fixture.runner.sendContinue(), isTrue);
     expect(await run.timeout(const Duration(seconds: 5)), 0);
-    expect(lines.join('\n').toLowerCase(), contains('press enter to retry'));
+    final output = lines.join('\n').toLowerCase();
+    expect(output, contains('unable to open st-link'));
+    expect(output, contains('press enter to retry'));
+    expect(output, contains('0x1ffff800: ffff5aa5'));
+    expect(
+      Directory(
+        p.join(
+          fixture.root.path,
+          'logs',
+          verb == 'Rescue' ? 'rdp_rescue' : 'rdp_check',
+        ),
+      ).existsSync(),
+      isFalse,
+    );
   }
 }
 
@@ -302,13 +380,37 @@ Future<void> _expectUnixRetryPrompts(String platformDir) async {
     ..writeAsStringSync(openOcdScript.replaceAll('@STATE@', statePath));
   Process.runSync('chmod', ['+x', fakeOpenOcd.path]);
 
-  // The runner sends the toolkit's own log to <x3utils root>/logs/<action>.
-  // Keep that inside the fixture: a test must not write into the real folder.
+  // Keep any GUI or direct-script output inside the fixture: a test must not
+  // write into the real x3utils root.
   Firmware.setRoot(root.path);
   addTearDown(() => Firmware.setRoot(null));
 
   return (
     root: root,
     runner: RdpRunner(OpenOcdPaths(fakeOpenOcd.path, scriptsDir.path)),
+  );
+}
+
+void _writeManualUnixConfig(Directory root, String platformDir, String logDir) {
+  final rdpDir = p.join(root.path, 'special', 'rdp');
+  final configDir = platformDir == 'macos' ? root.path : rdpDir;
+  final target = platformDir == 'macos'
+      ? 'target/artery/at32f4x.cfg'
+      : 'target/at32f415xx.cfg';
+  File(p.join(configDir, 'config.sh')).writeAsStringSync(
+    'export CL_NC=""\n'
+    'export CL_R=""\n'
+    'export CL_G=""\n'
+    'export CL_Y=""\n'
+    'export CL_M=""\n'
+    'export CL_C=""\n'
+    'export D="============================================================"\n'
+    'OPENOCD_BIN="${p.join(root.path, 'oocd', 'bin', 'openocd')}"\n'
+    'SCRIPTS_DIR="${p.join(root.path, 'oocd', 'scripts')}"\n'
+    'INTERFACE="interface/stlink.cfg"\n'
+    'TARGET="$target"\n'
+    'CONNECT_TIMEOUT=3\n'
+    'X3UTILS_RDP_LOG_DIR="$logDir"\n'
+    'EXPECTED_SIZE=131072\n',
   );
 }
