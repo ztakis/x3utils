@@ -108,11 +108,31 @@ $CL_Y  = "$E[1;33m"
 $CL_C  = "$E[1;36m"
 $D     = '============================================================'
 
-function Say     { param([string]$m) Write-Host $m }
-function SayOk   { param([string]$m) Write-Host "[ ${CL_G}OK${CL_NC} ] $m" }
-function SayInfo { param([string]$m) Write-Host "[${CL_C}INFO${CL_NC}] $m" }
-function SayWarn { param([string]$m) Write-Host "[${CL_Y}WARN${CL_NC}] $m" }
-function SayFail { param([string]$m) Write-Host "[${CL_R}FAIL${CL_NC}] $m" }
+$script:RdpLogPath = ''
+$script:RdpLogFailed = $false
+$script:RdpUtf8 = [System.Text.UTF8Encoding]::new($false)
+
+function Add-RdpLogLine {
+    param([string]$Path, [AllowEmptyString()][string]$Text)
+    if ([string]::IsNullOrEmpty($Path) -or $script:RdpLogFailed) { return }
+    try {
+        $clean = [regex]::Replace($Text, "$([char]27)\[[0-9;]*[A-Za-z]", '')
+        [System.IO.File]::AppendAllText($Path, $clean + [Environment]::NewLine, $script:RdpUtf8)
+    } catch {
+        $script:RdpLogFailed = $true
+        Write-Host "[WARN] RDP log append failed: $($_.Exception.Message)"
+    }
+}
+
+function Say {
+    param([string]$m)
+    Write-Host $m
+    Add-RdpLogLine -Path $script:RdpLogPath -Text $m
+}
+function SayOk   { param([string]$m) Say "[ ${CL_G}OK${CL_NC} ] $m" }
+function SayInfo { param([string]$m) Say "[${CL_C}INFO${CL_NC}] $m" }
+function SayWarn { param([string]$m) Say "[${CL_Y}WARN${CL_NC}] $m" }
+function SayFail { param([string]$m) Say "[${CL_R}FAIL${CL_NC}] $m" }
 
 # ---------------------------------------------------------------------------
 # Configuration. Reuse the paths from config.cmd; read TARGET/CONNECT_TIMEOUT
@@ -236,7 +256,7 @@ function Test-ConnectFailed {
     return ($Text -match 'open failed|unable to open|no device found|init mode failed|Error connecting DP|Could not initialize the debug port|Could not re-examine target|Could not halt target|Adapter init failed|invalid mode value')
 }
 
-# Run one OpenOCD session, teeing combined output to the log AND the console
+# Run one OpenOCD session, appending combined output to the log AND the console
 # (so the guided connect prompts stay live; stdin is not redirected so the
 # proc's `gets stdin` still reads the keyboard). Returns @{ Code; Text }.
 function Invoke-OpenOcd {
@@ -257,7 +277,8 @@ function Invoke-OpenOcd {
             if ($_ -is [System.Management.Automation.ErrorRecord]) {
                 if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { '' }
             } else { "$_" }
-        } | Tee-Object -FilePath $LogFile -Append | ForEach-Object {
+        } | ForEach-Object {
+            Add-RdpLogLine -Path $LogFile -Text $_
             if (-not $Quiet) { Write-Host $_ }   # race loop stays quiet; log still gets it
             $_
         }
@@ -314,10 +335,12 @@ function Invoke-WithRace {
 
 function New-LogPath {
     param([string]$Prefix)
-    $backup = Join-Path $WinRoot 'backup'
-    if (-not (Test-Path $backup)) { New-Item -ItemType Directory -Path $backup -Force | Out-Null }
+    $logDir = Join-Path $ScriptDir 'logs'
+    if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
     $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
-    return (Join-Path $backup ("{0}_{1}.log" -f $Prefix, $stamp))
+    $path = Join-Path $logDir ("{0}_{1}.log" -f $Prefix, $stamp)
+    [System.IO.File]::WriteAllText($path, '', $script:RdpUtf8)
+    return $path
 }
 
 # ===========================================================================
@@ -328,7 +351,7 @@ $FAP_UNLOCKED = 0xA5
 function Invoke-Check {
     param($cfg, $conn)
 
-    $log = New-LogPath 'rdp_check'
+    $log = $script:RdpLogPath
 
     Write-Host ''
     Say $D
@@ -482,7 +505,7 @@ function Invoke-Check {
     }
 
     Write-Host ''
-    Say "Full log: $log"
+    Say "Complete log: $log"
     Write-Host ''
     return $rc
 }
@@ -498,7 +521,6 @@ function Invoke-Rewrite {
             $title  = "   ${CL_R}TESTBED ONLY${CL_NC} - enable AT32F415 read protection (FAP)"
             $rewrite = Get-FapRewrite -Kind Protect
             $confirm = 'ENABLE-FAP'
-            $prefix  = 'fap_enable'
             $warn    = 'This ERASES the option bytes and turns read protection ON.'
         }
         default {
@@ -506,10 +528,11 @@ function Invoke-Rewrite {
             if ($Mode -eq 'Rescue') { $title = "   ${CL_R}LAST-RESORT UNLOCK${CL_NC} - AT32F415 read/write protection rescue" }
             $rewrite = Get-FapRewrite -Kind Unlock
             $confirm = if ($Mode -eq 'Rescue') { 'UNLOCK' } else { 'CLEAR-FAP' }
-            $prefix  = if ($Mode -eq 'Rescue') { 'rescue_unlock' } else { 'fap_clear' }
             $warn    = 'On a read-protected part this triggers a hardware MASS-ERASE of main flash on reload.'
         }
     }
+
+    $log = $script:RdpLogPath
 
     Write-Host ''
     Say $D
@@ -517,6 +540,7 @@ function Invoke-Rewrite {
     Say $D
     Write-Host ''
     SayInfo "Connect: $($conn.Mode)"
+    Say "Log file: $log"
     if ($Mode -eq 'Rescue' -and $Launcher -and $conn.Plain) {
         SayWarn 'Launcher mode is A (plain). A locked/corrupted board usually will NOT'
         Say  '       answer plain connect - drop -Launcher to use guided rescue, or set B/C.'
@@ -532,7 +556,6 @@ function Invoke-Rewrite {
         }
     }
 
-    $log = New-LogPath $prefix
     $ops = $rewrite + @(
         '-c', 'echo {--- option area after rewrite (masked 0x00 until reload if still protected) ---}',
         '-c', 'mdw 0x1FFFF800 8',
@@ -552,7 +575,7 @@ function Invoke-Rewrite {
     Write-Host ''
     if ($result.Code -ne 0) {
         SayFail ("Session exited with code {0} - see output above and the log." -f $result.Code)
-        Say "Full log: $log"
+        Say "Complete log: $log"
         return $result.Code
     }
 
@@ -563,7 +586,7 @@ function Invoke-Rewrite {
     } else {
         Say "[${CL_Y}NEXT${CL_NC}] POWER-CYCLE the board, then run .\rdp.ps1 -Check to confirm NOT PROTECTED."
     }
-    Say "Full log: $log"
+    Say "Complete log: $log"
     Write-Host ''
     return 0
 }
@@ -571,6 +594,15 @@ function Invoke-Rewrite {
 # ===========================================================================
 # Dispatch
 # ===========================================================================
+$logPrefix = switch ($Verb) {
+    'Check'  { 'rdp_check' }
+    'Clear'  { 'fap_clear' }
+    'Rescue' { 'rescue_unlock' }
+    'Enable' { 'fap_enable' }
+}
+$script:RdpLogPath = New-LogPath $logPrefix
+$script:RdpLogFailed = $false
+
 $cfg  = Get-RdpConfig
 $conn = Resolve-Connect -cfg $cfg -UseLauncher:$Launcher
 

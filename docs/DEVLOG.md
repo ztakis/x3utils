@@ -3182,3 +3182,31 @@ Linux/macOS get the same code but were not rebuilt this session.
   packaged Linux coverage for the BETA5 single-log change. A live BETA5 retry
   and a real direct-script compatibility run without `--no-toolkit-log` remain
   separate.
+
+## 2026-07-31 — CLI v1.8.1 saves one complete RDP transcript
+
+- SCOPE: standalone CLI only. This closes the v1.8.0 defect recorded above
+  where the file labelled `Full log` contained only OpenOCD output and omitted
+  the script header, connection mode, evidence and verdict. Flutter's separate
+  single-log policy and bundled native scripts are unchanged.
+- STORAGE: new standalone logs go under each platform's
+  `special/rdp/logs/`; existing `backup/*.log` files are not moved. The tracked
+  `.gitignore` placeholders keep runtime transcripts out of source control.
+- WINDOWS: `rdp.ps1` creates the log before resolving configuration, writes
+  UTF-8 without a BOM, strips ANSI, and routes both its `Say*` presentation and
+  every OpenOCD attempt into the same file. Check, Clear, Rescue and Enable all
+  use the new directory. A logging append failure warns once and cannot change
+  the hardware action's verdict.
+- LINUX/MACOS: `rdp_check.sh` re-execs once under a live `tee`, preserving stdin
+  for guided C45 prompts and the existing per-attempt parser files. Quiet
+  Power-race misses join the raw transcript without appearing on screen; after
+  the child exits, ANSI is stripped into the one final log. If finalization
+  fails, the raw temporary transcript is preserved and named instead of being
+  deleted. Rescue remains console-only on these two platforms.
+- NON-HARDWARE EVIDENCE: both Bash scripts pass `bash -n`; Windows PowerShell
+  parses cleanly. An isolated Unix transcript probe kept a prompt live, captured
+  a quiet attempt and verdict, preserved the child exit status and removed ANSI.
+  The actual Windows logging functions were AST-extracted without dispatching
+  the RDP script; they produced ANSI-free, no-BOM UTF-8 containing presentation,
+  verdict and OpenOCD lines. `git diff --check` passed. ShellCheck is not
+  installed on this workstation. No OpenOCD or hardware command was run.

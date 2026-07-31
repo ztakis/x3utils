@@ -26,6 +26,47 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Re-exec once under a live tee. This keeps stdin attached for guided C45
+# prompts, lets the parent wait for the entire transcript, then strips ANSI into
+# the single final log. Quiet Power-race attempts append to the same raw stream.
+if [[ "${X3UTILS_RDP_CAPTURE_CHILD:-0}" != "1" ||
+    -z "${X3UTILS_RDP_RUN_ID:-}" ||
+    -z "${X3UTILS_RDP_LOG_FILE:-}" ||
+    -z "${X3UTILS_RDP_RAW_LOG:-}" ]]; then
+    LOG_DIR="$SCRIPT_DIR/logs"
+    RUN_ID="$(date +"%Y-%m-%d_%H-%M-%S")"
+    LOG_FILE="$LOG_DIR/rdp_check_${RUN_ID}.log"
+    RAW_LOG="$(mktemp "${TMPDIR:-/tmp}/rdp_check_transcript.XXXXXX")" || {
+        echo "[FAIL] Failed to create temporary RDP transcript."
+        exit 1
+    }
+
+    mkdir -p "$LOG_DIR" || {
+        echo "[FAIL] Failed to create log directory: $LOG_DIR"
+        rm -f "$RAW_LOG"
+        exit 1
+    }
+
+    X3UTILS_RDP_CAPTURE_CHILD=1 \
+        X3UTILS_RDP_RUN_ID="$RUN_ID" \
+        X3UTILS_RDP_LOG_FILE="$LOG_FILE" \
+        X3UTILS_RDP_RAW_LOG="$RAW_LOG" \
+        "$BASH" "$0" "$@" 2>&1 | tee -a "$RAW_LOG"
+    rc=${PIPESTATUS[0]}
+
+    if LC_ALL=C sed $'s/\033\\[[0-9;]*[[:alpha:]]//g' "$RAW_LOG" > "$LOG_FILE"; then
+        rm -f "$RAW_LOG"
+    else
+        echo "[WARN] Failed to finalize RDP log: $LOG_FILE"
+        echo "       Raw transcript preserved at: $RAW_LOG"
+    fi
+    exit "$rc"
+fi
+
+RUN_ID="$X3UTILS_RDP_RUN_ID"
+LOG_FILE="$X3UTILS_RDP_LOG_FILE"
+RAW_LOG="$X3UTILS_RDP_RAW_LOG"
+
 CONFIG_FILE="$SCRIPT_DIR/../../config.sh"
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "[FAIL] Missing config.sh"
@@ -44,17 +85,8 @@ for a in "$@"; do
 done
 resolve_connect
 
-LOG_DIR="$SCRIPT_DIR/../../backup"
-RUN_ID="$(date +"%Y-%m-%d_%H-%M-%S")"
-LOG_FILE="$LOG_DIR/rdp_check_${RUN_ID}.log"
-
 # FAP byte value that means "access/read protection disabled" on Artery AT32.
 FAP_UNLOCKED=0xA5
-
-mkdir -p "$LOG_DIR" || {
-    echo -e "[${CL_R}FAIL${CL_NC}] Failed to create log directory."
-    exit 1
-}
 
 # Returns 0 (true) if the output shows the adapter/target could not be opened,
 # or a guided connect-under-reset failed — a connection problem, not a
@@ -97,7 +129,6 @@ if [[ "${CONN_RACE:-0}" -eq 1 ]]; then
             -c "mdw 0x1FFFF800 1" \
             -c "mdw 0x08000000 4" \
             -c "shutdown" >> "$attempt_log" 2>&1
-        cat "$attempt_log" >> "$LOG_FILE"
         scan="$(cat "$attempt_log")"
 
         if grep -q "target halted" "$attempt_log"; then
@@ -107,6 +138,7 @@ if [[ "${CONN_RACE:-0}" -eq 1 ]]; then
             rm -f "$attempt_log"
             break
         fi
+        cat "$attempt_log" >> "$RAW_LOG"
         rm -f "$attempt_log"
         printf "."
     done
@@ -116,6 +148,7 @@ else
         echo -e "[${CL_C}....${CL_NC}] Connecting and reading FAP/USD @ 0x1FFFF800 and flash @ 0x08000000 ..."
         attempt_log="$(mktemp "${TMPDIR:-/tmp}/rdp_check_attempt.XXXXXX")"
         { echo; echo "$D"; echo "RDP check session $RUN_ID (attempt $attempt)"; echo "$D"; } >> "$attempt_log"
+        sed -n '1,4p' "$attempt_log" >> "$RAW_LOG"
         "$OPENOCD_BIN" -s "$SCRIPTS_DIR" -d0 \
             "${OOCD_PRE[@]}" \
             "${OOCD_CONNECT[@]}" \
@@ -123,7 +156,6 @@ else
             -c "mdw 0x1FFFF800 1" \
             -c "mdw 0x08000000 4" \
             -c "shutdown" 2>&1 | tee -a "$attempt_log"
-        cat "$attempt_log" >> "$LOG_FILE"   # fold into the persistent log (full history)
         scan="$(cat "$attempt_log")"        # parse THIS attempt only
         rm -f "$attempt_log"
 
@@ -178,7 +210,7 @@ if [[ $fap_read -eq 1 ]]; then
 fi
 
 # --- Analyse main-flash readability ---------------------------------------
-# Ground truth confirmed on hardware (see backup logs):
+# Ground truth confirmed on hardware (see docs/testing.md):
 #   MSP in SRAM (0x2xxxxxxx) -> firmware present, readable   -> NOT protected
 #   all 0xFFFFFFFF           -> flash blank/erased but READABLE -> NOT protected
 #   all 0x00000000           -> access protection masking the bus -> protected
@@ -310,7 +342,7 @@ else
 fi
 
 echo
-echo "Full log: $LOG_FILE"
+echo "Complete log: $LOG_FILE"
 echo
 
 exit "$rc"

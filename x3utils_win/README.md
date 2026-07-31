@@ -207,6 +207,9 @@ to honor the launcher mode saved in `config.cmd`; without it, the toolkit uses
 its standalone guided rescue connection. Rescue is destructive and still
 requires `UNLOCK`.
 
+The RDP toolkit saves one complete, ANSI-free transcript per run under
+`special\rdp\logs\`. Existing logs under `backup\` are left where they are.
+
 ## Important Detail For Direct Scripts
 
 The launcher saves the selected connection mode by editing:

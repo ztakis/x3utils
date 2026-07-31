@@ -206,6 +206,10 @@ The flash scripts prompt for their own file. `-l` tells the RDP tools to honor
 the launcher mode saved in `config.sh`; without `-l`, they use the standalone
 guided rescue connection. Rescue is destructive and still requires `UNLOCK`.
 
+Protection Check saves one complete, ANSI-free transcript per run under
+`special/rdp/logs/`. Existing logs under `backup/` are left where they are;
+Rescue retains its console-only behavior.
+
 ## Important Detail For Direct Scripts
 
 The launcher saves the selected connection mode by editing:
