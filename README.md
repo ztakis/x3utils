@@ -15,7 +15,7 @@
 > This tool talks directly to the scooter VCU. A bad connection, wrong file, or interrupted flash can leave the controller unusable until recovered. Always make a full dump first and keep the backup somewhere safe.
 
 > [!CAUTION]
-> **SHU compatibility firmware limits:** Do not use Flash SHU Compatible with F3/G3 VCU 1.6.3 or newer, GT3 VCU 1.7.2 or newer, or ZT3 VCU 1.5.9 or newer. SHU compat saves the original backup first, but using it on newer firmware may require restoring that backup.
+> **SHU compatibility firmware limits:** Do not use Flash SHU Compatible with F3/G3 VCU 1.6.3 or newer, or ZT3 VCU 1.5.9 or newer. GT3 is not supported by Flash SHU Compatible at any version (its own limit, VCU 1.7.2, is listed for reference only). SHU compat saves the original backup first, but using it on newer firmware may require restoring that backup.
 
 ## Quick Start
 

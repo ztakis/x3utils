@@ -5,7 +5,7 @@ This page is for Linux-specific setup and terminal usage.
 It assumes you are comfortable with a shell. Hardware wiring, connection modes, C45, and flashing safety are covered in the main README and wiki.
 
 > [!CAUTION]
-> **SHU compatibility firmware limits:** Do not use Flash SHU Compatible with F3/G3 VCU 1.6.3 or newer, GT3 VCU 1.7.2 or newer, or ZT3 VCU 1.5.9 or newer. SHU compat saves the original backup first, but using it on newer firmware may require restoring that backup.
+> **SHU compatibility firmware limits:** Do not use Flash SHU Compatible with F3/G3 VCU 1.6.3 or newer, or ZT3 VCU 1.5.9 or newer. GT3 is not supported by Flash SHU Compatible at any version (its own limit, VCU 1.7.2, is listed for reference only). SHU compat saves the original backup first, but using it on newer firmware may require restoring that backup.
 
 ## Quick Start
 
