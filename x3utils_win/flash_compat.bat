@@ -17,8 +17,9 @@ echo Only continue if your installed firmware is older than:
 echo.
 echo   F3 VCU  1.6.3
 echo   G3 VCU  1.6.3
-echo   GT3 VCU 1.7.2
 echo   ZT3 VCU 1.5.9
+echo   GT3 VCU 1.7.2 - for reference only:
+echo   x3utils does not support SHU compatible on GT3 at any version
 echo.
 echo Continuing will be enabled in 5 seconds...
 powershell -NoProfile -Command "Start-Sleep -Seconds 5"

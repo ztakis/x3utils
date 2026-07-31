@@ -2865,8 +2865,9 @@ Future<bool?> _showShuCompatWarning(BuildContext context) {
               'Only continue if your installed firmware is older than:\n\n'
               'F3 VCU — 1.6.3\n'
               'G3 VCU — 1.6.3\n'
-              'GT3 VCU — 1.7.2\n'
-              'ZT3 VCU — 1.5.9',
+              'ZT3 VCU — 1.5.9\n'
+              'GT3 VCU — 1.7.2 — for reference only:\n'
+              'x3utils does not support SHU compatible on GT3 at any version',
               style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
             ),
             const SizedBox(height: 20),
