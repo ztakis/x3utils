@@ -23,6 +23,43 @@ void main() {
     expect(find.text('Ready to start'), findsOneWidget);
   });
 
+  testWidgets('SHU compat requires the timed firmware-version warning', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1024, 768);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(const X3UtilsApp());
+
+    final shuTile = tester.widget<InkWell>(
+      find
+          .ancestor(
+            of: find.text('SHU compatible'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    shuTile.onTap!();
+    await tester.pump();
+
+    expect(find.text('ATTENTION'), findsOneWidget);
+    expect(find.textContaining('F3 VCU — 1.6.3'), findsOneWidget);
+    expect(find.textContaining('G3 VCU — 1.6.3'), findsOneWidget);
+    expect(find.textContaining('GT3 VCU — 1.7.2'), findsOneWidget);
+    expect(find.textContaining('ZT3 VCU — 1.5.9'), findsOneWidget);
+    expect(find.text('I understand — continue (5s)'), findsOneWidget);
+    expect(find.text('Ready to start'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.tap(find.text('I understand — continue'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Make SHU compatible'), findsOneWidget);
+    expect(find.text('ATTENTION'), findsNothing);
+  });
+
   testWidgets('Flash Only exposes centered full and slot-0 scopes', (
     WidgetTester tester,
   ) async {

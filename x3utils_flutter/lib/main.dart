@@ -1458,9 +1458,14 @@ class _ActionTile extends StatelessWidget {
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
               onTap: () async {
-                // Entering Flash Only is gated by the override warning every
-                // time; re-clicking the already-selected tile is not re-entry.
-                if (action.id == 'flash_only' && c.actionId != action.id) {
+                // Firmware-sensitive and destructive actions are gated every
+                // time they are entered; re-clicking the selected tile is not
+                // re-entry.
+                if (action.id == 'flash_compat' && c.actionId != action.id) {
+                  final ok = await _showShuCompatWarning(context);
+                  if (ok != true) return;
+                } else if (action.id == 'flash_only' &&
+                    c.actionId != action.id) {
                   final ok = await _showFlashOnlyWarning(context);
                   if (ok != true) return;
                 } else if (action.id == 'rdp_rescue' &&
@@ -2808,6 +2813,86 @@ class _StageButtons extends StatelessWidget {
     bg: AppColors.line,
     fg: AppColors.txt,
     border: AppColors.line2,
+  );
+}
+
+/// Selection gate for SHU compat: recent VCU firmware versions are not
+/// supported, so entering the action requires acknowledging the known version
+/// ceilings after a short countdown. Anything except acceptance keeps the
+/// previous action selected.
+Future<bool?> _showShuCompatWarning(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: const Color(0xB3040A0F),
+    builder: (ctx) => Dialog(
+      backgroundColor: AppColors.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.line2),
+      ),
+      child: Container(
+        width: 520,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.warning_amber_rounded,
+                color: AppColors.danger,
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'ATTENTION',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.txt,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'SHU compat cannot be used with recent VCU firmware.\n\n'
+              'Only continue if your installed firmware is older than:\n\n'
+              'F3 VCU — 1.6.3\n'
+              'G3 VCU — 1.6.3\n'
+              'GT3 VCU — 1.7.2\n'
+              'ZT3 VCU — 1.5.9',
+              style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _PillButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.pop(ctx, false),
+                  bg: AppColors.line,
+                  fg: AppColors.txt,
+                  border: AppColors.line2,
+                  small: true,
+                ),
+                const SizedBox(width: 10),
+                _CountdownPillButton(
+                  label: 'I understand — continue',
+                  seconds: 5,
+                  onTap: () => Navigator.pop(ctx, true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }
 
