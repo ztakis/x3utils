@@ -32,10 +32,10 @@ class RdpRunner {
 
   /// Where the toolkit writes its OWN transcript: the same per-action folder
   /// under the x3utils root that this run's console log goes to, so one action
-  /// leaves its evidence in one place. The scripts suffix their filename with
-  /// `_toolkit`, so the two files cannot collide. Passed through config.cmd /
-  /// config.sh as `X3UTILS_RDP_LOG_DIR`; without it the scripts keep their own
-  /// local default, which is what a hand-run outside the GUI should do.
+  /// leaves its evidence in one place. Windows receives it as `-LogDir`; the
+  /// Unix scripts still receive it through config.sh. GUI-owned Windows runs
+  /// suppress the script's redundant toolkit transcript, while a hand-run of
+  /// rdp.ps1 without `-NoToolkitLog` keeps its own local log.
   String _logDirFor(String verb) => p.join(
     Firmware.root,
     'logs',
@@ -75,7 +75,7 @@ class RdpRunner {
     final logDir = _logDirFor(verb);
 
     if (Platform.isWindows) {
-      _writeConfigCmd(mode, timeout, logDir);
+      final target = Cfg.target(mode).replaceAll('/', '\\');
       exe = 'powershell';
       args = [
         '-NoProfile',
@@ -85,9 +85,23 @@ class RdpRunner {
         p.join(_rdpDir, 'rdp.ps1'),
         '-$verb',
         '-Launcher',
+        '-Target',
+        target,
+        '-ConnectTimeout',
+        '$timeout',
+        '-LogDir',
+        logDir,
+        '-NoToolkitLog',
+        if (mode == ConnectionMode.powerRace) '-Race',
         if (yes) '-Yes',
       ];
-      onLine('> powershell rdp.ps1 -$verb -Launcher${yes ? ' -Yes' : ''}');
+      onLine(
+        '> powershell rdp.ps1 -$verb -Launcher '
+        '-Target "$target" -ConnectTimeout $timeout '
+        '-LogDir "$logDir" -NoToolkitLog'
+        '${mode == ConnectionMode.powerRace ? ' -Race' : ''}'
+        '${yes ? ' -Yes' : ''}',
+      );
     } else {
       final runRoot = _prepareUnixRunRoot();
       final runRdpDir = p.join(runRoot, 'special', 'rdp');
@@ -152,19 +166,6 @@ class RdpRunner {
             } catch (_) {}
           },
         );
-  }
-
-  // Windows: config.cmd beside rdp.ps1 (our rdp.ps1 reads from its ScriptDir).
-  void _writeConfigCmd(ConnectionMode mode, int timeout, String logDir) {
-    final target = Cfg.target(mode).replaceAll('/', '\\');
-    // Mode D: the ported rdp.ps1 honors RACE=true (power-race respawn connect).
-    final race = mode == ConnectionMode.powerRace ? 'set "RACE=true"\r\n' : '';
-    File(p.join(_rdpDir, 'config.cmd')).writeAsStringSync(
-      'set "TARGET=$target"\r\n'
-      'set "CONNECT_TIMEOUT=$timeout"\r\n'
-      'set "X3UTILS_RDP_LOG_DIR=$logDir"\r\n'
-      '$race',
-    );
   }
 
   // macOS/Linux run from a writable temporary copy because the installed app

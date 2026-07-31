@@ -1,7 +1,7 @@
 ; Inno Setup script — x3utils Flutter Windows app.
 ; PER-USER install (PrivilegesRequired=lowest, no UAC) into %LOCALAPPDATA%\Programs\x3utils
-; so the runtime config.cmd that rdp.ps1 writes beside itself stays writable
-; (a Program Files install would make native\...\rdp read-only for a standard user).
+; for the current release line. The installed native bundle is runtime-read-only;
+; a future Program Files move remains a separate packaging change.
 ; Paths are relative to this .iss; build the app first: flutter build windows --release
 
 #define AppName "x3utils"
@@ -33,8 +33,15 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 ; Flutter release payload (exe + dlls + data\, incl. the app-local MSVC runtime)
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; Frozen native bundle (OpenOCD + rdp toolkit) — must sit beside the exe so
-; OpenOcdPaths.find() resolves it. Exclude the gitignored runtime config.cmd.
+; OpenOcdPaths.find() resolves it. Defensively exclude any legacy/dev config.cmd.
 Source: "..\native\windows\*"; DestDir: "{app}\native\windows"; Excludes: "special\rdp\config.cmd"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+[InstallDelete]
+; GUI v1.2.3 and earlier generated this untracked file at runtime.
+Type: files; Name: "{app}\native\windows\special\rdp\config.cmd"
+
+[UninstallDelete]
+Type: files; Name: "{app}\native\windows\special\rdp\config.cmd"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\x3utils.exe"

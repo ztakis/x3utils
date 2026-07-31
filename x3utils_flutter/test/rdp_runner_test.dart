@@ -9,6 +9,139 @@ import 'package:x3utils_flutter/engine/rdp_runner.dart';
 import 'package:x3utils_flutter/models.dart';
 
 void main() {
+  test(
+    'Windows RDP passes per-run config without writing config.cmd',
+    () async {
+      if (!Platform.isWindows) return;
+
+      final fixture = _makeWindowsFixture();
+      addTearDown(() => fixture.root.deleteSync(recursive: true));
+
+      final expectedTargets = <ConnectionMode, String>{
+        ConnectionMode.defaultSwd: r'target\at32f415xx.cfg',
+        ConnectionMode.cloneC45: r'target\at32f415xx_c45.cfg',
+        ConnectionMode.genuineC45: r'target\at32f415xx_nrst.cfg',
+        ConnectionMode.powerRace: r'target\at32f415xx.cfg',
+      };
+
+      for (final entry in expectedTargets.entries) {
+        final lines = <String>[];
+        expect(
+          await fixture.runner.run('Check', entry.key, 7, onLine: lines.add),
+          0,
+        );
+        final output = lines.join('\n');
+        expect(output, contains('launcher=True'));
+        expect(output, contains('target=${entry.value}'));
+        expect(output, contains('timeout=7'));
+        expect(
+          output,
+          contains('logDir=${p.join(fixture.root.path, 'logs', 'rdp_check')}'),
+        );
+        expect(output, contains('noToolkitLog=True'));
+        expect(
+          output,
+          contains(
+            'race=${entry.key == ConnectionMode.powerRace ? 'True' : 'False'}',
+          ),
+        );
+      }
+
+      final config = File(p.join(fixture.rdpDir.path, 'config.cmd'));
+      expect(config.existsSync(), isFalse);
+
+      const stale = 'set "TARGET=stale.cfg"\r\nset "RACE=true"\r\n';
+      config.writeAsStringSync(stale);
+      final oldStamp = DateTime(2020, 1, 2, 3, 4, 5);
+      config.setLastModifiedSync(oldStamp);
+
+      final rescueLines = <String>[];
+      expect(
+        await fixture.runner.run(
+          'Rescue',
+          ConnectionMode.genuineC45,
+          9,
+          yes: true,
+          onLine: rescueLines.add,
+        ),
+        0,
+      );
+      final rescueOutput = rescueLines.join('\n');
+      expect(rescueOutput, contains('rescue=True'));
+      expect(rescueOutput, contains('yes=True'));
+      expect(rescueOutput, contains(r'target=target\at32f415xx_nrst.cfg'));
+      expect(rescueOutput, contains('timeout=9'));
+      expect(
+        rescueOutput,
+        contains('logDir=${p.join(fixture.root.path, 'logs', 'rdp_rescue')}'),
+      );
+      expect(config.readAsStringSync(), stale);
+      expect(config.lastModifiedSync(), oldStamp);
+    },
+  );
+
+  test('Windows bundled RDP suppresses only the GUI toolkit log', () async {
+    if (!Platform.isWindows) return;
+
+    final root = Directory.systemTemp.createTempSync(
+      'x3utils_rdp_script_test_',
+    );
+    addTearDown(() => root.deleteSync(recursive: true));
+    final rdpDir = Directory(p.join(root.path, 'special', 'rdp'))
+      ..createSync(recursive: true);
+    final binDir = Directory(p.join(root.path, 'oocd', 'bin'))
+      ..createSync(recursive: true);
+    Directory(p.join(root.path, 'oocd', 'scripts')).createSync(recursive: true);
+
+    File(
+      p.join('native', 'windows', 'special', 'rdp', 'rdp.ps1'),
+    ).copySync(p.join(rdpDir.path, 'rdp.ps1'));
+    final systemRoot = Platform.environment['SystemRoot'] ?? r'C:\Windows';
+    File(
+      p.join(systemRoot, 'System32', 'where.exe'),
+    ).copySync(p.join(binDir.path, 'openocd.exe'));
+
+    final logDir = p.join(root.path, 'toolkit_logs');
+    Future<ProcessResult> invoke({required bool suppress}) =>
+        Process.run('powershell', [
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          p.join(rdpDir.path, 'rdp.ps1'),
+          '-Check',
+          '-Launcher',
+          '-Target',
+          r'target\at32f415xx.cfg',
+          '-ConnectTimeout',
+          '7',
+          '-LogDir',
+          logDir,
+          if (suppress) '-NoToolkitLog',
+        ], workingDirectory: root.path).timeout(const Duration(seconds: 10));
+
+    final guiRun = await invoke(suppress: true);
+    final guiOutput = '${guiRun.stdout}\n${guiRun.stderr}';
+    expect(guiRun.exitCode, 3);
+    expect(guiOutput, contains('launcher A - plain'));
+    expect(guiOutput, isNot(contains('Log file:')));
+    expect(guiOutput, isNot(contains('Full log:')));
+    expect(Directory(logDir).existsSync(), isFalse);
+
+    final handRun = await invoke(suppress: false);
+    final handOutput = '${handRun.stdout}\n${handRun.stderr}';
+    expect(handRun.exitCode, 3);
+    expect(handOutput, contains('Log file:'));
+    expect(handOutput, contains('Full log:'));
+    final toolkitLogs = Directory(logDir).listSync().whereType<File>().toList();
+    expect(toolkitLogs, hasLength(1));
+    expect(
+      p.basename(toolkitLogs.single.path),
+      startsWith('rdp_check_toolkit_'),
+    );
+    expect(toolkitLogs.single.lengthSync(), greaterThan(0));
+  });
+
   test('macOS RDP check finds root config and honors A/B/C mode', () async {
     if (!Platform.isMacOS) return;
 
@@ -55,6 +188,50 @@ void main() {
   });
 }
 
+({Directory root, Directory rdpDir, RdpRunner runner}) _makeWindowsFixture() {
+  final root = Directory.systemTemp.createTempSync('x3utils_rdp_test_');
+  final binDir = Directory(p.join(root.path, 'oocd', 'bin'))
+    ..createSync(recursive: true);
+  final scriptsDir = Directory(p.join(root.path, 'oocd', 'scripts'))
+    ..createSync(recursive: true);
+  final rdpDir = Directory(p.join(root.path, 'special', 'rdp'))
+    ..createSync(recursive: true);
+
+  File(p.join(rdpDir.path, 'rdp.ps1')).writeAsStringSync(r'''
+param(
+  [switch]$Check,
+  [switch]$Rescue,
+  [switch]$Yes,
+  [switch]$Launcher,
+  [string]$Target,
+  [int]$ConnectTimeout,
+  [string]$LogDir,
+  [switch]$Race,
+  [switch]$NoToolkitLog
+)
+Write-Output "check=$($Check.IsPresent)"
+Write-Output "rescue=$($Rescue.IsPresent)"
+Write-Output "yes=$($Yes.IsPresent)"
+Write-Output "launcher=$($Launcher.IsPresent)"
+Write-Output "target=$Target"
+Write-Output "timeout=$ConnectTimeout"
+Write-Output "logDir=$LogDir"
+Write-Output "race=$($Race.IsPresent)"
+Write-Output "noToolkitLog=$($NoToolkitLog.IsPresent)"
+exit 0
+''');
+
+  Firmware.setRoot(root.path);
+  addTearDown(() => Firmware.setRoot(null));
+  return (
+    root: root,
+    rdpDir: rdpDir,
+    runner: RdpRunner(
+      OpenOcdPaths(p.join(binDir.path, 'openocd.exe'), scriptsDir.path),
+    ),
+  );
+}
+
 Future<void> _expectUnixRetryPrompts(String platformDir) async {
   for (final (verb, yes) in <(String, bool)>[
     ('Check', false),
@@ -99,10 +276,7 @@ Future<void> _expectUnixRetryPrompts(String platformDir) async {
 
 ({Directory root, RdpRunner runner}) _makeMacFixture({
   required String openOcdScript,
-}) => _makeUnixFixture(
-  platformDir: 'macos',
-  openOcdScript: openOcdScript,
-);
+}) => _makeUnixFixture(platformDir: 'macos', openOcdScript: openOcdScript);
 
 ({Directory root, RdpRunner runner}) _makeUnixFixture({
   required String platformDir,

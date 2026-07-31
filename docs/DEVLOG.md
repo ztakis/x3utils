@@ -3050,3 +3050,64 @@ Linux/macOS get the same code but were not rebuilt this session.
   of the space-containing path in normal OpenOCD and RDP flows. Keep this
   packaging decision separate from the cross-platform RDP logging defect even
   if their cleanup stages happen to touch adjacent code.
+
+## 2026-07-31 — Windows GUI RDP drops runtime config and the partial toolkit log
+
+- VERSIONED AS `1.2.3+10 BETA4`. The semantic version stays 1.2.3; the visible
+  stage advances from BETA3 and the Flutter build advances from +9 to +10. The
+  BETA3-only Windows path bypass is deliberately unavailable in BETA4, so an old
+  `beta3BypassWindowsPathSafety` preference is ignored and normal ACP-safe path
+  handling remains. The first full run caught the old stage-gated expectation;
+  its regression test now pins retirement outside BETA3. Focused root tests
+  passed 20/20 and the final full suite passed 197/197.
+- DONE, WINDOWS FLUTTER BUNDLE ONLY. `RdpRunner` no longer writes `config.cmd`
+  beside the installed `rdp.ps1`. It passes `Target`, `ConnectTimeout`, `LogDir`,
+  optional `Race`, and GUI `NoToolkitLog` as PowerShell arguments. `-Launcher`
+  remains the switch that makes `Resolve-Connect` honor Target/Race rather than
+  fall back to guided `rescue.cfg`; Rescue still passes `-Yes` because the GUI
+  already owns the destructive confirmation and cannot satisfy the script's
+  duplicate typed `UNLOCK` prompt.
+- THE GUI NOW HAS ONE AUTHORITATIVE RDP LOG. The real Windows pair was measured
+  before editing: the 43-line UTF-8 console log contained the complete command,
+  mode, all 15 OpenOCD lines, evidence, verdict, and exit code; the UTF-16LE
+  `_toolkit` file contained only those 15 OpenOCD lines. GUI calls therefore
+  suppress the partial script file and its `Log file` / `Full log` claims. A
+  direct hand-run without `-NoToolkitLog` keeps the old transcript behavior.
+  Save log off now means no persistent Windows GUI RDP log, matching the toggle.
+- STALE FILES FAIL HARMLESSLY. The bundled script never reads `config.cmd`; Inno
+  deletes that exact legacy generated file on upgrade and uninstall, while the
+  package exclusion stays as defense against an ignored developer artifact.
+  The current per-user/no-UAC destination is unchanged; Program Files remains
+  separate work.
+- SCOPE HELD: no file under `x3utils_win`, Linux, or macOS changed. Unix GUI RDP
+  still has the paired toolkit log and its temporary config.sh flow.
+- NON-HARDWARE EVIDENCE: PowerShell parser clean; focused RDP tests 5/5 and the
+  full Flutter suite 197/197; the
+  runner fixture covers A/B/C/D, timeout, log dir, GUI suppression, Rescue
+  `-Yes`, absent config, and an unchanged contradictory stale config. The real
+  bundled script was also run against a copied non-hardware system executable:
+  GUI mode made no toolkit log, while hand-run mode made one non-empty toolkit
+  log. `flutter analyze` and `git diff --check` clean; Windows release build
+  passed. Inno Setup 6.7.1 compiled `x3utils-setup-1.2.3.exe`, included the
+  updated `rdp.ps1`, parsed the install/uninstall delete entries, and excluded
+  the ignored source config. No hardware action ran during this implementation
+  verification.
+- PACKAGED WINDOWS AND HARDWARE EVIDENCE, W11GR: the maintainer installed BETA4
+  over the previous per-user installation. The new install-delete rule removed
+  the legacy runtime `config.cmd`, retained the packaged `rescue.cfg`, and GUI
+  runs did not recreate `config.cmd`. Each new run produced exactly one complete
+  GUI log; no new `_toolkit` companion appeared.
+  - Check at 13:27 recorded `ffff5aa5`, consistent FAP `0xA5`/comp `0x5A`,
+    readable main flash, `NOT PROTECTED`, and exit 0.
+  - Destructive Rescue at 13:33 used launcher A / Default SWD and the passed
+    target, timeout, log directory, `-NoToolkitLog`, and `-Yes`; it halted the
+    target, erased/reprogrammed the option area, read back `ffff5aa5`, reported
+    `Rewrite sent`, and exited 0.
+  - After the required power-cycle, Check at 13:34 first hit `Error: open
+    failed`; the retry then connected and produced the complete USD/main-flash
+    evidence, `NOT PROTECTED`, and exit 0. That independent post-rescue Check is
+    the recovery verdict; Rescue's exit status alone is not treated as proof.
+  Evidence copies are under
+  `I:\SCOOTER\__bins4tests\W11GR\logs\rdp_check|rdp_rescue`. This closes the
+  Windows BETA4 installed-upgrade, read-only-bundle, single-log Check and Rescue
+  acceptance. Program Files remains the next separate packaging discussion.

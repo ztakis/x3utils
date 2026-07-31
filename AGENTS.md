@@ -148,7 +148,8 @@ checklist:
 
 - Power-race protection actions are blocked in `AppController` before an RDP
   script starts. Keep this fail-safe warning.
-- Windows RDP uses the PowerShell toolkit and its existing `config.cmd`.
+- Windows RDP passes target, timeout, race, and log settings directly to the
+  PowerShell toolkit. It never writes `config.cmd` inside the installed bundle.
 - Linux copies the shell toolkit to a temporary tree and writes `config.sh`
   beside `special/rdp`.
 - macOS also uses a temporary tree, but its CLI-derived scripts load
@@ -261,17 +262,12 @@ backup and the log" is one place to look:
 - A picked root is validated in Settings (`Firmware.validateRootFolder`:
   OpenOCD path rules plus a real write probe). That is in addition to, not
   instead of, the pre-run destination check.
-- The RDP toolkit writes its own transcript, separately from the GUI's console
-  log. `RdpRunner` passes `X3UTILS_RDP_LOG_DIR` (config.cmd / config.sh) so it
-  lands in the same `<root>/logs/<action>/` folder, and the bundled scripts name
-  theirs `<prefix>_toolkit_<stamp>.log` — the two stamps can land on the same
-  second, so the suffix is what keeps them from colliding. The console log is
-  the superset (and UTF-8), so it is the one to ask a user for; the toolkit file
-  is kept only because the script's on-screen `Full log:` line names it. With the variable
-  unset the scripts keep their own local default, which is what a hand-run
-  outside the GUI needs. This lives only in the bundled copies under
-  `x3utils_flutter/native/`; the standalone CLIs log beside their own scripts
-  and must not be changed to follow a GUI setting they do not have.
+- The Windows GUI suppresses the PowerShell toolkit's partial `_toolkit` file;
+  when Save log is enabled, the GUI console log is the one complete persistent
+  record (command, raw OpenOCD output, evidence, verdict, and exit code). A
+  hand-run of the bundled script without `-NoToolkitLog` keeps its own transcript.
+  Linux/macOS still use their existing config.sh and toolkit-log behavior. The
+  standalone CLIs have no GUI root setting and must remain unchanged.
 
 ### Flutter Firmware Identity and Make zip3 Safety
 

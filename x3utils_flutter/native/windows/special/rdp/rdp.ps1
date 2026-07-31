@@ -20,8 +20,15 @@
 
     SWITCHES:
       -Yes        Skip the typed confirmation for destructive verbs.
-      -Launcher   Honor the launcher-selected connect mode in config.cmd
-                  ($TARGET) instead of the default guided rescue connect.
+      -Launcher   Honor the supplied launcher-style Target/Race mode instead
+                  of the default guided rescue connect.
+      -Target     Launcher target cfg (A/B/C); defaults to the C45 cfg.
+      -ConnectTimeout  Guided-connect countdown in seconds (default 3).
+      -LogDir     Toolkit transcript directory for hand-run/scripted use.
+      -Race       Use the Power-race respawn connection strategy.
+      -NoToolkitLog  Stream output without writing the redundant script log;
+                     the Flutter GUI uses this because its console log is the
+                     complete persistent record.
 
     WHY RAW REGISTER WRITES (not disable_access_protection):
       The bundled OpenOCD's `at32f4xx disable_access_protection 0` reads the
@@ -53,7 +60,12 @@ param(
     [switch]$Enable,
     [switch]$Rescue,
     [switch]$Yes,
-    [switch]$Launcher
+    [switch]$Launcher,
+    [string]$Target = 'target\at32f415xx_c45.cfg',
+    [int]$ConnectTimeout = 3,
+    [string]$LogDir = '',
+    [switch]$Race,
+    [switch]$NoToolkitLog
 )
 
 $ErrorActionPreference = 'Stop'
@@ -115,26 +127,13 @@ function SayWarn { param([string]$m) Write-Host "[${CL_Y}WARN${CL_NC}] $m" }
 function SayFail { param([string]$m) Write-Host "[${CL_R}FAIL${CL_NC}] $m" }
 
 # ---------------------------------------------------------------------------
-# Configuration. Reuse the paths from config.cmd; read TARGET/CONNECT_TIMEOUT
-# from it so -Launcher honors whatever launcher.bat last selected.
+# Configuration. The Flutter GUI passes its per-run values as parameters so the
+# installed native bundle is never written at runtime. The standalone CLI keeps
+# its separate config.cmd workflow in x3utils_win.
 # ---------------------------------------------------------------------------
 function Get-RdpConfig {
     $openocd = Join-Path $WinRoot 'oocd\bin\openocd.exe'
     $scripts = Join-Path $WinRoot 'oocd\scripts'
-    $target  = 'target\at32f415xx_c45.cfg'
-    $timeout = 3
-    $race    = $false
-    $logDir  = ''   # empty = fall back to this script's own default (New-LogPath)
-
-    $cfgCmd = Join-Path $ScriptDir 'config.cmd'
-    if (Test-Path $cfgCmd) {
-        foreach ($line in Get-Content $cfgCmd) {
-            if ($line -match '^\s*set\s+"TARGET=([^"]+)"')          { $target  = $Matches[1].Trim() }
-            elseif ($line -match '^\s*set\s+"CONNECT_TIMEOUT=([^"]+)"') { $timeout = $Matches[1].Trim() }
-            elseif ($line -match '^\s*set\s+"RACE=([^"]+)"')        { $race = ($Matches[1].Trim() -ieq 'true') }
-            elseif ($line -match '^\s*set\s+"X3UTILS_RDP_LOG_DIR=([^"]+)"') { $logDir = $Matches[1].Trim() }
-        }
-    }
 
     if (-not (Test-Path $openocd)) { SayFail "OpenOCD binary not found: $openocd"; exit 3 }
     if (-not (Test-Path $scripts)) { SayFail "OpenOCD scripts dir not found: $scripts"; exit 3 }
@@ -143,10 +142,10 @@ function Get-RdpConfig {
         OpenOcd   = $openocd
         Scripts   = $scripts
         Interface = 'interface\stlink.cfg'
-        Target    = $target
-        Timeout   = $timeout
-        Race      = $race
-        LogDir    = $logDir
+        Target    = $Target
+        Timeout   = $ConnectTimeout
+        Race      = $Race.IsPresent
+        LogDir    = $LogDir
     }
 }
 
@@ -239,9 +238,9 @@ function Test-ConnectFailed {
     return ($Text -match 'open failed|unable to open|no device found|init mode failed|Error connecting DP|Could not initialize the debug port|Could not re-examine target|Could not halt target|Adapter init failed|invalid mode value')
 }
 
-# Run one OpenOCD session, teeing combined output to the log AND the console
-# (so the guided connect prompts stay live; stdin is not redirected so the
-# proc's `gets stdin` still reads the keyboard). Returns @{ Code; Text }.
+# Run one OpenOCD session, streaming combined output to the console and,
+# unless the GUI suppressed it, the toolkit log. The collected text still
+# drives the protection verdict. Returns @{ Code; Text }.
 function Invoke-OpenOcd {
     param($cfg, [string[]]$OocdArgs, [string]$LogFile, [switch]$Quiet)
 
@@ -254,15 +253,17 @@ function Invoke-OpenOcd {
     $ErrorActionPreference = 'Continue'
     try {
         # Convert each merged line to clean text FIRST (an empty stderr line wraps
-        # as an ErrorRecord whose "$_" is the useless type name), then tee the
-        # clean text to the log and echo it live.
+        # as an ErrorRecord whose "$_" is the useless type name), then optionally
+        # persist it and always retain it for parsing.
         $lines = & $cfg.OpenOcd @full 2>&1 | ForEach-Object {
             if ($_ -is [System.Management.Automation.ErrorRecord]) {
-                if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { '' }
-            } else { "$_" }
-        } | Tee-Object -FilePath $LogFile -Append | ForEach-Object {
-            if (-not $Quiet) { Write-Host $_ }   # race loop stays quiet; log still gets it
-            $_
+                $line = if ($_.Exception -and $_.Exception.Message) { $_.Exception.Message } else { '' }
+            } else {
+                $line = "$_"
+            }
+            if ($LogFile) { $line | Out-File -FilePath $LogFile -Append }
+            if (-not $Quiet) { Write-Host $line }
+            $line
         }
         $code = $LASTEXITCODE
     } finally {
@@ -319,9 +320,8 @@ function Invoke-WithRace {
 
 function New-LogPath {
     param([string]$Prefix, [string]$Dir)
-    # The GUI passes X3UTILS_RDP_LOG_DIR in config.cmd so this transcript lands
-    # in the x3utils folder beside the run's console log. Without it (run by
-    # hand), keep the old Documents location, one subdir per process.
+    # A hand-run keeps the old Documents location unless its caller supplies a
+    # directory. GUI runs pass -NoToolkitLog and use their complete console log.
     if ($Dir) {
         $dir = $Dir
     } else {
@@ -342,7 +342,7 @@ $FAP_UNLOCKED = 0xA5
 function Invoke-Check {
     param($cfg, $conn)
 
-    $log = New-LogPath 'rdp_check' $cfg.LogDir
+    $log = if ($NoToolkitLog) { '' } else { New-LogPath 'rdp_check' $cfg.LogDir }
 
     Write-Host ''
     Say $D
@@ -350,7 +350,7 @@ function Invoke-Check {
     Say $D
     Write-Host ''
     Say "Connect mode:   $($conn.Mode)"
-    Say "Log file:       $log"
+    if ($log) { Say "Log file:       $log" }
     Write-Host ''
     Say "[${CL_C}....${CL_NC}] Connecting and reading FAP/USD @ 0x1FFFF800 and flash @ 0x08000000 ..."
 
@@ -496,7 +496,7 @@ function Invoke-Check {
     }
 
     Write-Host ''
-    Say "Full log: $log"
+    if ($log) { Say "Full log: $log" }
     Write-Host ''
     return $rc
 }
@@ -546,7 +546,7 @@ function Invoke-Rewrite {
         }
     }
 
-    $log = New-LogPath $prefix $cfg.LogDir
+    $log = if ($NoToolkitLog) { '' } else { New-LogPath $prefix $cfg.LogDir }
     $ops = $rewrite + @(
         '-c', 'echo {--- option area after rewrite (masked 0x00 until reload if still protected) ---}',
         '-c', 'mdw 0x1FFFF800 8',
@@ -565,8 +565,9 @@ function Invoke-Rewrite {
 
     Write-Host ''
     if ($result.Code -ne 0) {
-        SayFail ("Session exited with code {0} - see output above and the log." -f $result.Code)
-        Say "Full log: $log"
+        $detail = if ($log) { 'see output above and the log' } else { 'see output above' }
+        SayFail ("Session exited with code {0} - {1}." -f $result.Code, $detail)
+        if ($log) { Say "Full log: $log" }
         return $result.Code
     }
 
@@ -577,7 +578,7 @@ function Invoke-Rewrite {
     } else {
         Say "[${CL_Y}NEXT${CL_NC}] POWER-CYCLE the board, then run .\rdp.ps1 -Check to confirm NOT PROTECTED."
     }
-    Say "Full log: $log"
+    if ($log) { Say "Full log: $log" }
     Write-Host ''
     return 0
 }

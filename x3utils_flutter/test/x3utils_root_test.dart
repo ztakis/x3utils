@@ -204,13 +204,12 @@ void main() {
       expect(Firmware.bypassWindowsPathSafety, isFalse);
     });
 
-    test('BETA3 bypass preference is stage- and Windows-gated', () async {
+    test('BETA3 bypass preference is retired outside BETA3', () async {
       final c = await load({'beta3BypassWindowsPathSafety': true});
-      final expected = Platform.isWindows;
 
-      expect(c.windowsPathBenchAvailable, expected);
-      expect(c.bypassWindowsPathSafety, expected);
-      expect(Firmware.bypassWindowsPathSafety, expected);
+      expect(c.windowsPathBenchAvailable, isFalse);
+      expect(c.bypassWindowsPathSafety, isFalse);
+      expect(Firmware.bypassWindowsPathSafety, isFalse);
     });
 
     test('choosing and resetting persists', () async {
