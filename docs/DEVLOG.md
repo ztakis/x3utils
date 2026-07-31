@@ -3153,8 +3153,9 @@ Linux/macOS get the same code but were not rebuilt this session.
   PROTECTED`, and exit 0. No retry occurred in this run. On the same macOS
   checkout, the focused RDP test passed 6/6 and `flutter analyze` was clean.
   This closes source-build macOS evidence; the packaged pass below closes the
-  other macOS half. A real direct-script compatibility run without the flag and
-  Linux remain owed.
+  other macOS half. At that point a real direct-script compatibility run
+  without the flag and Linux remained owed; the packaged Linux pass below
+  closes the latter.
 - MACOS PACKAGED-APP HANDOFF PASSED from
   `dist/x3utils-1.2.3-macos-universal/x3utils.app` on the same testbed. Check
   connection resolved the backend through the bundle's
@@ -3166,5 +3167,18 @@ Linux/macOS get the same code but were not rebuilt this session.
   companion. Its evidence matches the debug run: USD `ffff5aa5`, FAP
   `0xA5`/comp `0x5A`, readable main flash, `NOT PROTECTED`, and exit 0. No retry
   occurred. This closes packaged macOS coverage for the BETA5 single-log
-  change. Linux, a live BETA5 retry, and a real direct-script compatibility run
-  remain separate.
+  change. The packaged Linux pass below closes the other target package; a live
+  BETA5 retry and a real direct-script compatibility run remain separate.
+- LINUX PACKAGED-APPIMAGE HANDOFF PASSED from
+  `dist/x3utils-1.2.3-x86_64.AppImage` on the Linux Mint home-primary x86_64
+  workstation at clean commit `41d861d`. The AppImage was built at 14:33 and
+  the 14:34 Check protection passed
+  `bash rdp_check.sh --launcher --no-toolkit-log`. It saved exactly one new GUI
+  log, `rdp_check_2026-07-31_14-34-11.log` (1392 B), and no same-run `_toolkit`
+  companion; the three old July 29 toolkit logs remained visible in the
+  directory. The complete log recorded USD `ffff5aa5`, consistent FAP
+  `0xA5`/comp `0x5A`, readable main flash (MSP `0x20000550`, reset vector
+  `0x08000121`), `NOT PROTECTED`, and exit 0. No retry occurred. This closes
+  packaged Linux coverage for the BETA5 single-log change. A live BETA5 retry
+  and a real direct-script compatibility run without `--no-toolkit-log` remain
+  separate.

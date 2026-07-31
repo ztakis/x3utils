@@ -51,6 +51,25 @@ same macOS 15.7.7 / Intel x86_64 testbed, using ST-LINK and A / Default SWD.
 
 This closes packaged-app macOS coverage for the BETA5 single-log change.
 
+## Recorded result — packaged Linux AppImage pass
+
+The rebuilt `dist/x3utils-1.2.3-x86_64.AppImage` passed on 2026-07-31 on the
+Linux Mint home-primary x86_64 workstation at commit `41d861d`, using ST-LINK
+and A / Default SWD. The AppImage was built at 14:33 and the Check ran at
+14:34.
+
+- Check protection passed
+  `bash rdp_check.sh --launcher --no-toolkit-log` and created exactly one new
+  GUI log, `rdp_check_2026-07-31_14-34-11.log` (1392 bytes).
+- No new `rdp_check_toolkit_*` file appeared. The three July 29 toolkit logs
+  were left in place and remained the only toolkit logs in the directory.
+- Evidence was complete: USD `ffff5aa5`, FAP `0xA5`, complement `0x5A`, and
+  readable main flash with MSP `0x20000550` and reset vector `0x08000121`.
+- Verdict: `NOT PROTECTED`; RDP exit 0.
+- Retry was not exercised in this run.
+
+This closes packaged-AppImage Linux coverage for the BETA5 single-log change.
+
 ## Commit before changing OS
 
 Suggested commit message:
@@ -248,6 +267,7 @@ Main-flash evidence:
 Verdict and exit code:
 ```
 
-The source-build and packaged-app results are both recorded above. Linux, a
-live BETA5 retry, and a real direct-script compatibility run without
-`--no-toolkit-log` remain separate follow-up coverage.
+The macOS source-build and packaged-app results and the packaged Linux AppImage
+result are recorded above. A live BETA5 retry and a real direct-script
+compatibility run without `--no-toolkit-log` remain separate follow-up
+coverage.
