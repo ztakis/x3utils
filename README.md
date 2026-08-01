@@ -4,8 +4,8 @@
 
 ### Downloads
 
-- **[GUI v1.2.6](https://github.com/ztakis/x3utils/releases/expanded_assets/gui-v1.2.6)** — desktop app for Windows, Linux and macOS. Recommended for most users.
-- **[CLI v1.8.1](https://github.com/ztakis/x3utils/releases/expanded_assets/v1.8.1)** — the scripts, for terminal users.
+- **[GUI v1.2.6](https://github.com/ztakis/x3utils/releases/tag/gui-v1.2.6)** — desktop app for Windows, Linux and macOS. Recommended for most users.
+- **[CLI v1.8.1](https://github.com/ztakis/x3utils/releases/tag/v1.8.1)** — the scripts, for terminal users.
 
 ### ST-LINK utilities for X3 / 3rd-generation scooters.
 
