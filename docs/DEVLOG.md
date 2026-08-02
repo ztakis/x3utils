@@ -3285,3 +3285,36 @@ Linux/macOS get the same code but were not rebuilt this session.
   right-click, relaunch, and confirm the choice STAYS. That distinguishes
   "seeded once" from "re-seeding on every launch" — only the second launch reads
   the stamp back, so the pass above cannot show it.
+
+## 2026-08-02 — zip3.2 will be the new default pack format (parked)
+
+- INTENT: zip3.2, built on an updated NinebotTEA, is intended to become the
+  DEFAULT pack format, with the current zip3 becoming the alternative rather
+  than the norm. Upstream reference is the ScooterHacking `NinebotTEA` repo
+  (`ninebottea/ninebottea.py`). PARKED at the maintainer's instruction until
+  that library is finalized; nothing was ported and `lib/engine/ninebot_tea.dart`
+  is untouched. Recorded here so the intent survives the session, not as a
+  commitment to a shape.
+- A SPLIT-BUTTON PROTOTYPE WAS BUILT AND REVERTED, deliberately, as a look-only
+  test: the zip3 Pack CTA became a pill whose caret opened a checked menu of
+  "Pack zip 3.2" / "Pack zip 3", with selection driving the label only. It was
+  evaluated and backed out the same day; it is NOT in the tree and was never
+  committed. No shipped behavior changed.
+- WHAT THE PROTOTYPE ESTABLISHED, worth keeping for whoever builds this for
+  real:
+  - Selection must not be a click. Opening a menu on a firmware action and
+    picking an entry must never start a run; the label half stays the only
+    thing that does.
+  - `_PillButton` can carry an optional split branch without disturbing its
+    plain path, which four other CTA call sites share.
+  - The format choice cannot reach the packer yet. `PackZip3` writes
+    `schemaVersion` 1 and hard-rejects anything else on BOTH pack and unpack,
+    so that gate is the first thing that must grow a second accepted value.
+    Note Unpack shares it, so zip3.2 packages will not open in the GUI until it
+    does, independent of the cipher change itself.
+  - A menu must not ship while its entries produce identical bytes. Two choices
+    that behave the same tell an operator they picked a format when they did
+    not, on output that gets flashed to a controller.
+- OPEN QUESTION for when the library lands: if zip3.2 becomes simply THE format,
+  a chooser may be the wrong control entirely. That depends on whether plain
+  zip3 stays supported for older firmware, which is not yet decided.
