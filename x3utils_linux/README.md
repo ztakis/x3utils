@@ -114,20 +114,24 @@ If scripts are not executable:
 chmod +x *.sh
 ```
 
-## Launcher Menus (v1.8.1)
+## Launcher Menus (v1.8.2)
 
 The main menu is:
 
 1. Check Connection
 2. Backup Full Memory (128 KB)
-3. Flash SHU Compatible
-4. Backup + Flash Loaded File
+3. Backup + Flash Loaded File
+4. Flash Slot 0
 5. Load / Change Target `.bin` File
 6. Advanced
 7. Exit
 
-Option 4 uses the file loaded with Option 5. The SHU-compatible and Advanced
+Option 3 uses the file loaded with Option 5. Flash Slot 0 and the Advanced
 flash actions keep their own prompts and do not reuse that loaded file.
+
+Option 5 accepts only a full 128 KB (131072-byte) image, so its file cannot be
+used for Flash Slot 0, which takes a slot-sized payload instead. Flash Slot 0
+asks for its own file for that reason.
 
 The selected connection mode is saved in `config.sh`:
 
@@ -140,8 +144,8 @@ Mode B also exposes `T` to change the guided countdown timeout.
 
 ### Advanced Menu
 
-1. Flash Only — No Backup
-2. Flash Slot 0
+1. Flash SHU Compatible
+2. Flash Only — No Backup
 3. Check Protection
 4. Unlock / Rescue — Mass Erase
 5. Back
@@ -185,24 +189,27 @@ If no path is supplied, `flash.sh` asks for one.
 
 `flash.sh` validates the file, asks for confirmation, runs a backup first, then flashes and verifies.
 
-### SHU Compatible Directly
+### Flash Slot 0 Directly
 
 ```bash
-./flash_compat.sh
+./flash_slot0.sh
+./flash_slot0.sh /path/to/firmware.bin
 ```
 
-This uses `python3` for the patch step and the connection mode currently saved in `config.sh`.
+Backs up first, then writes slot 0 only. Without an argument it prompts for the
+file. This uses the connection mode currently saved in `config.sh`.
 
 ### Advanced Scripts Directly
 
 ```bash
+./special/flash_compat.sh
 ./special/flash_only.sh
-./special/flash_slot0.sh
 ./special/rdp/rdp_check.sh -l
 ./special/rdp/rescue_unlock.sh -l
 ```
 
-The flash scripts prompt for their own file. `-l` tells the RDP tools to honor
+`flash_compat.sh` uses `python3` for its patch step. The flash scripts prompt
+for their own file. `-l` tells the RDP tools to honor
 the launcher mode saved in `config.sh`; without `-l`, they use the standalone
 guided rescue connection. Rescue is destructive and still requires `UNLOCK`.
 
@@ -218,8 +225,9 @@ The launcher saves the selected connection mode by editing:
 config.sh
 ```
 
-If you run `connection_test.sh`, `dump.sh`, `flash.sh`, or `flash_compat.sh`
-directly, they use the last connection mode selected in the launcher.
+If you run `connection_test.sh`, `dump.sh`, `flash.sh`, `flash_slot0.sh`, or
+`special/flash_compat.sh` directly, they use the last connection mode selected
+in the launcher.
 
 If you are not sure:
 
@@ -246,9 +254,10 @@ Runs a full 128 KB dump using the saved connection mode.
 
 Flashes a selected `.bin` file after validating it and forcing a backup first.
 
-`flash_compat.sh`
+`flash_slot0.sh`
 
-Dumps, patches with `python3`, and flashes back for SHU-compatible workflows.
+Backs up first, then writes slot 0 only. Boot, slot 1, and user data stay
+untouched.
 
 `validate_bin.sh`
 
@@ -268,7 +277,7 @@ Bundled OpenOCD for Linux.
 
 `special/`
 
-Advanced Flash Only, Slot 0, and protection/rescue scripts. Read
+Advanced SHU Compatible, Flash Only, and protection/rescue scripts. Read
 `special/notes.txt` before using anything there.
 
 ## Common Linux Problems

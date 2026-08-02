@@ -3389,3 +3389,106 @@ Linux/macOS get the same code but were not rebuilt this session.
   batch files, and no BOM was introduced. Git recorded both moves as renames.
   NO script was executed and no OpenOCD or hardware command ran, so menu
   navigation and both relocated actions still need a real Windows run.
+
+## 2026-08-02 — CLI v1.8.2 mirrors the relayout on Linux
+
+- SCOPE: `x3utils_linux` only, closing the Linux half of the parity debt the
+  Windows 1.8.2 entry above opened the same day. macOS is still NOT touched and
+  now differs from BOTH other platforms; that remains owed.
+- MOVES, identical to Windows: `flash_compat.sh` root -> `special/`, and
+  `special/flash_slot0.sh` -> root. Both via `git mv`, and git recorded both as
+  renames. The 0755 mode survived both moves, which matters more here than on
+  Windows — a lost exec bit is the failure mode the Flutter bundle already hit.
+- PATH REWRITES follow the `special/flash_only.sh` convention exactly: scripts
+  under `special/` reach root resources through `"$SCRIPT_DIR/../"`, root
+  scripts through `"$SCRIPT_DIR/"`. flash_compat's eight refs (config.sh, the
+  compat dir, validate_bin.sh x3, race_grade.sh x2) gained `../`; flash_slot0's
+  seven (config.sh, validate_bin.sh, dump.sh x4, race_grade.sh) lost it.
+  Windows counted ten and eight for the same two scripts; the difference is
+  call-site count, not a missed reference.
+- WHY THE MOVE IS SAFE FOR OPENOCD, same reasoning as Windows: `config.sh`
+  builds `OPENOCD_BIN` and `SCRIPTS_DIR` from its OWN `CONFIG_DIR`
+  (`dirname "${BASH_SOURCE[0]}"`), which stays root regardless of which
+  directory sources it. Neither moved script resolves an OpenOCD path itself.
+  The `at32f415xx_race.cfg` paths in both moved scripts are `-s "$SCRIPTS_DIR"`
+  relative, so they were never directory-sensitive either.
+- THE COMPAT DIR MOVED WITH THE SCRIPT, deliberately. `compat_dir` is now
+  `"$SCRIPT_DIR/../compat"`, so SHU-compat dumps still land in the ROOT
+  `compat/` folder and not in a new `special/compat/`. Both of its two
+  assignments (mode D branch and the normal branch) were rewritten; missing one
+  would have split output across two directories depending on connection mode.
+- LAUNCHER: main menu is now 1 Check Connection, 2 Backup, 3 Backup + Flash
+  Loaded File, 4 Flash Slot 0, 5 Load file, 6 Advanced, 7 Exit. Advanced is
+  1 Flash SHU Compatible, 2 Flash Only, 3 Check Protection, 4 Unlock / Rescue,
+  5 Back. Item counts are unchanged, so the `*)` invalid-selection messages
+  ("Please choose 1-7, A-D" and "Please choose 1-5") still describe the offered
+  keys. Case arms were reordered in file to match menu order; the bash `case`
+  needs no label renames, so unlike the Windows edit there is no `goto` target
+  surface to re-verify.
+- PRESELECTED MODE IS NOW A. `config.sh` ships `TARGET="target/at32f415xx.cfg"`
+  with `RACE=false`, replacing the committed mode B (`_c45.cfg`). This SUPERSEDES
+  the long-standing commit-hygiene rule of resetting Linux `config.sh` to mode B
+  before committing — the shipped default is now A on Windows and Linux alike,
+  and macOS is the remaining odd one out. Nothing else in the mode machinery
+  changed: `detect_radio`, `set_radio`, the RACE flag and the timeout writer are
+  untouched, and A is already `detect_radio`'s fallback branch, so a config that
+  names no recognised cfg still reads as A.
+- NO STALE MODE-D COMMENT TO FIX here. The Windows twin described mode D as
+  using `at32f415xx_c45.cfg`; Linux `config.sh` only says mode D means "scripts
+  use the respawn power-race connect" and names no file, so it was already
+  correct. `race_grade.sh`'s header listed `flash_compat.sh` among its callers
+  alongside "special flash tools" — now that flash_compat IS a special flash
+  tool, the line names `flash_slot0.sh` instead. Comment only.
+- DOCS: `README.md` menu block, the Direct Script Usage section (SHU Compatible
+  Directly became Flash Slot 0 Directly; flash_compat moved into Advanced
+  Scripts Directly), the direct-script mode warning, the Files In This Folder
+  entries and the `special/` blurb all follow the new layout, and the heading is
+  now "Launcher Menus (v1.8.2)". The `python3` requirement for the patch step
+  was carried over rather than dropped — it moved into the Advanced Scripts
+  paragraph, since it is a real Linux-only prerequisite the Windows README has
+  no equivalent of. `special/notes.txt` swapped its flash_slot0 line for the
+  flash_compat one, matching the Windows notes file word for word.
+- OPTION 5's LOADED FILE STILL CANNOT REACH FLASH SLOT 0, by the same validation
+  gate as Windows: `:opt_load`'s equivalent sources `validate_bin.sh` WITHOUT
+  `nosize`, so the launcher only ever holds a 131072-byte full image, and
+  `flash_slot0.sh` is the only script passing `nosize`. The launcher calls it
+  with no argument so it prompts for its own file. The Windows entry's parked
+  "equalise the launcher's file handling" item covers Linux too — whichever
+  shape lands must land on both.
+- VERSION 1.8.1 -> 1.8.2, matching Windows. The root `README.md` release link
+  still points at `v1.8.1` and stays there until 1.8.2 is actually published.
+- STATIC EVIDENCE: `bash -n` passes on launcher.sh, flash_slot0.sh and
+  special/flash_compat.sh. Every `$SCRIPT_DIR` reference in the launcher, both
+  moved scripts and the untouched `special/flash_only.sh` control was resolved
+  against the tree: 22/23 exist, the sole miss being `config.tmp`, which the
+  launcher creates. Menu labels and case arms line up 1:1 in both menus (7/7
+  and 5/5).
+- HARDWARE EVIDENCE, same day on the Linux testbed in MODE A. Both relocated
+  scripts were exercised from their new locations and both wrote where they
+  should. Flash path: two full 131072-byte dumps landed in `backup/` at 14:40:54
+  and 14:41:27, each with 256 distinct byte values and the vector table opening
+  `50050020` — real reads, not blank or masked. The two dumps DIFFER from each
+  other, which is the proof a write actually landed between them rather than a
+  backup being taken twice.
+- THE `../compat` REWRITE IS THE ONE THAT NEEDED HARDWARE, and it passed. SHU
+  compat run from its new Advanced slot at 14:45:47 put `dump_…14-45-47.bin` and
+  `…_patched.bin` in the ROOT `compat/`, and `find` confirms exactly one
+  `compat` directory in the tree — no stray `special/compat/` was created. This
+  is the failure the two separate `compat_dir` assignments invited: had the
+  rewrite been missed, output would have silently split by connection mode.
+- THE PATCH ITSELF VERIFIES CLEAN, which incidentally clears the other two
+  rewritten refs in the same script. Raw and patched differ in exactly 16 bytes
+  at 0x1420-0x142f, matching `FE801CB2D1EF41A6A41731F5A06824F0`, and NOTHING
+  else in the 131072 bytes changed. The raw dump was not already patched, so
+  this was a genuine first-time patch rather than a re-run over patched flash —
+  meaning `../validate_bin.sh` and the python3 stage both resolved correctly
+  from `special/`. The `$HOME`-based second copy also reached
+  `~/.x3utils_backup/`, confirming the run got past stage 1 intact.
+- STILL UNEXERCISED, and deliberately recorded rather than implied: the MODE D
+  branch of flash_compat.sh. Its `compat_dir` is a SEPARATE assignment from the
+  normal branch's, so the pass above does not cover it; it is correct by
+  inspection (both now read `"$SCRIPT_DIR/../compat"`) but has not run. Mode D
+  is the branch this project already treats as ungradeable from the CLI, so this
+  is accepted rather than chased. Check Connection, Flash Only and Check
+  Protection were not part of this pass either — none of them moved, and the RDP
+  log folder shows nothing newer than 2026-07-31, consistent with that.

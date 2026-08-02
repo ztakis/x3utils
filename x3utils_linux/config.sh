@@ -14,7 +14,7 @@ CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENOCD_BIN="$CONFIG_DIR/oocd/bin/openocd"
 SCRIPTS_DIR="$CONFIG_DIR/oocd/scripts"
 INTERFACE="interface/stlink.cfg"
-TARGET="target/at32f415xx_c45.cfg"
+TARGET="target/at32f415xx.cfg"
 
 # Connection mode D (power-race): true = scripts use the respawn power-race
 # connect. Set by the launcher radio; A/B/C reset it false.
