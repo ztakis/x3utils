@@ -12,8 +12,8 @@ with a vetted native OpenOCD/RDP bundle for each desktop OS.
 
 ## What it does
 
-Connection modes: **A** Default SWD · **B** C45 clone (guided hold/release) ·
-**C** C45 genuine (nRST) · **D** Power-race (respawn connect).
+Connection modes: **Default SWD** · **Power-race** (respawn connect) ·
+**C45 clone** (guided hold/release) · **C45 genuine** (nRST).
 
 Actions:
 
@@ -105,11 +105,15 @@ relaunch before normal use.
 
 The GUI honors the selected protection-check connection mode:
 
-- **A Default SWD** — plain init/reset halt.
-- **B C45 Clone** — guided hold/count/release flow.
-- **C C45 Genuine** — hardware nRST.
-- **D Power-race** — intentionally blocked; RDP/protection work requires a
+- **Default SWD** — plain init/reset halt.
+- **C45 Clone** — guided hold/count/release flow.
+- **C45 Genuine** — hardware nRST.
+- **Power-race** — intentionally blocked; RDP/protection work requires a
   stable session.
+
+The GUI identifies modes by name only. The CLI launchers still letter their
+menus A/B/C/D; those letters are a CLI convention and are deliberately not
+mirrored here, because the GUI's rail order differs from the launcher order.
 
 On macOS, Flutter writes `config.sh` at its temporary RDP run root because the
 macOS CLI-derived scripts load it via `../../config.sh`. Linux keeps config
@@ -154,7 +158,7 @@ The Dart orchestration is shared; each OS supplies its native backend:
 
 Version lives in four places — **keep them in sync**: `VERSION`,
 `pubspec.yaml` (`version:`), and `kAppVersion` in `lib/theme.dart` (drives the
-UI). Current: **1.2.6**. Also in installer/x3utils.iss `AppVer`. The release
+UI). Current: **1.2.7**. Also in installer/x3utils.iss `AppVer`. The release
 channel is a separate `kAppStage` in `lib/theme.dart` (`BETA`, or `''` for
 stable), kept out of those four strings so they stay byte-equal.
 

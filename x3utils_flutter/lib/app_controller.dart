@@ -72,14 +72,25 @@ class AppController extends ChangeNotifier {
         windowsPathBenchAvailable &&
         (_prefs!.getBool('beta3BypassWindowsPathSafety') ?? false);
     Firmware.bypassWindowsPathSafety = bypassWindowsPathSafety;
-    final adv = _prefs!.getStringList('advancedModes');
+    // Rail layout re-seed. Bumping this stamp forces EVERY install back to the
+    // ship default once, discarding arrangements the user chose deliberately;
+    // only bump it for an intended relayout, never as a side effect.
+    const railLayoutSeed = 2;
+    final seeded = _prefs!.getInt('railLayoutSeed') ?? 0;
+    final adv = seeded == railLayoutSeed
+        ? _prefs!.getStringList('advancedModes')
+        : null;
     _advancedModes.clear();
     if (adv == null) {
-      // Ship default: genuine C45 (C) and Power-race (D) start in Advanced. The
-      // user can right-click either back to Main; that choice then persists.
-      _advancedModes
-        ..add(ConnectionMode.powerRace)
-        ..add(ConnectionMode.genuineC45);
+      // Ship default: only genuine C45 starts in Advanced. The user can
+      // right-click it back to Main; that choice then persists.
+      _advancedModes.add(ConnectionMode.genuineC45);
+      _prefs!
+        ..setStringList(
+          'advancedModes',
+          _advancedModes.map((e) => e.name).toList(),
+        )
+        ..setInt('railLayoutSeed', railLayoutSeed);
     } else {
       _advancedModes.addAll(
         ConnectionMode.values.where((m) => adv.contains(m.name)),
@@ -929,11 +940,12 @@ class AppController extends ChangeNotifier {
   Section sectionOf(ConnectionMode m) =>
       _advancedModes.contains(m) ? Section.advanced : Section.standard;
 
-  /// Modes in a rail section, always in canonical A/B/C/D letter order (by tag,
-  /// so display order is independent of the enum order).
+  /// Modes in a rail section, always in canonical `kModeOrder`, so display
+  /// order is independent of the persisted enum order.
   List<ConnectionMode> modesIn(Section s) =>
-      ConnectionMode.values.where((m) => sectionOf(m) == s).toList()
-        ..sort((a, b) => a.tag.compareTo(b.tag));
+      ConnectionMode.values.where((m) => sectionOf(m) == s).toList()..sort(
+        (a, b) => kModeOrder.indexOf(a).compareTo(kModeOrder.indexOf(b)),
+      );
 
   /// Guardrail: never let the standard group be emptied.
   bool canMoveToAdvanced(ConnectionMode m) =>

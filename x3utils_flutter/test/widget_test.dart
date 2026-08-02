@@ -32,6 +32,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(const X3UtilsApp());
 
+    // SHU compat lives in Advanced, which is collapsed at boot.
+    await tester.tap(find.text('ADVANCED'));
+    await tester.pump(const Duration(milliseconds: 250));
     final shuTile = tester.widget<InkWell>(
       find
           .ancestor(

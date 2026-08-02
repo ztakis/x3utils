@@ -1331,13 +1331,10 @@ class _ModeTile extends StatelessWidget {
                       color: selected ? Colors.transparent : AppColors.line,
                     ),
                   ),
-                  child: Text(
-                    mode.tag,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                      color: selected ? const Color(0xFF04120F) : AppColors.dim,
-                    ),
+                  child: Icon(
+                    mode.icon,
+                    size: 15,
+                    color: selected ? const Color(0xFF04120F) : AppColors.dim,
                   ),
                 ),
                 const SizedBox(width: 11),
@@ -4349,10 +4346,12 @@ class _ModeDropdown extends StatelessWidget {
         dropdownColor: AppColors.panel2,
         style: const TextStyle(color: AppColors.txt, fontSize: 13),
         items: [
-          for (final m in [
-            ...ConnectionMode.values,
-          ]..sort((a, b) => a.tag.compareTo(b.tag)))
-            DropdownMenuItem(value: m, child: Text('${m.tag} · ${m.title}')),
+          for (final m
+              in [...ConnectionMode.values]..sort(
+                (a, b) =>
+                    kModeOrder.indexOf(a).compareTo(kModeOrder.indexOf(b)),
+              ))
+            DropdownMenuItem(value: m, child: Text(m.title)),
         ],
         onChanged: (m) {
           if (m != null) {

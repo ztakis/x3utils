@@ -3210,3 +3210,61 @@ Linux/macOS get the same code but were not rebuilt this session.
   the RDP script; they produced ANSI-free, no-BOM UTF-8 containing presentation,
   verdict and OpenOCD lines. `git diff --check` passed. ShellCheck is not
   installed on this workstation. No OpenOCD or hardware command was run.
+
+## 2026-08-02 — Rail relayout, and the GUI drops mode letters
+
+- SCOPE: Flutter GUI presentation only. No OpenOCD command, target cfg,
+  verdict, validator or script behavior changed. The three CLI trees are
+  untouched and keep their A/B/C/D launcher menus.
+- ACTIONS: SHU compatible moved Main -> Advanced (now first there); Flash slot 0
+  moved Advanced -> Main (now last there). Main reads Check connection, Backup,
+  Backup + Flash, Flash slot 0; Advanced reads SHU compatible, Flash Only, ZIP3
+  tools, Check protection, Unlock / rescue. The rail renders each section in
+  `kActions` list order, so this was entry order plus the `section` field.
+- MODE LETTERS REMOVED. The first plan was to re-letter the GUI so Power-race
+  became B and clone C, matching the new rail order. Rejected on inspection:
+  the letters are load-bearing in `launcher.bat`/`launcher.sh` menus, the
+  `B)`/`C)` -> cfg mapping, the bundled `rdp_lib.sh`/`rdp.ps1`, and every
+  DEVLOG/testing entry recorded by letter. Re-lettering only the GUI would have
+  made it ASSERT a mapping the scripts contradict (GUI "C = clone" vs CLI
+  "C = genuine"); a full sweep would have rewritten hardware-facing scripts for
+  a cosmetic reason. Dropping the letter creates an absence instead of a
+  contradiction, and is GUI-local: `tag` was used in exactly three presentation
+  sites (rail sort, tile badge, Settings dropdown) and never reached a script.
+  The GUI passes `Cfg.target(mode)` and a race flag, so the two conventions do
+  not meet at runtime.
+- REPLACEMENTS: `kModeOrder` is the new canonical rail/dropdown order
+  (Default, Power-race, C45 clone, C45 genuine), replacing the old sort-by-tag.
+  The tile badge keeps its 26px square and selected-state brand fill but now
+  holds a per-mode icon, so the rail gains a grammar: icon = how you connect,
+  risk dot = how dangerous. Action tiles already carry the danger dot rather
+  than icons, so the two tile kinds stay distinguishable.
+- ENUM ORDER IS PERSISTED and was NOT touched: `defaultConnMode` stores
+  `ConnectionMode.index`, so reordering the enum would silently repoint a saved
+  startup default. Display order was moved into `kModeOrder` for this reason.
+- MODE SECTIONS: ship default is now Advanced = C45 genuine only, so Power-race
+  starts in Main. Applied to existing installs by a one-time re-seed
+  (`railLayoutSeed`, now 2) at the maintainer's request; this discards mode
+  arrangements a user chose by right-click, so only bump that stamp for an
+  intended relayout.
+- NON-HARDWARE EVIDENCE: `flutter analyze` clean, `dart format` applied, and the
+  suite passes 199/199 on Windows. One widget test needed a real fix rather than
+  a rewrite of intent: `SHU compat requires the timed firmware-version warning`
+  located its tile at boot, and SHU compat now sits in collapsed Advanced, so
+  the test taps ADVANCED first using the same idiom the Flash Only test already
+  used. No hardware was touched; the rail is presentation, so no device run is
+  owed for this change.
+- VERSIONED AS `1.2.7+14` (stable, no stage) via `dart run tool/version.dart
+  1.2.7`; the checker reports all 7 spots in sync. The root `README.md` release
+  link still points at the `gui-v1.2.6` tag and was deliberately left alone —
+  it should move when the 1.2.7 release is actually published, not before, or
+  it becomes a dead link.
+- RE-SEED CONFIRMED ON A REAL UPGRADE-IN-PLACE: the maintainer installed 1.2.7
+  over the previous installation WITHOUT uninstalling, and the new rail defaults
+  came through. This is the evidence that matters, because a clean install only
+  exercises the `adv == null` first-run path; installing over retained
+  preferences is what proves the `railLayoutSeed` stamp actually overrode a
+  stored `advancedModes` list. Still owed as a separate check: move a mode by
+  right-click, relaunch, and confirm the choice STAYS. That distinguishes
+  "seeded once" from "re-seeding on every launch" — only the second launch reads
+  the stamp back, so the pass above cannot show it.

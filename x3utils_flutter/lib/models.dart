@@ -1,16 +1,29 @@
 import 'package:flutter/material.dart';
 import 'theme.dart';
 
-// Script-compatible labels keep genuine C45 on C. Power-race is the extra GUI
-// respawn connect mode, so it lives on D.
+// Enum ORDER IS PERSISTED: `defaultConnMode` stores `ConnectionMode.index`, so
+// appending is safe but reordering silently repoints a saved startup default.
+// The GUI carries no A/B/C/D tag. The CLI launchers still letter their menus,
+// and the GUI's rail order deliberately differs from them, so a letter here
+// would assert a mapping the scripts contradict. Modes are identified by title,
+// icon and `kModeOrder`; the GUI passes `Cfg.target(mode)`, never a letter.
 enum ConnectionMode { defaultSwd, cloneC45, genuineC45, powerRace }
 
+/// Canonical rail/dropdown order, independent of the persisted enum order.
+const kModeOrder = <ConnectionMode>[
+  ConnectionMode.defaultSwd,
+  ConnectionMode.powerRace,
+  ConnectionMode.cloneC45,
+  ConnectionMode.genuineC45,
+];
+
 extension ConnectionModeX on ConnectionMode {
-  String get tag => switch (this) {
-    ConnectionMode.defaultSwd => 'A',
-    ConnectionMode.cloneC45 => 'B',
-    ConnectionMode.genuineC45 => 'C',
-    ConnectionMode.powerRace => 'D',
+  /// Tile badge glyph; replaced the old letter, which read as a CLI mode tag.
+  IconData get icon => switch (this) {
+    ConnectionMode.defaultSwd => Icons.bolt_rounded,
+    ConnectionMode.cloneC45 => Icons.pan_tool_rounded,
+    ConnectionMode.genuineC45 => Icons.cable_rounded,
+    ConnectionMode.powerRace => Icons.restart_alt_rounded,
   };
   String get title => switch (this) {
     ConnectionMode.defaultSwd => 'Default SWD',
@@ -141,8 +154,37 @@ const kActions = <FlashAction>[
     okMsg: 'Backed up & verified → backup/dump_2026-07-09.bin',
   ),
   FlashAction(
-    id: 'flash_compat',
+    id: 'flash_backup',
     section: Section.standard,
+    name: 'Backup + Flash',
+    script: 'flash',
+    sub: 'Back up the chip first, then write and verify your firmware.',
+    chips: [InfoChipData('backs up first', ChipKind.brand)],
+    cta: 'Start flash',
+    danger: DangerLevel.soft,
+    okMsg: 'Flashed & verified. Backup saved first.',
+    needsFirmware: true,
+  ),
+  FlashAction(
+    id: 'flash_slot0',
+    section: Section.standard,
+    name: 'Flash slot 0',
+    script: 'flash_slot0',
+    sub:
+        'Backs up the chip first, then writes slot 0 only — boot, slot 1 and user-data stay untouched.',
+    chips: [
+      InfoChipData('backs up first', ChipKind.brand),
+      InfoChipData('identity-safe', ChipKind.ok),
+    ],
+    cta: 'Flash slot 0',
+    danger: DangerLevel.soft,
+    okMsg: 'Slot 0 flashed & verified. Identity intact.',
+    needsFirmware: true,
+  ),
+  // ── Advanced ──────────────────────────────────────────────
+  FlashAction(
+    id: 'flash_compat',
+    section: Section.advanced,
     name: 'SHU compatible',
     script: 'flash_compat',
     sub:
@@ -156,19 +198,6 @@ const kActions = <FlashAction>[
     okMsg: 'SHU-compatible firmware flashed & verified.',
   ),
   FlashAction(
-    id: 'flash_backup',
-    section: Section.standard,
-    name: 'Backup + Flash',
-    script: 'flash',
-    sub: 'Back up the chip first, then write and verify your firmware.',
-    chips: [InfoChipData('backs up first', ChipKind.brand)],
-    cta: 'Start flash',
-    danger: DangerLevel.soft,
-    okMsg: 'Flashed & verified. Backup saved first.',
-    needsFirmware: true,
-  ),
-  // ── Advanced ──────────────────────────────────────────────
-  FlashAction(
     id: 'flash_only',
     section: Section.advanced,
     name: 'Flash Only',
@@ -178,22 +207,6 @@ const kActions = <FlashAction>[
     cta: 'Flash without backup',
     danger: DangerLevel.hard,
     okMsg: 'Flashed & verified. No backup was taken.',
-    needsFirmware: true,
-  ),
-  FlashAction(
-    id: 'flash_slot0',
-    section: Section.advanced,
-    name: 'Flash slot 0',
-    script: 'flash_slot0',
-    sub:
-        'Backs up the chip first, then writes slot 0 only — boot, slot 1 and user-data stay untouched.',
-    chips: [
-      InfoChipData('backs up first', ChipKind.brand),
-      InfoChipData('identity-safe', ChipKind.ok),
-    ],
-    cta: 'Flash slot 0',
-    danger: DangerLevel.soft,
-    okMsg: 'Slot 0 flashed & verified. Identity intact.',
     needsFirmware: true,
   ),
   FlashAction(

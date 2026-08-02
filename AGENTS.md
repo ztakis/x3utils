@@ -160,10 +160,10 @@ checklist:
   verdict parsing and guided retries. Unix Rescue never created a toolkit log,
   and a direct script run without the suppression flag keeps its own transcript.
 - Flutter macOS Check protection passes `--launcher` and honors selected modes
-  A Default SWD, B C45 Clone, and C C45 Genuine. This intentionally differs
+  Default SWD, C45 Clone, and C45 Genuine. This intentionally differs
   from the standalone macOS CLI read-only check, where `-l` is globally disabled
   because CLI mode D cannot be graded reliably.
-- Preserve guided hold/count/release parsing for Flutter mode B RDP checks.
+- Preserve guided hold/count/release parsing for Flutter C45 Clone RDP checks.
 - Toolkit setup errors such as `Missing config.sh` are not contact failures and
   must not receive the generic SWD/C45 re-seat hint.
 
@@ -196,6 +196,17 @@ The script launchers persist connection-mode choices by rewriting `TARGET` in
 
 If target file names or paths change, update detection and rewrite logic at the
 same time.
+
+Mode letters are a CLI convention only. The three launchers letter their menus
+A/B/C/D; the Flutter GUI deliberately carries no letter and identifies modes by
+title and icon. The GUI's rail order (`kModeOrder`) differs from the launcher
+order, so a letter in the GUI would assert a mapping the scripts contradict. Do
+not reintroduce a `tag` getter. The GUI passes `Cfg.target(mode)` and a race
+flag, never a letter, so the two conventions never meet at runtime.
+
+`ConnectionMode`'s enum ORDER is persisted: `defaultConnMode` stores the index.
+Appending is safe; reordering silently repoints a saved startup default. Rail
+display order lives in `kModeOrder`, not the enum.
 
 ## Binary Validation Expectations
 
