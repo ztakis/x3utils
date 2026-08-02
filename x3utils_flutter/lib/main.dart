@@ -1299,73 +1299,105 @@ class _ModeTile extends StatelessWidget {
     final selected = c.mode == mode;
     return Padding(
       padding: const EdgeInsets.only(bottom: 7),
-      child: Material(
-        color: selected
-            ? AppColors.brand.withValues(alpha: 0.08)
-            : AppColors.panel,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => c.selectMode(mode),
-          onSecondaryTapDown: (d) => _showModeMenu(context, d.globalPosition),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
+      child: Stack(
+        children: [
+          Material(
+            color: selected
+                ? AppColors.brand.withValues(alpha: 0.08)
+                : AppColors.panel,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: selected
-                    ? AppColors.brand.withValues(alpha: 0.55)
-                    : AppColors.line,
+              onTap: () => c.selectMode(mode),
+              onSecondaryTapDown: (d) =>
+                  _showModeMenu(context, d.globalPosition),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: selected
+                        ? AppColors.brand.withValues(alpha: 0.55)
+                        : AppColors.line,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 26,
+                      height: 26,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? mode.color.withValues(alpha: 0.20)
+                            : const Color(0x0DFFFFFF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected
+                              ? mode.color.withValues(alpha: 0.55)
+                              : AppColors.line,
+                        ),
+                      ),
+                      child: Icon(
+                        mode.icon,
+                        size: 15,
+                        color: selected
+                            ? mode.color
+                            : mode.color.withValues(alpha: 0.45),
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            mode.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.txt,
+                            ),
+                          ),
+                          Text(
+                            mode.sub,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.dim,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.brand : const Color(0x0DFFFFFF),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: selected ? Colors.transparent : AppColors.line,
-                    ),
-                  ),
-                  child: Icon(
-                    mode.icon,
-                    size: 15,
-                    color: selected ? const Color(0xFF04120F) : AppColors.dim,
-                  ),
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        mode.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.txt,
-                        ),
-                      ),
-                      Text(
-                        mode.sub,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.dim,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
-        ),
+          // Same selected-rail marker the action tiles use, so "selected"
+          // reads identically in both rail groups.
+          if (selected)
+            Positioned(
+              left: 0,
+              top: 8,
+              bottom: 8,
+              child: Container(
+                width: 3,
+                decoration: BoxDecoration(
+                  color: AppColors.brand,
+                  borderRadius: BorderRadius.circular(3),
+                  boxShadow: [
+                    BoxShadow(color: AppColors.brand, blurRadius: 10),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

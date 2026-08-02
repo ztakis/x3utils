@@ -26,6 +26,17 @@ class AppColors {
   static const ok = Color(0xFF38E08A); // green
   static const danger = Color(0xFFFF4D5E); // red
 
+  // Connection-mode identity. These carry what the old A/B/C/D badge letter
+  // carried, so they must NOT follow the swappable accent: Silver and Sand are
+  // near-neutral, and a mode glyph tinted with them reads as gray-on-gray.
+  // Amber/orange/red are deliberately skipped — they already mean hold,
+  // release and destructive, and the action risk dots use that vocabulary.
+  static const modeDefault = Color(0xFF4FE3FF); // cyan
+  static const modeRace = Color(0xFF38E08A); // green (same value as ok, but
+  // this is identity, not a verdict — the two never share a widget)
+  static const modeClone = Color(0xFF9D6BFF); // violet
+  static const modeGenuine = Color(0xFF3D9BFF); // blue
+
   static void applyAccent(int index) {
     final a = kAccents[index.clamp(0, kAccents.length - 1)];
     brand = a.brand;

@@ -3259,6 +3259,23 @@ Linux/macOS get the same code but were not rebuilt this session.
   link still points at the `gui-v1.2.6` tag and was deliberately left alone —
   it should move when the 1.2.7 release is actually published, not before, or
   it becomes a dead link.
+- MODE GLYPHS GAINED FIXED IDENTITY COLOURS after the first build showed the
+  real defect: the selected badge filled with `AppColors.brand`, which is
+  swappable, and the DEFAULT accent (Silver, `accentNotifier` starts at 1) is
+  near-neutral `#C4CDD8`. Selected read as gray-on-gray; Sand has the same
+  problem. Accent-independent `AppColors.mode*` now tint the glyph (cyan /
+  green / violet / blue), while the TILE keeps its accent-driven selection
+  styling — identity and selection are separate channels, so a low-chroma
+  accent can no longer wash the badge out. Amber, orange and red were skipped
+  on purpose: they already mean hold, release and destructive, and the action
+  risk dots use that vocabulary. This restores what the dropped letter carried
+  without reintroducing a mapping the CLI contradicts.
+- SELECTED MODE TILES GAINED THE ACTION TILES' LEFT RAIL MARKER (3px brand bar
+  with glow, `Positioned` in a new `Stack`), so "selected" reads identically in
+  both rail groups. Kept on `AppColors.brand` rather than the mode's identity
+  colour on purpose: the tile's selected background and border are already
+  brand-driven, so selection stays one accent-coloured language and the glyph
+  remains the only identity channel.
 - RE-SEED CONFIRMED ON A REAL UPGRADE-IN-PLACE: the maintainer installed 1.2.7
   over the previous installation WITHOUT uninstalling, and the new rail defaults
   came through. This is the evidence that matters, because a clean install only

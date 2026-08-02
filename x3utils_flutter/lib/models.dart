@@ -18,6 +18,16 @@ const kModeOrder = <ConnectionMode>[
 ];
 
 extension ConnectionModeX on ConnectionMode {
+  /// Fixed identity colour, independent of the swappable accent — see
+  /// `AppColors.mode*`. The tile's selection styling stays accent-driven; this
+  /// only tints the glyph, so a low-chroma accent can't wash the badge out.
+  Color get color => switch (this) {
+    ConnectionMode.defaultSwd => AppColors.modeDefault,
+    ConnectionMode.cloneC45 => AppColors.modeClone,
+    ConnectionMode.genuineC45 => AppColors.modeGenuine,
+    ConnectionMode.powerRace => AppColors.modeRace,
+  };
+
   /// Tile badge glyph; replaced the old letter, which read as a CLI mode tag.
   IconData get icon => switch (this) {
     ConnectionMode.defaultSwd => Icons.bolt_rounded,
