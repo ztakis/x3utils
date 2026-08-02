@@ -503,10 +503,10 @@ void main(List<String> args) {
     ) => emit(name, writeZipEntries(entries), 'zip3', knob, expected);
 
     emitZip(
-      '15a_zip3_schema2.zip',
+      '15a_zip32_metadata_on_legacy_payload.zip',
       editInfo(srcEntries, (m) => m['schemaVersion'] = 2),
-      'schemaVersion = 2',
-      'reject: unsupported schemaVersion',
+      'schemaVersion = 2 but legacy encrypted members/metadata remain',
+      'reject: zip3.2 must be plaintext, not encrypted',
     );
     emitZip(
       '15b_zip3_no_infojson.zip',

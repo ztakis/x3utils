@@ -14,17 +14,23 @@ enum Zip3UnpackPolicy {
   /// existing X3 model, board, and payload-banner checks.
   flash,
 
-  /// Firmware is only being decrypted to a local file: additionally accepts
-  /// X3 BMS/BLE packages and does not infer flashability from payload size.
+  /// Firmware is only being recovered to a local file: additionally accepts X3
+  /// BMS/BLE packages and does not infer flashability from payload size.
   extract,
+}
+
+enum Zip3Format { rev2, legacy }
+
+extension Zip3FormatLabel on Zip3Format {
+  String get label => this == Zip3Format.rev2 ? 'zip 3.2' : 'zip 3';
 }
 
 /// Dart port of ScooterHacking's fw-zip-package-v3 `Python/pack.py`:
 /// https://github.com/scooterhacking/fw-zip-package-v3
 ///
-/// Builds a "v3" firmware ZIP: a plain `FIRM.bin` and/or a NinebotTEA-encrypted
-/// `FIRM.bin.enc`, plus an `info.json` metadata file (MD5s included) and an
-/// optional `params.txt`.
+/// Builds both current plaintext zip3.2 packages and legacy NinebotTEA zip3
+/// packages. The generic [makeZipV3] method remains the legacy upstream port;
+/// production Slice/Pack calls default to [makeZipV32].
 ///
 /// The ZIP bytes are NOT expected to be identical to Python's `zipfile` output
 /// (headers, compression level, and timestamps differ). Equivalence is at the
@@ -37,6 +43,15 @@ class PackV3 {
   // separate, stricter VCU/MCU allow-list in unpackV3().
   static const Set<String> allowedTypeFlags = {'VCU', 'MCU', 'BMS', 'BLE'};
   static const (int, int) modelLengthRange = (1, 10);
+  static const int maxArchiveMembers = 16;
+  static const int maxInfoBytes = 64 * 1024;
+  static const int maxPayloadBytes = 16 * 1024 * 1024;
+  static const int maxExpandedBytes = 32 * 1024 * 1024;
+  static const Set<String> _reservedMembers = {
+    'info.json',
+    'FIRM.bin',
+    'FIRM.bin.enc',
+  };
 
   // ── Validation (mirrors the validate_* functions) ──────────────────────────
 
@@ -152,6 +167,43 @@ class PackV3 {
     return Uint8List.fromList(bytes);
   }
 
+  /// Create the rev2 (zip 3.2) package used by current upstream tooling.
+  /// The payload is plaintext and its scalar MD5 covers `FIRM.bin` exactly.
+  /// Metadata and archive member order intentionally match the standalone
+  /// rev2 specification: `info.json` first, then `FIRM.bin`.
+  static Uint8List makeZipV32({
+    required List<int> data,
+    required String name,
+    required String typeFlag,
+    required String model,
+    required List<String> boards,
+  }) {
+    final type = typeFlag.trim().toUpperCase();
+    validateModel(model);
+    validateBoards(boards);
+    validateTypeFlag(type);
+
+    final infoJson = <String, dynamic>{
+      'schemaVersion': 2,
+      'firmware': <String, dynamic>{
+        'displayName': name,
+        'models': [model],
+        'type': type.toLowerCase(),
+        'compatible': boards,
+        'md5': md5Hex(data),
+      },
+    };
+    final archive = Archive()
+      ..add(
+        ArchiveFile.string(
+          'info.json',
+          const JsonEncoder.withIndent('  ').convert(infoJson),
+        ),
+      )
+      ..add(ArchiveFile.bytes('FIRM.bin', data));
+    return Uint8List.fromList(ZipEncoder().encode(archive));
+  }
+
   /// Lowercase MD5 hex digest (matches `hashlib.md5(...).hexdigest()`).
   static String md5Hex(List<int> data) => md5.convert(data).toString();
 
@@ -184,14 +236,14 @@ class PackV3 {
   /// 1. recover the slot-0 payload length from the device's `ZP` record
   ///    ([Zp.payloadFromDump], fail-closed for a missing/invalid record — no
   ///    guessed trim; a structurally valid but stale record is not detectable);
-  /// 2. pack it with [makeZipV3] as an encrypted, MD5'd package
-  ///    (`FIRM.bin.enc` + `info.json`) in the format intended for the BLE app's
-  ///    "Load from file". The BLE app must still confirm acceptance.
+  /// 2. package it as zip3.2 by default (`info.json` + plaintext `FIRM.bin`,
+  ///    MD5-verified), or as explicitly selected legacy encrypted zip3. The BLE
+  ///    app must still confirm acceptance.
   ///
   /// `compatible` is derived the way real packages do: a VCU is model-specific
   /// (`<model>_VCU_AT32`); an MCU is model-agnostic and always ships on the
   /// generic `x3_MCU_AT32` board (its `model` field is still a concrete label).
-  /// [enforceModel] is the operator's checkbox. [displayName] fills the
+  /// [enforceModel] is used only by the legacy format. [displayName] fills the
   /// `info.json` displayName; when null/blank it defaults to `<model>_<TYPE>`.
   /// Throws a [FormatException] for an unsupported selection or an unreadable
   /// ZP length record.
@@ -201,6 +253,7 @@ class PackV3 {
     required String model,
     required bool enforceModel,
     String? displayName,
+    Zip3Format format = Zip3Format.rev2,
   }) {
     final t = type.trim().toUpperCase();
     final m = model.trim().toLowerCase();
@@ -243,6 +296,7 @@ class PackV3 {
       model: m,
       enforceModel: enforceModel,
       displayName: displayName,
+      format: format,
     );
   }
 
@@ -254,13 +308,14 @@ class PackV3 {
   /// and (when supplied) the operator-declared identity. BMS/BLE remain
   /// bannerless/manual: their observed size ranges are not identity evidence.
   ///
-  /// The modulo check is required for byte-exact NinebotTEA round trips. The
-  /// reference format cannot encode the original padding length, so any input
-  /// other than `8n + 4` would unpack with extra zero bytes.
+  /// The modulo check applies only to legacy NinebotTEA. That format cannot
+  /// encode the original padding length, so an input other than `8n + 4` would
+  /// unpack with extra zero bytes. Plaintext zip3.2 preserves every length.
   static void validatePayloadForPack(
     List<int> payload, {
     String? type,
     String? model,
+    Zip3Format format = Zip3Format.rev2,
   }) {
     if (payload.length == Firmware.expectedSize) {
       final fullIdentity = DeviceSpec.describeBin(payload, slotBin: false);
@@ -272,7 +327,7 @@ class PackV3 {
       }
     }
 
-    if (payload.length % 8 != 4) {
+    if (format == Zip3Format.legacy && payload.length % 8 != 4) {
       throw FormatException(
         'Payload size must be 4 bytes more than a multiple of 8 for an exact '
         'NinebotTEA round trip. This file is ${payload.length} bytes '
@@ -327,6 +382,7 @@ class PackV3 {
     required String model,
     required bool enforceModel,
     String? displayName,
+    Zip3Format format = Zip3Format.rev2,
   }) {
     final t = type.trim().toUpperCase();
     final m = model.trim().toLowerCase();
@@ -338,7 +394,7 @@ class PackV3 {
         'x3utils supports ${DeviceSpec.modelList()} only.',
       );
     }
-    validatePayloadForPack(payload, type: t, model: m);
+    validatePayloadForPack(payload, type: t, model: m, format: format);
 
     return _finishBuild(
       payload: payload,
@@ -346,16 +402,18 @@ class PackV3 {
       model: m,
       enforceModel: enforceModel,
       displayName: displayName,
+      format: format,
     );
   }
 
   /// Shared tail of the build paths: derive the board, resolve the
-  /// display name, and pack the payload as an encrypted, MD5'd package.
+  /// display name, and pack the payload in the selected format.
   static Zip3BuildResult _finishBuild({
     required List<int> payload,
     required String type,
     required String model,
     required bool enforceModel,
+    required Zip3Format format,
     String? displayName,
   }) {
     final board = switch (type) {
@@ -369,15 +427,23 @@ class PackV3 {
         ? displayName.trim()
         : '${model}_$type';
 
-    final zip = makeZipV3(
-      data: payload,
-      name: name,
-      typeFlag: type,
-      model: model,
-      boards: [board],
-      enforceModel: enforceModel,
-      enc: 'encrypted',
-    );
+    final zip = format == Zip3Format.rev2
+        ? makeZipV32(
+            data: payload,
+            name: name,
+            typeFlag: type,
+            model: model,
+            boards: [board],
+          )
+        : makeZipV3(
+            data: payload,
+            name: name,
+            typeFlag: type,
+            model: model,
+            boards: [board],
+            enforceModel: enforceModel,
+            enc: 'encrypted',
+          );
 
     return Zip3BuildResult(
       zipBytes: zip,
@@ -385,32 +451,77 @@ class PackV3 {
       type: type,
       displayName: name,
       payloadLength: payload.length,
+      format: format,
     );
   }
 
-  // ── Unpacking (the inverse: read a v3 ZIP, hand back flashable firmware) ────
+  // ── Unpacking (dual reader for legacy zip3 and plaintext zip3.2) ───────────
 
-  /// Open a zip3 firmware package and return the decrypted firmware, ready to
-  /// flash. A zip3 is defined as **encrypted and MD5'd**, so this is strict:
-  ///
-  /// 1. readable ZIP with `info.json`, `schemaVersion == 1`;
-  /// 2. metadata whose `compatible` board agrees with its model/type and the
-  ///    selected [policy];
-  /// 3. a `FIRM.bin.enc` member (a plain `FIRM.bin` alone is not a zip3 and is
-  ///    rejected — the point of zip3 is the encryption);
-  /// 4. a matching `md5.enc` in `info.json` — the payload is hashed and checked
-  ///    before it is decrypted;
-  /// 5. NinebotTEA decrypt, whose internal checksum guards the plaintext;
-  /// 6. for VCU/MCU, a firmware banner that agrees with package metadata.
-  ///
-  /// The decrypted bytes are returned as-is (identical to `ninebottea decrypt`),
-  /// including NinebotTEA's canonical trailing pad. Throws [FormatException] for
-  /// anything that fails the above.
+  /// Inspect the central directory before any member is decompressed. This
+  /// bounds standalone extraction while still allowing real multi-megabyte BLE
+  /// packages, and rejects duplicate names at the trust boundary.
+  static void _preflightArchive(List<int> zipBytes) {
+    final ZipDirectory directory;
+    try {
+      directory = ZipDirectory()..read(InputMemoryStream(zipBytes));
+    } catch (_) {
+      throw const FormatException('Not a readable ZIP archive.');
+    }
+    final headers = directory.fileHeaders;
+    if (directory.filePosition < 0 ||
+        headers.length != directory.totalCentralDirectoryEntries) {
+      throw const FormatException('Not a complete ZIP archive.');
+    }
+    if (headers.length > maxArchiveMembers) {
+      throw FormatException(
+        'ZIP archive has ${headers.length} members; the limit is '
+        '$maxArchiveMembers.',
+      );
+    }
+
+    var total = 0;
+    final counts = <String, int>{};
+    for (final header in headers) {
+      final size = header.uncompressedSize;
+      if (size < 0) {
+        throw const FormatException('ZIP archive has an invalid member size.');
+      }
+      total += size;
+      if (total > maxExpandedBytes) {
+        throw FormatException(
+          'ZIP archive expands beyond the $maxExpandedBytes-byte limit.',
+        );
+      }
+      counts.update(header.filename, (value) => value + 1, ifAbsent: () => 1);
+      if (header.filename == 'info.json' && size > maxInfoBytes) {
+        throw FormatException(
+          'info.json exceeds the $maxInfoBytes-byte limit.',
+        );
+      }
+      if ((header.filename == 'FIRM.bin' ||
+              header.filename == 'FIRM.bin.enc') &&
+          size > maxPayloadBytes) {
+        throw FormatException(
+          '${header.filename} exceeds the $maxPayloadBytes-byte limit.',
+        );
+      }
+    }
+    for (final name in _reservedMembers) {
+      if ((counts[name] ?? 0) > 1) {
+        throw FormatException('ZIP archive contains duplicate $name members.');
+      }
+    }
+  }
+
+  /// Open either a legacy encrypted zip3 (`schemaVersion == 1`) or current
+  /// plaintext zip3.2 (`schemaVersion == 2`). Both paths require an exact MD5,
+  /// consistent model/type/board metadata, and matching VCU/MCU banner evidence.
   static UnpackedV3 unpackV3(
     List<int> zipBytes, {
     List<int>? key,
     Zip3UnpackPolicy policy = Zip3UnpackPolicy.flash,
   }) {
+    _preflightArchive(zipBytes);
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(zipBytes);
@@ -420,7 +531,9 @@ class PackV3 {
 
     final infoFile = archive.findFile('info.json');
     if (infoFile == null) {
-      throw const FormatException('Missing info.json — not a v3 package.');
+      throw const FormatException(
+        'Missing info.json — not a zip3 or zip3.2 package.',
+      );
     }
     Map<String, dynamic> info;
     try {
@@ -428,9 +541,10 @@ class PackV3 {
     } catch (_) {
       throw const FormatException('info.json is not valid JSON.');
     }
-    if (info['schemaVersion'] != 1) {
+    final schemaVersion = info['schemaVersion'];
+    if (schemaVersion != 1 && schemaVersion != 2) {
       throw FormatException(
-        'Unsupported schemaVersion: ${info['schemaVersion']}.',
+        'Unsupported ZIP package schemaVersion: $schemaVersion.',
       );
     }
 
@@ -439,9 +553,47 @@ class PackV3 {
       throw const FormatException('info.json has no firmware record.');
     }
 
-    final model = fw['model']?.toString().trim();
-    if (model == null || model.isEmpty) {
-      throw const FormatException('info.json has no firmware.model.');
+    final String model;
+    if (schemaVersion == 1) {
+      final value = fw['model'];
+      if (value is! String || value.trim().isEmpty) {
+        throw const FormatException('info.json has no firmware.model.');
+      }
+      model = value.trim();
+    } else {
+      final modelsValue = fw['models'];
+      final scalarValue = fw['model'];
+      String? arrayModel;
+      if (modelsValue != null) {
+        if (modelsValue is! List ||
+            modelsValue.length != 1 ||
+            modelsValue.single is! String ||
+            (modelsValue.single as String).trim().isEmpty) {
+          throw const FormatException(
+            'zip3.2 firmware.models must contain exactly one model.',
+          );
+        }
+        arrayModel = (modelsValue.single as String).trim();
+      }
+      final scalarModel = scalarValue is String && scalarValue.trim().isNotEmpty
+          ? scalarValue.trim()
+          : null;
+      if (arrayModel == null && scalarModel == null) {
+        throw const FormatException('info.json has no firmware.models model.');
+      }
+      if (arrayModel != null &&
+          scalarModel != null &&
+          arrayModel.toLowerCase() != scalarModel.toLowerCase()) {
+        throw const FormatException(
+          'zip3.2 firmware.model and firmware.models disagree.',
+        );
+      }
+      model = arrayModel ?? scalarModel!;
+    }
+    try {
+      validateModel(model);
+    } on ArgumentError catch (e) {
+      throw FormatException(e.message?.toString() ?? 'Invalid model.');
     }
     final type = fw['type']?.toString().trim().toUpperCase();
     final allowedTypes = policy == Zip3UnpackPolicy.flash
@@ -498,37 +650,78 @@ class PackV3 {
       );
     }
 
-    // zip3 must carry the encrypted payload.
-    final encFile = archive.findFile('FIRM.bin.enc');
-    if (encFile == null) {
-      throw const FormatException(
-        'No FIRM.bin.enc — not an encrypted zip3 package.',
-      );
+    final Uint8List firmware;
+    final String source;
+    final Zip3Format format;
+    if (schemaVersion == 2) {
+      if (archive.findFile('FIRM.bin.enc') != null) {
+        throw const FormatException(
+          'zip3.2 must not contain encrypted FIRM.bin.enc.',
+        );
+      }
+      if (fw['encryption'] != null) {
+        throw const FormatException(
+          'zip3.2 must not declare firmware.encryption.',
+        );
+      }
+      final plainFile = archive.findFile('FIRM.bin');
+      if (plainFile == null) {
+        throw const FormatException('zip3.2 has no plaintext FIRM.bin.');
+      }
+      final declaredMd5 = fw['md5'];
+      if (declaredMd5 is! String ||
+          !RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(declaredMd5)) {
+        throw const FormatException(
+          'info.json has no valid scalar firmware.md5.',
+        );
+      }
+      firmware = Uint8List.fromList(plainFile.content);
+      if (md5Hex(firmware) != declaredMd5.toLowerCase()) {
+        throw const FormatException(
+          'zip3.2 FIRM.bin failed its MD5 check — package is corrupt.',
+        );
+      }
+      source = 'FIRM.bin';
+      format = Zip3Format.rev2;
+    } else {
+      if (fw['encryption'] != 'encrypted') {
+        throw const FormatException(
+          'Legacy zip3 must declare firmware.encryption as encrypted.',
+        );
+      }
+      final encFile = archive.findFile('FIRM.bin.enc');
+      if (encFile == null) {
+        throw const FormatException(
+          'Legacy zip 3 has no encrypted FIRM.bin.enc.',
+        );
+      }
+      final md5map = fw['md5'];
+      final md5enc = (md5map is Map && md5map['enc'] is String)
+          ? md5map['enc'] as String
+          : null;
+      if (md5enc == null || !RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(md5enc)) {
+        throw const FormatException(
+          'Legacy zip 3 info.json has no valid md5.enc.',
+        );
+      }
+      final encBytes = Uint8List.fromList(encFile.content);
+      if (md5Hex(encBytes) != md5enc.toLowerCase()) {
+        throw const FormatException(
+          'Legacy zip 3 FIRM.bin.enc failed its MD5 check — package is corrupt.',
+        );
+      }
+      try {
+        firmware = NinebotTea(key: key).decrypt(encBytes);
+      } on FormatException catch (e) {
+        throw FormatException('Legacy zip 3 decryption failed: ${e.message}');
+      }
+      source = 'FIRM.bin.enc (decrypted)';
+      format = Zip3Format.legacy;
     }
-
-    // zip3 must be MD5'd: require md5.enc and verify it before decrypting.
-    final md5map = fw['md5'];
-    final md5enc = (md5map is Map && md5map['enc'] is String)
-        ? md5map['enc'] as String
-        : null;
-    if (md5enc == null) {
-      throw const FormatException(
-        'info.json has no md5.enc — package is not MD5-verified.',
-      );
-    }
-    final encBytes = Uint8List.fromList(encFile.content);
-    if (md5Hex(encBytes) != md5enc) {
-      throw const FormatException(
-        'FIRM.bin.enc failed its MD5 check — package is corrupt.',
-      );
-    }
-
-    final firmware = NinebotTea(
-      key: key,
-    ).decrypt(encBytes); // TEA checksum inside
 
     // VCU/MCU carry the known X3 banner. BMS/BLE use different image formats,
-    // so extraction relies on package metadata + MD5 + TEA checksum instead.
+    // so extraction relies on package metadata plus the selected format's
+    // integrity checks instead.
     if (type == 'VCU' || type == 'MCU') {
       final banner = DeviceSpec.verifyBanner(firmware, model, type!);
       if (!banner.consistent) {
@@ -538,8 +731,11 @@ class PackV3 {
 
     return UnpackedV3(
       firmware: firmware,
-      source: 'FIRM.bin.enc (decrypted)',
+      source: source,
       info: info,
+      format: format,
+      normalizedModel: model,
+      normalizedType: type!,
     );
   }
 }
@@ -565,6 +761,7 @@ class Zip3BuildResult {
     required this.type,
     required this.displayName,
     required this.payloadLength,
+    this.format = Zip3Format.rev2,
   });
 
   /// The complete zip3 archive, ready to write to disk.
@@ -579,17 +776,22 @@ class Zip3BuildResult {
 
   /// Length of the exact slot-0 payload that was packed.
   final int payloadLength;
+
+  final Zip3Format format;
 }
 
-/// Result of [PackV3.unpackV3]: the decrypted firmware plus package metadata.
+/// Result of [PackV3.unpackV3]: plaintext firmware plus package metadata.
 class UnpackedV3 {
   const UnpackedV3({
     required this.firmware,
     required this.source,
     required this.info,
+    required this.format,
+    required this.normalizedModel,
+    required this.normalizedType,
   });
 
-  /// Decrypted firmware bytes, ready to write to flash.
+  /// Plaintext firmware bytes, ready for extraction or a guarded flash path.
   final Uint8List firmware;
 
   /// Which member produced [firmware] (for logging).
@@ -598,20 +800,25 @@ class UnpackedV3 {
   /// Parsed `info.json`.
   final Map<String, dynamic> info;
 
+  final Zip3Format format;
+  final String normalizedModel;
+  final String normalizedType;
+
   String get displayName {
     final fw = info['firmware'];
     final n = (fw is Map) ? fw['displayName'] : null;
     return (n is String && n.isNotEmpty) ? n : 'firmware';
   }
 
-  /// `info.json` firmware.model (accepted by [DeviceSpec] during unpack).
-  String get model => (info['firmware'] as Map?)?['model']?.toString() ?? '';
+  /// Normalized scalar model accepted by [DeviceSpec] during unpack. Rev2's
+  /// `models` array is deliberately required to contain exactly one entry.
+  String get model => normalizedModel;
 
   /// `info.json` firmware.type (accepted by [DeviceSpec] during unpack).
-  String get type => (info['firmware'] as Map?)?['type']?.toString() ?? '';
+  String get type => normalizedType;
 
-  /// Informational `info.json` firmware.enforceModel value. It is displayed but
-  /// deliberately not used as an extraction acceptance gate.
+  /// Informational legacy `firmware.enforceModel` value. It is deliberately not
+  /// used as an extraction acceptance gate.
   bool? get enforceModel {
     final value = (info['firmware'] as Map?)?['enforceModel'];
     return value is bool ? value : null;
@@ -622,4 +829,9 @@ class UnpackedV3 {
     final value = (info['firmware'] as Map?)?['encryption'];
     return value is String && value.trim().isNotEmpty ? value.trim() : null;
   }
+
+  String get formatLabel => format.label;
+
+  String get protectionLabel =>
+      format == Zip3Format.rev2 ? 'plaintext + MD5' : 'NinebotTEA + MD5';
 }

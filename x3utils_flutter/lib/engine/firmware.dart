@@ -63,7 +63,7 @@ class Firmware {
   static const int expectedSize = 131072; // 128 KB
   static const int maxZip3Bytes = 70 * 1024; // reject before readAsBytes()
 
-  /// Acceptable size window for a slot-0 bin, measured on the **decrypted** bin
+  /// Acceptable size window for a slot-0 bin, measured on the plaintext bin
   /// (what is actually written at 0x08001000). **PROVISIONAL placeholders** —
   /// change these two numbers once the exact slot-0 region spec is confirmed.
   /// Observed real firmware is ~57–61 KB; outside the window is a HARD reject
@@ -258,9 +258,8 @@ class Firmware {
   }
 
   /// Slot-0 bins are NOT full images: reject a 128 KB image, then enforce the
-  /// provisional decrypted-size window [slot0MinBytes]..[slot0MaxBytes]. [len]
-  /// is the decrypted bin size (zip3: the post-decrypt temp .bin; Choose .bin:
-  /// the file itself).
+  /// provisional plaintext-size window [slot0MinBytes]..[slot0MaxBytes]. [len]
+  /// is the recovered payload size (ZIP import or a directly chosen .bin).
   static FirmwareCheck validateSlot(String path) {
     final base = validate(path, requireSize: false);
     if (!base.ok) return base;
@@ -268,7 +267,7 @@ class Firmware {
     return _validateSlotLength(len);
   }
 
-  /// Validate a decrypted slot-0 payload before it is written to disk.
+  /// Validate a plaintext slot-0 payload before it is written to disk.
   /// ZIP3 unpack uses this so an invalid package can never create or replace
   /// the requested output file.
   static FirmwareCheck validateSlotBytes(List<int> bytes) {
@@ -304,17 +303,17 @@ class Firmware {
   /// Cheap ZIP3 container gate. Flash import retains the 70 KiB cap because it
   /// only accepts slot-sized VCU/MCU payloads. Standalone extraction passes
   /// [enforceFlashSizeLimit] false because legitimate BLE packages are much
-  /// larger and their encrypted member is integrity-checked by MD5.
+  /// larger and their payload member is integrity-checked by MD5.
   static FirmwareCheck validateZip3Container(
     String path, {
     bool enforceFlashSizeLimit = true,
   }) {
     if (path.trim().isEmpty) {
-      return FirmwareCheck.fail('No ZIP3 package selected.');
+      return FirmwareCheck.fail('No zip3 or zip3.2 package selected.');
     }
     final f = File(path);
     if (!f.existsSync()) {
-      return FirmwareCheck.fail('ZIP3 package does not exist.');
+      return FirmwareCheck.fail('The zip3/zip3.2 package does not exist.');
     }
     if (p.extension(path).toLowerCase() != '.zip') {
       return FirmwareCheck.fail('Invalid file type. Only .zip is allowed.');
@@ -322,7 +321,7 @@ class Firmware {
     final len = f.lengthSync();
     if (enforceFlashSizeLimit && len > maxZip3Bytes) {
       return FirmwareCheck.fail(
-        'ZIP is too large ($len bytes). ZIP3 firmware packages must be '
+        'ZIP is too large ($len bytes). Slot-0 zip3/zip3.2 packages must be '
         '$maxZip3Bytes bytes or smaller.',
       );
     }
@@ -378,7 +377,7 @@ class Firmware {
     }
   }
 
-  /// Firmware decrypted from a zip3 package, kept under
+  /// Plaintext firmware recovered from a zip3 or zip3.2 package, kept under
   /// `<root>/unpacked_zip3` so the flash flow can read it by path
   /// and the user can re-flash it later via Choose .bin. [name] seeds the
   /// filename (sanitised); [prefix] follows the usual rule.

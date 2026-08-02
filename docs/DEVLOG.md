@@ -3721,3 +3721,47 @@ of pre-change Linux, so this is close to a mechanical replay of the Linux commit
 - WHAT WAS AND WAS NOT DONE: no code was written and `lib/engine/ninebot_tea.dart`
   and `lib/engine/pack_zip3.dart` are untouched. Implementation is deliberately
   not-today and is expected to happen on this same Windows box.
+
+## 2026-08-02 — zip3.2 rev2 implemented in GUI v1.2.7
+
+- SUPERSEDES the implementation-deferred state above and its proposed
+  member-presence dispatch. The implemented reader rejects hybrid packages:
+  schema 1 requires the legacy encrypted `FIRM.bin.enc` plus `md5.enc`, while
+  schema 2 requires plaintext `FIRM.bin`, a scalar plaintext MD5, no encrypted
+  member and no `encryption` field. Both formats keep the same model/type/board
+  and VCU/MCU banner checks.
+- Slice and Pack now write zip3.2 by default. The archive contains exactly
+  `info.json` then `FIRM.bin`; the rev2 firmware fields are emitted in the
+  specified order `displayName`, `models`, `type`, `compatible`, `md5`, with a
+  lowercase type and exactly one declared model. The split Pack button offers
+  legacy "Pack zip 3" as the alternative without starting a run; only that
+  selection shows `enforceModel`. SHU compat's optional automatic package also
+  inherits the zip3.2 default.
+- Unpack, guarded Flash slot 0, and Flash Only slot 0 all use the permanent dual
+  reader. Current schema 2 `models: [model]` is required to resolve to exactly
+  one model; the earlier schema 2 scalar `model` shape and optional
+  `enforceModel` remain readable. Empty/multiple arrays and disagreement between
+  scalar and array forms refuse rather than guess. MCU remains one explicitly
+  declared model with the generic `x3_MCU_AT32` compatible board.
+- Plaintext rev2 Pack no longer applies the NinebotTEA `8n + 4` size rule;
+  legacy Pack still does. XTEA was not added and `ninebot_tea.dart` was not
+  changed.
+- ZIP decoding now preflights the central directory before member contents are
+  expanded: at most 16 members, 64 KiB `info.json`, 16 MiB per firmware member,
+  32 MiB total expanded data, and no duplicate reserved member names. Flash ZIP
+  import validates the recovered slot bytes before it creates the temporary
+  output path.
+- Offline verification on Windows: `flutter analyze` passed; the complete
+  Flutter suite passed 206/206. The engine also accepted the two supplied real
+  rev2 packages as exact plaintext: G3 MCU 1.5.7 at 59188 bytes and G3 VCU 1.6.2
+  at 60356 bytes, with metadata, MD5 and banner checks all passing. This is
+  parser/package-shape evidence only: no firmware was flashed, no package was
+  BLE-loaded, and generated-package acceptance in the BLE app remains required.
+- Real-target guarded-input evidence on Windows GUI v1.2.7: with a ZT3 VCU on
+  Default SWD, Flash slot 0 loaded the G3 VCU rev2 package, reported zip3.2 in
+  the snackbar, saved the mandatory backup, identified the installed firmware
+  as ZT3 VCU, and aborted before write on the cross-model VCU mismatch. A second
+  run with the G3 MCU rev2 package likewise saved its backup and aborted before
+  write on the VCU/MCU mismatch. These are successful safety-gate checks, not
+  successful flashes. A matching-target rev2 slot-0 write and BLE Load from file
+  remain pending.

@@ -7,6 +7,7 @@ import 'package:file_selector/file_selector.dart';
 import 'app_controller.dart';
 import 'engine/firmware.dart';
 import 'engine/firmware_inspection.dart';
+import 'engine/pack_zip3.dart';
 import 'engine/trash.dart';
 import 'models.dart';
 import 'theme.dart';
@@ -314,10 +315,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Slot-0 only: load a v3 firmware .zip — the controller validates the
-  /// package, decrypts the payload, and remembers the extracted slot bin.
+  /// Slot-0 only: load a zip3/zip3.2 firmware .zip — the controller validates
+  /// the package, recovers its plaintext, and remembers the slot bin.
   Future<void> _pickFirmwareZip() async {
-    const group = XTypeGroup(label: 'v3 package', extensions: ['zip']);
+    const group = XTypeGroup(label: 'zip3 package', extensions: ['zip']);
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
     final res = await c.loadSlotFirmwareFromZip(file.path);
@@ -340,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Standalone offline unpack: inspect a ZIP3 and populate its package details.
   /// No output is written until the operator presses Unpack zip3.
   Future<void> _pickUnpackZip() async {
-    const group = XTypeGroup(label: 'v3 package', extensions: ['zip']);
+    const group = XTypeGroup(label: 'zip3 package', extensions: ['zip']);
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
     final res = await c.selectZip3ForUnpack(file.path);
@@ -2130,13 +2131,8 @@ class _UnpackZip3PageState extends State<_UnpackZip3Page> {
     final nameCheck = Firmware.validateUnpackedFilename(c.unpackOutputName);
     final unpackInfo = c.unpackPayloadLength == null
         ? null
-        : '${c.unpackPayloadLength} bytes · '
-              'enforceModel ${c.unpackEnforceModel == null
-                  ? '—'
-                  : c.unpackEnforceModel!
-                  ? 'yes'
-                  : 'no'} · '
-              'encryption ${c.unpackEncryption?.toLowerCase() ?? '—'}';
+        : '${c.unpackPayloadLength} bytes · ${c.unpackFormatLabel} · '
+              '${c.unpackProtectionLabel}';
     return Align(
       alignment: const Alignment(0, -0.08),
       child: SingleChildScrollView(
@@ -2169,7 +2165,7 @@ class _UnpackZip3PageState extends State<_UnpackZip3Page> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Inspect the package, then decrypt its firmware to a local '
+                  'Inspect the package, then recover its firmware to a local '
                   '.bin for editing or flashing.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -2751,16 +2747,18 @@ class _StageButtons extends StatelessWidget {
     switch (c.stage) {
       case StageState.idle:
         children.add(
-          _PillButton(
-            label: c.action.cta,
-            onTap: c.canStart ? onStart : null,
-            gradient: c.action.danger == DangerLevel.hard
-                ? const [Color(0xFFFF6472), AppColors.danger]
-                : [AppColors.brand, AppColors.brand2],
-            fg: c.action.danger == DangerLevel.hard
-                ? Colors.white
-                : const Color(0xFF04120F),
-          ),
+          c.actionId == 'make_zip3'
+              ? _Zip3PackButton(c: c, onStart: onStart)
+              : _PillButton(
+                  label: c.action.cta,
+                  onTap: c.canStart ? onStart : null,
+                  gradient: c.action.danger == DangerLevel.hard
+                      ? const [Color(0xFFFF6472), AppColors.danger]
+                      : [AppColors.brand, AppColors.brand2],
+                  fg: c.action.danger == DangerLevel.hard
+                      ? Colors.white
+                      : const Color(0xFF04120F),
+                ),
         );
         break;
       case StageState.hold:
@@ -3207,6 +3205,91 @@ class _PillButton extends StatelessWidget {
   }
 }
 
+/// Pack's primary action defaults to zip3.2. The arrow only changes the output
+/// format; choosing a menu item never starts the operation.
+class _Zip3PackButton extends StatelessWidget {
+  const _Zip3PackButton({required this.c, required this.onStart});
+
+  final AppController c;
+  final Future<void> Function() onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    const fg = Color(0xFF04120F);
+    final label = c.zip3Format == Zip3Format.rev2
+        ? 'Pack zip 3.2'
+        : 'Pack zip 3';
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [AppColors.brand, AppColors.brand2],
+          ),
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.brand2.withValues(alpha: 0.35),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Opacity(
+              opacity: c.canStart ? 1 : 0.45,
+              child: InkWell(
+                borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(999),
+                ),
+                onTap: c.canStart ? onStart : null,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 12, 16, 12),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Container(width: 1, height: 24, color: fg.withValues(alpha: 0.2)),
+            PopupMenuButton<Zip3Format>(
+              tooltip: 'Choose package format',
+              position: PopupMenuPosition.under,
+              color: AppColors.panel2,
+              onSelected: c.setZip3Format,
+              itemBuilder: (context) => [
+                CheckedPopupMenuItem(
+                  value: Zip3Format.rev2,
+                  checked: c.zip3Format == Zip3Format.rev2,
+                  child: const Text('Pack zip 3.2'),
+                ),
+                CheckedPopupMenuItem(
+                  value: Zip3Format.legacy,
+                  checked: c.zip3Format == Zip3Format.legacy,
+                  child: const Text('Pack zip 3'),
+                ),
+              ],
+              child: const Padding(
+                padding: EdgeInsets.fromLTRB(12, 12, 16, 12),
+                child: Icon(Icons.arrow_drop_down_rounded, color: fg, size: 20),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────── status bar
 
 class _StatusBar extends StatelessWidget {
@@ -3545,8 +3628,8 @@ class _FirmwareBar extends StatelessWidget {
 
     final hint = !has && flashOnly
         ? (slot0
-              ? 'Choose a slot-sized .bin or import a VCU/MCU ZIP3 package.'
-              : 'ZIP3 packages contain slot firmware — select Slot 0 only.')
+              ? 'Choose a slot-sized .bin or import a VCU/MCU zip3 or zip3.2 package.'
+              : 'zip3 and zip3.2 packages contain slot firmware — select Slot 0 only.')
         : null;
     return Container(
       constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
@@ -3690,8 +3773,8 @@ class _FlashOnlyScopeControl extends StatelessWidget {
 }
 
 /// Shared Slice/Pack identity form: operator-declared Type/Model (optionally
-/// preselected from a readable VCU/MCU banner), an enforce-model checkbox, and
-/// an editable package name.
+/// preselected from a readable VCU/MCU banner), the legacy-only enforce-model
+/// checkbox, and an editable package name.
 class _MakeZip3Form extends StatefulWidget {
   const _MakeZip3Form({required this.c});
   final AppController c;
@@ -3791,8 +3874,10 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
                   style: const TextStyle(fontSize: 12, color: AppColors.hold),
                 ),
               ],
-              const SizedBox(height: 10),
-              _EnforceModelToggle(c: c),
+              if (c.zip3Format == Zip3Format.legacy) ...[
+                const SizedBox(height: 10),
+                _EnforceModelToggle(c: c),
+              ],
               const SizedBox(height: 12),
               // The name box clones the dropdowns' fixed 44 px container
               // rather than using an InputDecorator: an outline TextField's
@@ -3913,7 +3998,7 @@ class _CompatZip3Toggle extends StatelessWidget {
             ),
             const SizedBox(width: 7),
             Text(
-              'Attempt to also make zip3',
+              'Attempt to also make zip 3.2',
               style: TextStyle(
                 fontSize: 12,
                 color: on ? AppColors.txt : AppColors.dim,
@@ -3926,8 +4011,8 @@ class _CompatZip3Toggle extends StatelessWidget {
   }
 }
 
-/// The "Enforce model" checkbox for Make zip3 — mirrors info.json's
-/// `enforceModel`; default on so a package only loads on its declared model.
+/// The legacy zip3 "Enforce model" checkbox. Zip3.2 uses `models` and has no
+/// `enforceModel` field, so the form hides this control for the default format.
 class _EnforceModelToggle extends StatelessWidget {
   const _EnforceModelToggle({required this.c});
   final AppController c;

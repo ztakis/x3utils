@@ -195,6 +195,130 @@ void main() {
       expect(unpacked.type, 'VCU');
     });
 
+    test('current zip3.2 shape passes both readers with exact plaintext', () {
+      final payload = _payloadWithBanner('SCOOTER_VCU_xxU2');
+      final zip = _zip32(payload, model: 'zt3', type: 'VCU');
+
+      for (final policy in Zip3UnpackPolicy.values) {
+        final unpacked = PackV3.unpackV3(zip, policy: policy);
+        expect(unpacked.format, Zip3Format.rev2);
+        expect(unpacked.model, 'zt3');
+        expect(unpacked.type, 'VCU');
+        expect(unpacked.source, 'FIRM.bin');
+        expect(unpacked.firmware, payload);
+        expect(unpacked.enforceModel, isNull);
+        expect(unpacked.encryption, isNull);
+      }
+    });
+
+    test('older schema2 scalar model shape remains readable', () {
+      final payload = _payloadWithBanner('SCOOTER_VCU_xxU2');
+      final zip = _zip32(
+        payload,
+        model: 'zt3',
+        type: 'VCU',
+        omitModels: true,
+        scalarModel: 'zt3',
+        enforceModel: true,
+      );
+
+      final unpacked = PackV3.unpackV3(zip);
+      expect(unpacked.format, Zip3Format.rev2);
+      expect(unpacked.model, 'zt3');
+      expect(unpacked.enforceModel, isTrue);
+      expect(unpacked.firmware, payload);
+    });
+
+    test('zip3.2 models must resolve to exactly one consistent model', () {
+      final payload = _payloadWithBanner('SCOOTER_VCU_xxU2');
+      for (final models in <List<String>>[
+        [],
+        ['zt3', 'g3'],
+      ]) {
+        expect(
+          () => PackV3.unpackV3(
+            _zip32(payload, model: 'zt3', type: 'VCU', models: models),
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('exactly one model'),
+            ),
+          ),
+        );
+      }
+      expect(
+        () => PackV3.unpackV3(
+          _zip32(
+            payload,
+            model: 'zt3',
+            type: 'VCU',
+            models: const ['zt3'],
+            scalarModel: 'g3',
+          ),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('disagree'),
+          ),
+        ),
+      );
+    });
+
+    test('zip3.2 requires plaintext-only payload and scalar MD5', () {
+      final payload = _payloadWithBanner('SCOOTER_VCU_xxU2');
+      expect(
+        () => PackV3.unpackV3(
+          _zip32(
+            payload,
+            model: 'zt3',
+            type: 'VCU',
+            md5Override: '00000000000000000000000000000000',
+          ),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('zip3.2 FIRM.bin failed its MD5'),
+          ),
+        ),
+      );
+      expect(
+        () => PackV3.unpackV3(
+          _zip32(payload, model: 'zt3', type: 'VCU', addEncryptedMember: true),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('must not contain encrypted'),
+          ),
+        ),
+      );
+    });
+
+    test('archive preflight rejects excess members before extraction', () {
+      final archive = Archive();
+      for (var i = 0; i <= PackV3.maxArchiveMembers; i++) {
+        archive.add(ArchiveFile.string('extra_$i.txt', 'x'));
+      }
+      final zip = Uint8List.fromList(ZipEncoder().encode(archive));
+      expect(
+        () => PackV3.unpackV3(zip),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('the limit is ${PackV3.maxArchiveMembers}'),
+          ),
+        ),
+      );
+    });
+
     test('every ZIP import rejects unsupported banner codes', () {
       for (final banner in ['SCOOTER_VCU_ZZZZ', 'SCOOTER_MCU_9999']) {
         final zip = _zip3(
@@ -308,7 +432,7 @@ void main() {
           isA<FormatException>().having(
             (e) => e.message,
             'message',
-            contains('MD5'),
+            contains('Legacy zip 3 FIRM.bin.enc failed its MD5'),
           ),
         ),
       );
@@ -334,7 +458,7 @@ void main() {
         addTearDown(() => temp.deleteSync(recursive: true));
         final zipFile = File(p.join(temp.path, 'valid.zip'))
           ..writeAsBytesSync(
-            _zip3(
+            _zip32(
               _payloadWithBanner('SCOOTER_VCU_xxU2'),
               model: 'zt3',
               type: 'VCU',
@@ -350,13 +474,19 @@ void main() {
         final result = await controller.selectZip3ForUnpack(zipFile.path);
 
         expect(result.ok, isTrue);
+        expect(
+          result.message,
+          'Ready to unpack zip 3.2 package test package (ZT3 VCU).',
+        );
         expect(controller.unpackZip3Path, zipFile.path);
         expect(controller.unpackDisplayName, 'test package');
         expect(controller.unpackModel, 'zt3');
         expect(controller.unpackType, 'VCU');
-        expect(controller.unpackPayloadLength, Firmware.slot0MinBytes + 4);
-        expect(controller.unpackEnforceModel, isTrue);
-        expect(controller.unpackEncryption, 'encrypted');
+        expect(controller.unpackPayloadLength, Firmware.slot0MinBytes);
+        expect(controller.unpackFormatLabel, 'zip 3.2');
+        expect(controller.unpackProtectionLabel, 'plaintext + MD5');
+        expect(controller.unpackEnforceModel, isNull);
+        expect(controller.unpackEncryption, isNull);
         expect(controller.unpackOutputName, 'zt3_vcu_valid.bin');
         expect(controller.canStart, isTrue);
         expect(temp.listSync().map((e) => p.basename(e.path)), ['valid.zip']);
@@ -420,36 +550,87 @@ void main() {
     });
 
     test(
-      'Flash Only loads a valid ZIP but does not claim a hardware match',
+      'invalid slot bytes are rejected before an output path is created',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final temp = Directory.systemTemp.createTempSync(
+          'x3utils_zip_prewrite_',
+        );
+        addTearDown(() {
+          Firmware.setRoot(null);
+          temp.deleteSync(recursive: true);
+        });
+        final payload = Uint8List.fromList(
+          List<int>.generate(2000, (i) => (i * 31 + 7) & 0xff),
+        );
+        const banner = 'SCOOTER_VCU_xxU2';
+        payload.setRange(0x400, 0x400 + banner.length, banner.codeUnits);
+        final zipFile = File(p.join(temp.path, 'too-small.zip'))
+          ..writeAsBytesSync(_zip32(payload, model: 'zt3', type: 'VCU'));
+        final root = Directory(p.join(temp.path, 'root'))..createSync();
+        final controller = AppController();
+        addTearDown(controller.dispose);
+        await Future<void>.delayed(Duration.zero);
+        controller.setX3utilsRoot(root.path);
+        controller.selectAction('flash_slot0');
+
+        final result = await controller.loadSlotFirmwareFromZip(zipFile.path);
+
+        expect(result.ok, isFalse);
+        expect(result.message, contains('too small for Slot 0'));
+        expect(controller.firmwarePath, isNull);
+        expect(
+          Directory(p.join(root.path, 'unpacked_zip3')).existsSync(),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'both slot-0 actions load zip3.2 without claiming a hardware match',
       () async {
         SharedPreferences.setMockInitialValues({});
         final temp = Directory.systemTemp.createTempSync('x3utils_zip_valid_');
         addTearDown(() => temp.deleteSync(recursive: true));
         final zipFile = File(p.join(temp.path, 'valid.zip'))
           ..writeAsBytesSync(
-            _zip3(
+            _zip32(
               _payloadWithBanner('SCOOTER_VCU_xxU2'),
               model: 'zt3',
               type: 'VCU',
             ),
           );
-        final controller = AppController();
-        addTearDown(() {
-          final unpacked = controller.firmwarePath;
-          if (unpacked != null && File(unpacked).existsSync()) {
-            File(unpacked).deleteSync();
+        for (final action in ['flash_slot0', 'flash_only']) {
+          final controller = AppController();
+          addTearDown(() {
+            final unpacked = controller.firmwarePath;
+            if (unpacked != null && File(unpacked).existsSync()) {
+              File(unpacked).deleteSync();
+            }
+            controller.dispose();
+          });
+
+          controller.selectAction(action);
+          if (action == 'flash_only') {
+            controller.setFlashOnlyScope(FlashOnlyScope.slot0);
           }
-          controller.dispose();
-        });
+          final result = await controller.loadSlotFirmwareFromZip(zipFile.path);
 
-        controller.selectAction('flash_only');
-        controller.setFlashOnlyScope(FlashOnlyScope.slot0);
-        final result = await controller.loadSlotFirmwareFromZip(zipFile.path);
-
-        expect(result.ok, isTrue);
-        expect(controller.firmwarePath, isNotNull);
-        expect(controller.firmwareInspection!.findings, isEmpty);
-        expect(controller.heroEyebrow, 'Compatibility warning');
+          expect(result.ok, isTrue, reason: action);
+          expect(
+            result.message,
+            'Loaded zip 3.2 package test package: '
+            '${Firmware.slot0MinBytes} bytes. '
+            'Package says: ZT3 · VCU.',
+            reason: action,
+          );
+          expect(controller.firmwarePath, isNotNull, reason: action);
+          expect(controller.firmwareInspection!.findings, isEmpty);
+          expect(
+            controller.heroEyebrow,
+            action == 'flash_only' ? 'Compatibility warning' : 'Slot 0 only',
+          );
+        }
       },
     );
   });
@@ -828,5 +1009,40 @@ Uint8List _zip3(
   final archive = Archive()
     ..add(ArchiveFile.bytes('FIRM.bin.enc', encrypted))
     ..add(ArchiveFile.string('info.json', jsonEncode(info)));
+  return Uint8List.fromList(ZipEncoder().encode(archive));
+}
+
+Uint8List _zip32(
+  Uint8List payload, {
+  required String model,
+  required String type,
+  List<String>? models,
+  bool omitModels = false,
+  String? scalarModel,
+  bool? enforceModel,
+  String? md5Override,
+  bool addEncryptedMember = false,
+}) {
+  final expectedBoard = switch (type.toUpperCase()) {
+    'MCU' => 'x3_MCU_AT32',
+    'BMS' => 'x3_BMS',
+    'BLE' => '${model.toLowerCase()}_BLE',
+    _ => '${model.toLowerCase()}_VCU_AT32',
+  };
+  final firmware = <String, dynamic>{'displayName': 'test package'};
+  if (!omitModels) firmware['models'] = models ?? [model];
+  if (scalarModel != null) firmware['model'] = scalarModel;
+  if (enforceModel != null) firmware['enforceModel'] = enforceModel;
+  firmware
+    ..['type'] = type.toLowerCase()
+    ..['compatible'] = [expectedBoard]
+    ..['md5'] = md5Override ?? PackV3.md5Hex(payload);
+  final info = <String, dynamic>{'schemaVersion': 2, 'firmware': firmware};
+  final archive = Archive()
+    ..add(ArchiveFile.string('info.json', jsonEncode(info)))
+    ..add(ArchiveFile.bytes('FIRM.bin', payload));
+  if (addEncryptedMember) {
+    archive.add(ArchiveFile.bytes('FIRM.bin.enc', [1, 2, 3, 4]));
+  }
   return Uint8List.fromList(ZipEncoder().encode(archive));
 }

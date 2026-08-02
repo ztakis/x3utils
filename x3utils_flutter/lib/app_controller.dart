@@ -204,7 +204,8 @@ class AppController extends ChangeNotifier {
   String? zip3Type; // null = operator has not chosen
   String?
   zip3Model; // 'zt3' | 'g3' | 'gt3' | 'f3' (null = operator hasn't chosen)
-  bool zip3EnforceModel = true; // info.json enforceModel checkbox
+  Zip3Format zip3Format = Zip3Format.rev2;
+  bool zip3EnforceModel = true; // legacy info.json enforceModel checkbox
   String zip3Name = ''; // editable displayName; blank → defaultZip3Name
 
   List<String> get zip3TypeOptions =>
@@ -212,7 +213,7 @@ class AppController extends ChangeNotifier {
       ? zip3PackTypes
       : zip3SliceTypes;
 
-  // Standalone ZIP3 unpack state. Selection validates and decrypts in memory
+  // Standalone ZIP3 unpack state. Selection validates and recovers in memory
   // for the details preview; Start re-reads and re-validates the source before
   // writing the requested local .bin.
   String? _unpackZip3Path;
@@ -229,6 +230,8 @@ class AppController extends ChangeNotifier {
   int? get unpackPayloadLength => _unpackZip3Package?.firmware.length;
   bool? get unpackEnforceModel => _unpackZip3Package?.enforceModel;
   String? get unpackEncryption => _unpackZip3Package?.encryption;
+  String? get unpackFormatLabel => _unpackZip3Package?.formatLabel;
+  String? get unpackProtectionLabel => _unpackZip3Package?.protectionLabel;
 
   void setZip3Type(String? t) {
     if (running) return;
@@ -245,6 +248,25 @@ class AppController extends ChangeNotifier {
   void setZip3EnforceModel(bool v) {
     if (running) return;
     zip3EnforceModel = v;
+    notifyListeners();
+  }
+
+  void setZip3Format(Zip3Format format) {
+    if (running || zip3Format == format) return;
+    zip3Format = format;
+    final path = firmwarePath;
+    if (path != null && zip3WorkspacePage == Zip3WorkspacePage.pack) {
+      try {
+        PackV3.validatePayloadForPack(
+          File(path).readAsBytesSync(),
+          format: format,
+        );
+      } on FormatException catch (e) {
+        setFirmware(null);
+        _log('== source cleared for ${format.label}: ${e.message} ==');
+        return;
+      }
+    }
     notifyListeners();
   }
 
@@ -282,6 +304,7 @@ class AppController extends ChangeNotifier {
     zip3Type = null;
     zip3Model = null;
     zip3EnforceModel = true;
+    zip3Format = Zip3Format.rev2;
     zip3Name = '';
     _unpackZip3Path = null;
     _unpackZip3Digest = null;
@@ -387,7 +410,7 @@ class AppController extends ChangeNotifier {
       notifyListeners();
       return FirmwareCheck(
         true,
-        'Ready to unpack ${pkg.displayName} '
+        'Ready to unpack ${pkg.formatLabel} package ${pkg.displayName} '
         '(${pkg.model.toUpperCase()} ${pkg.type.toUpperCase()}).',
       );
     } on FormatException catch (e) {
@@ -427,7 +450,7 @@ class AppController extends ChangeNotifier {
         return 'Choose the complete firmware .bin to package below.';
       }
       if (isSlotAction) {
-        return 'Choose a slot-sized .bin or encrypted zip3 package below.';
+        return 'Choose a slot-sized .bin or zip3 package below.';
       }
       return 'Choose a full 128 KB firmware .bin below.';
     }
@@ -626,7 +649,7 @@ class AppController extends ChangeNotifier {
     final bytes = File(path).readAsBytesSync();
     if (makeZip3 && !sliceZip3) {
       try {
-        PackV3.validatePayloadForPack(bytes);
+        PackV3.validatePayloadForPack(bytes, format: zip3Format);
       } on FormatException catch (e) {
         setFirmware(null);
         return FirmwareCheck.fail(e.message);
@@ -714,8 +737,8 @@ class AppController extends ChangeNotifier {
   }
 
   /// Load a v3 firmware .zip for the current (slot-0) flash: validate the
-  /// package, decrypt the encrypted payload, write the plaintext to a temp
-  /// .bin, validate it as a slot bin, and remember it. Returns a
+  /// package, recover its plaintext payload, validate it in memory, write it to
+  /// a temp .bin, and remember it. Returns a
   /// [FirmwareCheck] (ok + message) for the UI to surface; on success the bin
   /// is set as the loaded firmware. Does NOT flash — the normal Start flow does.
   Future<FirmwareCheck> loadSlotFirmwareFromZip(String zipPath) async {
@@ -739,7 +762,7 @@ class AppController extends ChangeNotifier {
     try {
       if (!isSlotAction) {
         return FirmwareCheck.fail(
-          'ZIP3 packages are available for slot 0 only.',
+          'zip3 and zip3.2 packages are available for Slot 0 only.',
         );
       }
       final containerCheck = Firmware.validateZip3Container(zipPath);
@@ -753,16 +776,16 @@ class AppController extends ChangeNotifier {
         '== package says: ${pkg.displayName} · ${pkg.model}/${pkg.type} · '
         '${pkg.source} · ${pkg.firmware.length} bytes ==',
       );
+      final v = Firmware.validateSlotBytes(pkg.firmware);
+      if (!v.ok) {
+        ilog('== package firmware rejected: ${v.message} ==');
+        return FirmwareCheck.fail(v.message);
+      }
       final outPath = Firmware.newUnpackedBinPath(
         prefix: backupPrefix,
         name: pkg.displayName,
       );
       await File(outPath).writeAsBytes(pkg.firmware);
-      final v = Firmware.validateSlot(outPath);
-      if (!v.ok) {
-        ilog('== package firmware rejected: ${v.message} ==');
-        return FirmwareCheck.fail(v.message);
-      }
       final claim = PackageClaim(
         model: pkg.model,
         type: pkg.type,
@@ -779,7 +802,8 @@ class AppController extends ChangeNotifier {
       ilog('== loaded slot-0 firmware from package → $outPath ==');
       return FirmwareCheck(
         true,
-        'Decrypted ${pkg.firmware.length} bytes from ${pkg.displayName}. '
+        'Loaded ${pkg.formatLabel} package ${pkg.displayName}: '
+        '${pkg.firmware.length} bytes. '
         '$packageClaim.',
       );
     } on FormatException catch (e) {
@@ -2414,8 +2438,9 @@ class AppController extends ChangeNotifier {
       // together (compat_<ts>.bin, _patched.bin, _patched.zip). The filename
       // carries lineage; the internal info.json displayName stays the clean
       // "<model>_<TYPE>" the BLE app shows.
-      // enforceModel matches the packer form default; the key gate passes by
-      // construction because the compat patch just wrote the default SHU key.
+      // The default builder format is zip3.2. enforceModel is passed only for
+      // the explicit legacy alternative; the key gate passes by construction
+      // because the compat patch just wrote the default SHU key.
       final result = PackV3.buildZip3FromDump(
         bytes,
         type: det.type!,
@@ -2484,9 +2509,10 @@ class AppController extends ChangeNotifier {
     try {
       final bytes = File(src).readAsBytesSync();
       _log(
-        '== make zip3: $model/$type · '
+        '== make ${zip3Format.label}: $model/$type · '
         '${sliceMode ? 'full dump' : 'payload bin'} '
-        '· enforceModel=$zip3EnforceModel · name="$name" ==',
+        '${zip3Format == Zip3Format.legacy ? '· enforceModel=$zip3EnforceModel ' : ''}'
+        '· name="$name" ==',
       );
       final Zip3BuildResult result;
       if (sliceMode) {
@@ -2496,6 +2522,7 @@ class AppController extends ChangeNotifier {
           model: model,
           enforceModel: zip3EnforceModel,
           displayName: name,
+          format: zip3Format,
         );
       } else {
         result = PackV3.buildZip3FromPayload(
@@ -2504,6 +2531,7 @@ class AppController extends ChangeNotifier {
           model: model,
           enforceModel: zip3EnforceModel,
           displayName: name,
+          format: zip3Format,
         );
       }
       final outPath = Firmware.packedZip3Path(
@@ -2520,12 +2548,12 @@ class AppController extends ChangeNotifier {
         return;
       }
       _log(
-        '== packed ${result.model}/${result.type} · '
+        '== packed ${result.format.label} ${result.model}/${result.type} · '
         '${result.payloadLength} B payload → $outPath ==',
       );
       _finishReal(
         true,
-        'zip3 created · ${result.model.toUpperCase()} · '
+        '${result.format.label} created · ${result.model.toUpperCase()} · '
             '${result.type} · ${result.payloadLength} bytes',
         '',
         reseat: false,
@@ -2543,7 +2571,7 @@ class AppController extends ChangeNotifier {
   }
 
   /// Offline standalone ZIP3 unpack: re-read the selected package, prove it is
-  /// unchanged and still valid, then write its decrypted slot-0 firmware under
+  /// unchanged and still valid, then write its plaintext firmware under
   /// the operator's filename. Existing files are never silently overwritten.
   Future<void> _runUnpackZip3({ConfirmFileReplace? confirmFileReplace}) async {
     final src = _unpackZip3Path;
@@ -2551,7 +2579,7 @@ class AppController extends ChangeNotifier {
       _setInputFailure(
         'No package',
         'Choose a zip3 package first',
-        'Pick an encrypted zip3 package, then choose its output filename.',
+        'Pick a zip3 or zip3.2 package, then choose its output filename.',
       );
       return;
     }

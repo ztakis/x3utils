@@ -11,8 +11,9 @@ import 'package:x3utils_flutter/engine/zp_extract.dart';
 // Deterministic in-memory dumps for the offline "Make zip3" engine. No hardware,
 // no mirror files: a synthetic 128 KB image with a slot-0 payload at 0x1000, its
 // banner at 0x1400, and a "ZP" length record at 0x1F800. Payload lengths are
-// ≡4 (mod 8) so NinebotTEA encrypt/decrypt is an exact round-trip (the real
-// decrypted-firmware invariant). Identity in the package comes from the operator
+// ≡4 (mod 8), which keeps the legacy NinebotTEA alternative byte-exact.
+// Zip3.2 stores plaintext and has no modulo restriction. Package identity comes
+// from the operator
 // (type/model args), not from the dump — the dump only supplies the payload.
 
 const _g3Vcu = 'SCOOTER_VCU_xxG3';
@@ -249,7 +250,7 @@ void main() {
   });
 
   group('PackV3.buildZip3FromDump (operator-declared identity)', () {
-    test('VCU: per-model board, real package shape', () {
+    test('VCU: rev2 is default with the specified member/metadata shape', () {
       final r = PackV3.buildZip3FromDump(
         _dump(banner: _g3Vcu),
         type: 'VCU',
@@ -259,21 +260,24 @@ void main() {
       expect(r.model, 'g3');
       expect(r.type, 'VCU');
       expect(r.payloadLength, _len);
+      expect(r.format, Zip3Format.rev2);
 
       final a = ZipDecoder().decodeBytes(r.zipBytes);
-      expect(a.findFile('FIRM.bin.enc'), isNotNull);
+      expect(a.files.map((file) => file.name), ['info.json', 'FIRM.bin']);
+      expect(a.findFile('FIRM.bin.enc'), isNull);
       expect(a.findFile('info.json'), isNotNull);
-      expect(a.findFile('FIRM.bin'), isNull);
+      expect(a.findFile('FIRM.bin'), isNotNull);
 
       final fw = _fw(r.zipBytes);
-      expect(fw['model'], 'g3');
-      expect(fw['type'], 'VCU');
-      expect(fw['enforceModel'], true);
-      expect(fw['encryption'], 'encrypted');
+      expect(fw.keys, ['displayName', 'models', 'type', 'compatible', 'md5']);
+      expect(fw['models'], ['g3']);
+      expect(fw['type'], 'vcu');
+      expect(fw.containsKey('enforceModel'), isFalse);
+      expect(fw.containsKey('encryption'), isFalse);
       expect(fw['compatible'], ['g3_VCU_AT32']);
 
-      final enc = a.findFile('FIRM.bin.enc')!.content as List<int>;
-      expect(fw['md5']['enc'], crypto.md5.convert(enc).toString());
+      final plain = a.findFile('FIRM.bin')!.content as List<int>;
+      expect(fw['md5'], crypto.md5.convert(plain).toString());
     });
 
     test('MCU: concrete operator model, generic x3_MCU_AT32 board', () {
@@ -288,14 +292,21 @@ void main() {
       expect(_fw(r.zipBytes)['compatible'], ['x3_MCU_AT32']);
     });
 
-    test('enforceModel toggle is honored', () {
+    test('legacy alternative retains enforceModel and encryption', () {
       final r = PackV3.buildZip3FromDump(
         _dump(),
         type: 'VCU',
         model: 'g3',
         enforceModel: false,
+        format: Zip3Format.legacy,
       );
-      expect(_fw(r.zipBytes)['enforceModel'], false);
+      final fw = _fw(r.zipBytes);
+      expect(r.format, Zip3Format.legacy);
+      expect(fw['enforceModel'], false);
+      expect(fw['encryption'], 'encrypted');
+      final unpacked = PackV3.unpackV3(r.zipBytes);
+      expect(unpacked.format, Zip3Format.legacy);
+      expect(unpacked.firmware, Zp.payloadFromDump(_dump()));
     });
 
     test('default displayName is <model>_<TYPE>', () {
@@ -435,16 +446,29 @@ void main() {
       );
     });
 
-    test('rejects a payload that would gain NinebotTEA zero padding', () {
+    test(
+      'legacy rejects a payload that would gain NinebotTEA zero padding',
+      () {
+        expect(
+          () => PackV3.validatePayloadForPack(
+            _slotBin(len: _len + 1),
+            format: Zip3Format.legacy,
+          ),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('exact NinebotTEA round trip'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('rev2 accepts a payload with no NinebotTEA modulo shape', () {
       expect(
         () => PackV3.validatePayloadForPack(_slotBin(len: _len + 1)),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('exact NinebotTEA round trip'),
-          ),
-        ),
+        returnsNormally,
       );
     });
 
@@ -562,16 +586,17 @@ void main() {
           );
           final metadata = _fw(result.zipBytes);
           expect(metadata['compatible'], [item.board], reason: item.type);
-          expect(metadata['type'], item.type, reason: item.type);
-          expect(metadata['model'], item.model, reason: item.type);
-          expect(metadata['enforceModel'], isTrue, reason: item.type);
-          expect(metadata['encryption'], 'encrypted', reason: item.type);
+          expect(metadata['type'], item.type.toLowerCase(), reason: item.type);
+          expect(metadata['models'], [item.model], reason: item.type);
+          expect(metadata.containsKey('enforceModel'), isFalse);
+          expect(metadata.containsKey('encryption'), isFalse);
 
           final unpacked = PackV3.unpackV3(
             result.zipBytes,
             policy: Zip3UnpackPolicy.extract,
           );
           expect(unpacked.firmware, item.payload, reason: item.type);
+          expect(unpacked.format, Zip3Format.rev2, reason: item.type);
         }
       },
     );

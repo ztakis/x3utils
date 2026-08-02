@@ -227,7 +227,7 @@ const kActions = <FlashAction>[
     sub:
         'Slice a 128 KB backup, pack a firmware .bin, or unpack a zip3 package. Fully offline.',
     chips: [InfoChipData('offline', ChipKind.ok)],
-    cta: 'Pack zip3',
+    cta: 'Pack zip 3.2',
     okMsg: 'zip3 package written.',
     needsFirmware: true,
   ),

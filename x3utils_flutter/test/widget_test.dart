@@ -1,9 +1,10 @@
 import 'dart:ui' show Size;
 
-import 'package:flutter/material.dart' show InkWell;
+import 'package:flutter/material.dart' show CheckedPopupMenuItem, InkWell;
 import 'package:flutter/widgets.dart'
     show Axis, NeverScrollableScrollPhysics, PageView, ValueKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:x3utils_flutter/engine/pack_zip3.dart';
 import 'package:x3utils_flutter/main.dart';
 import 'package:x3utils_flutter/models.dart';
 
@@ -100,7 +101,7 @@ void main() {
     await tester.tap(find.text('Slot 0 only'));
     await tester.pump(const Duration(milliseconds: 200));
     expect(
-      find.text('Choose a slot-sized .bin or encrypted zip3 package below.'),
+      find.text('Choose a slot-sized .bin or zip3 package below.'),
       findsOneWidget,
     );
   });
@@ -138,14 +139,31 @@ void main() {
     expect(find.text('PACKAGE IDENTITY'), findsOneWidget);
     expect(find.text('Type'), findsOneWidget);
     expect(find.text('Model'), findsOneWidget);
-    expect(find.textContaining('Enforce model'), findsOneWidget);
+    expect(find.textContaining('Enforce model'), findsNothing);
     expect(find.textContaining('Package name'), findsOneWidget);
     expect(find.text('Choose a backup dump'), findsOneWidget);
     expect(
       find.text('Choose a full 128 KB backup .bin below.'),
       findsOneWidget,
     );
-    expect(find.text('Pack zip3'), findsOneWidget);
+    expect(find.text('Pack zip 3.2'), findsOneWidget);
+
+    // The split arrow changes format only. Legacy reveals its one remaining
+    // metadata option, while selecting it does not start the pack operation.
+    final dynamic zipHomeState = tester.state(find.byType(HomeScreen));
+    await tester.tap(find.byTooltip('Choose package format'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(
+      find.byType(CheckedPopupMenuItem<Zip3Format>).last,
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(zipHomeState.c.zip3Format, Zip3Format.legacy);
+    expect(zipHomeState.c.stage, StageState.idle);
+    expect(find.textContaining('Enforce model'), findsOneWidget);
+    expect(find.text('Pack zip 3'), findsWidgets);
 
     final pageView = tester.widget<PageView>(find.byType(PageView));
     expect(pageView.scrollDirection, Axis.vertical);
