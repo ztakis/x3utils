@@ -3620,3 +3620,104 @@ of pre-change Linux, so this is close to a mechanical replay of the Linux commit
   for Windows and Linux too, predates this relayout, and neither 1.8.2 CLI commit
   touched it — so fixing it is its own cross-platform docs job, not something to
   smuggle into the macOS parity commit.
+
+## 2026-08-02 — zip3.2 is NOT encrypted (evidence pass, implementation deferred)
+
+- SUPERSEDES THE CORE ASSUMPTION of the "zip3.2 will be the new default pack
+  format (parked)" entry above. That entry said zip3.2 was built on an updated
+  NinebotTEA. It is not: zip3.2 is `schemaVersion` 2 and is UNENCRYPTED. The
+  cipher and the format turned out to be two unrelated changes that happened to
+  land upstream at the same time. Everything else in that entry — intent, the
+  reverted split-button prototype and what it established — still stands.
+- MEASURED ON A REAL PACKAGE (a ZT3 VCU 1.5.5 zip3.2 from the private test-bin
+  corpus), not inferred: the archive holds EXACTLY two members, `info.json` and
+  `FIRM.bin`. There is no `.enc` member. The `md5` field
+  (`0e45acbd3ed171ab16d3b230d59bddea`) is the MD5 of the PLAINTEXT `FIRM.bin`
+  and matches it byte-exact, which is what makes "unencrypted" a measurement
+  rather than a reading of the absent `encryption` field.
+- THE PAYLOAD ITSELF DID NOT MOVE. Banner is `SCOOTER_VCU_xxU2` at `0x400`, so
+  `DeviceSpec.verifyBanner` and the whole slot-payload identity path work on
+  zip3.2 unchanged. The sample is 58460 bytes, which happens to be `≡ 4 (mod 8)`
+  and so would have passed the v1 gate anyway — a coincidence of this file, not
+  a property of the format.
+- THE SCHEMA DRIFTS INSIDE `schemaVersion` 2, which is the finding that most
+  constrains the implementation. Two packages one day apart BOTH declare
+  `"schemaVersion": 2` with different shapes: `"model": "zt3"` +
+  `"enforceModel": true` became `"models": ["g3"]` with no `enforceModel`. The
+  version field therefore does NOT discriminate field shape. Unpack must be
+  shape-tolerant (accept `models[]` or scalar `model`, treat `enforceModel` as
+  optional and informational); PACK is the exposed side, because it has to pick
+  exactly ONE shape to write and that shape moved within 24 hours.
+- THE ARRAY IS THE ENFORCEMENT, per the maintainer: an explicit `models` list
+  makes `enforceModel` redundant, which is why the two changed together rather
+  than separately. Nothing regresses for us — `enforceModel` was already
+  displayed-but-never-enforced, and the real gate has always been the model
+  against our own supported list. Open sub-case: v1's `enforceModel: false` meant
+  "flash anywhere", which v2 could only express as an empty/absent `models`.
+  Intended handling is fail-closed — a package declaring no model gets refused
+  rather than flashed blind.
+- DISPATCH THE CIPHER ON MEMBER PRESENCE, NOT ON `schemaVersion`. This is the
+  design conclusion worth keeping even if the rest is re-cut: `FIRM.bin.enc`
+  present → decrypt; `FIRM.bin` alone → plain, verify MD5. We have n=1 on
+  zip3.2, and upstream's own help text calls the new xtea variant "required by
+  newer firmware versions", which sits oddly beside our newest package being
+  plain. Member-presence dispatch is correct under BOTH readings, so the
+  "v2 ⇒ plain" inference never has to become load-bearing. Given `schemaVersion`
+  already proved unreliable for field shape, keying anything else on it is a
+  habit to drop here.
+- TWO GATES BECOME FORMAT-CONDITIONAL rather than universal. The `8n + 4` payload
+  rule in `validatePayloadForPack` exists ONLY because NinebotTEA cannot encode
+  padding length; an unencrypted payload has no round trip, so the rule does not
+  apply to zip3.2 and its rejection message must name the format, or the same
+  file being valid as zip3.2 and invalid as zip3 reads as a bug. The
+  `enforceModel` checkbox likewise exists only on the zip3 path.
+- ONE GUARD GETS STRONGER, not weaker, and should be treated that way: with no
+  cipher there is no TEA inner checksum, so MD5 is the ONLY container-level guard
+  on zip3.2. That promotes the payload banner check from redundant to
+  load-bearing — it becomes the only check that the plaintext is firmware for the
+  declared model at all. Keep it on both formats.
+- UNPACK STAYS DUAL-FORMAT PERMANENTLY. zip3 v1 packages exist as files on disk
+  forever, so dual read support is the END STATE, not a transition. Pack can
+  migrate and eventually retire v1; the reader cannot. This makes the Pack CTA
+  question independent of the unpack question rather than two halves of one
+  decision.
+- SETTLED UI SHAPE: the caret defaults to "Pack zip 3.2" on Slice and Pack, and
+  Unpack is automatic. Still UNRESOLVED and the reason implementation was
+  deferred: whether to ship the packer now against the latest revision (with
+  `info.json` construction isolated to one deliberately re-cuttable function) or
+  to do unpack-only until the schema stops moving.
+- UPSTREAM'S `--variant tea|xtea` IS A SEPARATE PIECE OF WORK and is NOT needed
+  for zip3.2. It branches only in `_encrypt_block`/`_decrypt_block`; CBC
+  chaining, the 1 KB rolling key, checksum/padding, default key and IV are all
+  shared, so `lib/engine/ninebot_tea.dart` would gain a variant field and one
+  branch. The existing unsigned-32-word representation survives XTEA: the two
+  dynamic key indices read bits 0-1 and 11-12, both below bit 32, so early
+  truncation cannot change key selection. Adding it is "track upstream", not
+  "enable zip3.2".
+- BUT DO NOT PORT XTEA WITHOUT A FIXTURE. We hold no xtea artifact, so a port
+  would land unverified in the safety-critical engine. Upstream's CLI generates
+  the vector: `python -m ninebottea encrypt <in.bin> <out.bin> --variant xtea`
+  (omit `--key` for the default key). That output is what the Dart port must
+  reproduce byte-for-byte. Where xtea is actually used is UNKNOWN — the
+  maintainer's guess is the BLE part, explicitly offered as a guess and not
+  evidence.
+- UPSTREAM SAYS THE SCHEMA IS DONE, but NO PACKAGE ON THE NEW SHAPE EXISTS YET.
+  That is testimony, not an artifact, and it CHANGES the risk rather than
+  removing it: the worry stops being "the shape will move again" and becomes "we
+  cannot confirm we implemented it correctly", because packing to the new shape
+  would make OUR output the first artifact of that revision with nothing to diff
+  against. What closes it is one real zip3.2 on the `models[]` shape. Field ORDER
+  is at least not unknown — the upstream `info.json` pins it as displayName,
+  models, type, compatible, md5, and the packer mirrors insertion order
+  deliberately.
+- WHY THAT STILL UNBLOCKS IMPLEMENTATION: GUI v1.2.7 is already committed and
+  version-synced but deliberately UNRELEASED pending zip3.2, so the gate that
+  protects users is ALREADY closed. Building pack now costs nothing the release
+  hold is not already paying for, and the diff against the first real package can
+  happen before RELEASE rather than before implementation. The corollary, worth
+  stating because it is the kind of thing a later session "fixes": the root
+  `README.md` release link correctly stays pointed at the `gui-v1.2.6` tag until
+  release day. Do not update it early or it becomes a dead link.
+- WHAT WAS AND WAS NOT DONE: no code was written and `lib/engine/ninebot_tea.dart`
+  and `lib/engine/pack_zip3.dart` are untouched. Implementation is deliberately
+  not-today and is expected to happen on this same Windows box.
