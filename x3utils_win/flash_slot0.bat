@@ -2,12 +2,12 @@
 setlocal
 
 :: Load configuration settings
-if not exist "%~dp0..\config.cmd" (
+if not exist "%~dp0config.cmd" (
     echo [%CL_R%FAIL%CL_NC%] Missing config.cmd
     goto :fail_exit
 )
 
-call "%~dp0..\config.cmd"
+call "%~dp0config.cmd"
 if errorlevel 1 goto :fail_exit
 
 set "bin_file_path=%~1"
@@ -29,7 +29,7 @@ for %%A in ("%bin_file_path%") do (
 )
 
 :: Validate bin file
-call "%~dp0..\validate_bin.cmd" "%bin_file_path%" nosize
+call "%~dp0validate_bin.cmd" "%bin_file_path%" nosize
 if not "%VALIDATE_RESULT%"=="OK" (
     echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     goto :fail_exit
@@ -71,8 +71,8 @@ echo           Step 1: Invoking External Backup Script...
 echo %D%
 echo.
 
-if exist "%~dp0..\dump.bat" (
-    call "%~dp0..\dump.bat"
+if exist "%~dp0dump.bat" (
+    call "%~dp0dump.bat"
 ) else (
     echo [%CL_R%FAIL%CL_NC%] External component dump.bat was not found.
     goto :fail_exit
@@ -158,11 +158,11 @@ echo.
 echo %D%
 echo    Stage 1/2: backup current firmware (dump.bat)
 echo %D%
-if not exist "%~dp0..\dump.bat" (
+if not exist "%~dp0dump.bat" (
     echo [%CL_R%FAIL%CL_NC%] dump.bat not found - cannot back up. Aborting.
     goto :fail_exit
 )
-call "%~dp0..\dump.bat"
+call "%~dp0dump.bat"
 if errorlevel 1 (
     echo.
     echo [%CL_R%FAIL%CL_NC%] Backup ^(dump.bat^) failed - aborting flash for safety.
@@ -197,7 +197,7 @@ set /a race_tries+=1
 "%OPENOCD_BIN%" %race_v% %OOCD_RACE% > "%race_last%" 2>&1
 if not errorlevel 1 goto :race_slot0_ok
 if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== slot0 attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
-call "%~dp0..\race_grade.cmd"
+call "%~dp0race_grade.cmd"
 goto :race_slot0_loop
 
 :race_slot0_ok

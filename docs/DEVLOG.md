@@ -3318,3 +3318,74 @@ Linux/macOS get the same code but were not rebuilt this session.
 - OPEN QUESTION for when the library lands: if zip3.2 becomes simply THE format,
   a chooser may be the wrong control entirely. That depends on whether plain
   zip3 stays supported for older firmware, which is not yet decided.
+
+## 2026-08-02 — CLI v1.8.2 mirrors the GUI relayout (Windows only)
+
+- SCOPE: `x3utils_win` only, at the maintainer's instruction. Linux and macOS
+  are deliberately NOT touched and now differ from Windows in script location
+  and menu order; that parity debt is owed before the next CLI release.
+- MOVES, mirroring the GUI rail: `flash_compat.bat` root -> `special\`, and
+  `flash_slot0.bat` `special\` -> root. Both were done with `git mv` so history
+  follows the files.
+- PATH REWRITES follow the convention `special\flash_only.bat` already used:
+  scripts under `special\` reach root resources through `%~dp0..\`, root scripts
+  through `%~dp0`. flash_compat's ten refs (config.cmd, compat dir,
+  validate_bin.cmd, race_grade.cmd) gained `..\`; flash_slot0's eight
+  (config.cmd, validate_bin.cmd, dump.bat, race_grade.cmd) lost it.
+- WHY THE MOVE IS SAFE FOR OPENOCD: `config.cmd` builds `OPENOCD_BIN` and
+  `SCRIPTS_DIR` from ITS OWN `%~dp0`, which stays root no matter which directory
+  the calling script sits in. Neither moved script resolves an OpenOCD path
+  itself, so no bundled-binary path changed.
+- LAUNCHER: main menu is now 1 Check Connection, 2 Backup, 3 Backup + Flash
+  Loaded File, 4 Flash Slot 0, 5 Load file, 6 Advanced, 7 Exit. Advanced is
+  1 Flash SHU Compatible, 2 Flash Only, 3 Check Protection, 4 Unlock / Rescue,
+  5 Back. Item counts are unchanged, so the `choice /c 1234567ABCD` and
+  `choice /c 12345` strings still cover exactly the offered keys. Label blocks
+  were reordered in file to match menu order; `:opt_compat` became
+  `:advanced_compat` and `:advanced_flash_slot0` became `:opt_slot0`.
+- PRESELECTED MODE IS NOW A. `config.cmd` ships `TARGET=target\at32f415xx.cfg`,
+  replacing the previously committed mode B (`_c45.cfg`). No other connection
+  mode behavior changed: the radio, detection, RACE flag and timeout logic are
+  untouched.
+- FIXED A STALE COMMENT while in there: config.cmd described mode D as using
+  `target\at32f415xx_c45.cfg`. Mode D does not use `TARGET` at all — dump.bat
+  and flash_slot0.bat hardcode `target\at32f415xx_race.cfg` for the respawn
+  path. The comment now names the file actually used.
+- VERSION 1.8.1 -> 1.8.2. The root `README.md` release link still points at the
+  `v1.8.1` tag and was left alone deliberately; it moves when 1.8.2 is actually
+  published, as with the unreleased GUI 1.2.7.
+- OPTION 5's LOADED FILE MUST NOT REACH FLASH SLOT 0, and that is enforced by
+  validation rather than convention. `:opt_load` calls `validate_bin.cmd`
+  WITHOUT `nosize`, so the launcher can only ever hold a 131072-byte full image.
+  `flash_slot0.bat` is the ONLY script that passes `nosize`, because slot 0
+  takes a slot-sized payload, not a full dump. Passing the loaded file through
+  would hand slot 0 precisely the input it exists to reject. The launcher
+  therefore still calls it with no argument so it prompts for its own file,
+  exactly as it did from the Advanced menu. Do not "fix" this incidentally for
+  visual consistency with Option 3 — the two menu items take different kinds of
+  file on purpose, and that is now more visible because they sit adjacent.
+- PARKED FOR A LATER REVISION (raised 2026-08-02, deliberately not done here):
+  equalising the launcher's file handling. The argument for it is that
+  flash_slot0 is expected to be the MOST-used action, yet slot payloads can
+  never be loaded through Option 5, so the loaded-file feature serves the
+  less-used action while creating the asymmetry above. Three shapes were
+  considered, none chosen:
+  (a) Option 5 validates with `nosize` so both full images and slot payloads
+      load, with the header reporting the detected kind by size;
+  (b) the same passthrough without the kind indicator — smallest change, but a
+      wrong-kind file only errors inside the script after the key is pressed;
+  (c) drop Option 5 entirely so every action prompts for its own file, removing
+      the launcher's only state at the cost of re-dropping the bin per board.
+  Enabling fact for (a)/(b): `nosize` skips ONLY the size check — existence,
+  extension, single-repeated-byte and path safety still run — and every flash
+  script re-validates strictly on entry, so a wrong-kind file still cannot
+  reach a write. All three flash scripts already prompt identically when given
+  no argument, so (c) would not break Option 3.
+- NON-HARDWARE EVIDENCE: static verification only. Every `goto` target in
+  launcher.bat resolves to a defined label (15/15), and every `%~dp0` script
+  reference in launcher.bat, the two moved scripts, and the untouched
+  `special\flash_only.bat` control resolves to a file that exists. CRLF/mixed
+  line endings and ASCII-only content were confirmed preserved in all edited
+  batch files, and no BOM was introduced. Git recorded both moves as renames.
+  NO script was executed and no OpenOCD or hardware command ran, so menu
+  navigation and both relocated actions still need a real Windows run.

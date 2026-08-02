@@ -48,8 +48,8 @@ echo.
 echo  [ %CL_C%Actions - Press 1-7 to execute%CL_NC% ]
 echo   [1] Check Connection
 echo   [2] Backup Full Memory (128 KB)
-echo   [3] Flash SHU Compatible (ZT3, G3, F3/F3Pro)
-echo   [4] Backup + Flash Loaded File
+echo   [3] Backup + Flash Loaded File
+echo   [4] Flash Slot 0
 echo   [5] Load / Change Target .bin File
 echo   [6] Advanced
 echo   [7] Exit
@@ -106,8 +106,8 @@ if %key% equ 12 (
 :: Handle 1-7 GOTO jumps (Errorlevels 1-7)
 if %key% equ 1 goto :opt_check
 if %key% equ 2 goto :opt_dump
-if %key% equ 3 goto :opt_compat
-if %key% equ 4 goto :opt_flash
+if %key% equ 3 goto :opt_flash
+if %key% equ 4 goto :opt_slot0
 if %key% equ 5 goto :opt_load
 if %key% equ 6 goto :advanced_menu
 if %key% equ 7 goto :exit_menu
@@ -193,15 +193,15 @@ if exist "%~dp0connection_test.bat" (
 )
 goto :menu_loop
 
-:: Call flash_compat.bat
-:opt_compat
+:: Call flash_slot0.bat
+:opt_slot0
 echo.
-echo Launching Flash SHU compatible...
+echo Launching Flash Slot 0...
 echo.
-if exist "%~dp0flash_compat.bat" (
-    call "%~dp0flash_compat.bat"
+if exist "%~dp0flash_slot0.bat" (
+    call "%~dp0flash_slot0.bat"
 ) else (
-    echo [%CL_R%FAIL%CL_NC%] Could not find flash_compat.bat.
+    echo [%CL_R%FAIL%CL_NC%] Could not find flash_slot0.bat.
     pause
 )
 goto :menu_loop
@@ -279,8 +279,8 @@ echo %D%
 echo                    Advanced Actions
 echo %D%
 echo.
-echo   [1] Flash Only - No Backup
-echo   [2] Flash Slot 0
+echo   [1] Flash SHU Compatible (ZT3, G3, F3/F3Pro)
+echo   [2] Flash Only - No Backup
 echo   [3] Check Protection
 echo   [4] Unlock / Rescue - Mass Erase
 echo   [5] Back
@@ -288,11 +288,23 @@ echo.
 choice /c 12345 /n /m "> Press a key (1-5): "
 set "advanced_key=%errorlevel%"
 
-if %advanced_key% equ 1 goto :advanced_flash_only
-if %advanced_key% equ 2 goto :advanced_flash_slot0
+if %advanced_key% equ 1 goto :advanced_compat
+if %advanced_key% equ 2 goto :advanced_flash_only
 if %advanced_key% equ 3 goto :advanced_rdp_check
 if %advanced_key% equ 4 goto :advanced_rdp_rescue
 if %advanced_key% equ 5 goto :menu_loop
+goto :advanced_menu
+
+:advanced_compat
+echo.
+echo Launching Flash SHU compatible...
+echo.
+if exist "%~dp0special\flash_compat.bat" (
+    call "%~dp0special\flash_compat.bat"
+) else (
+    echo [%CL_R%FAIL%CL_NC%] Could not find special\flash_compat.bat.
+    pause
+)
 goto :advanced_menu
 
 :advanced_flash_only
@@ -303,18 +315,6 @@ if exist "%~dp0special\flash_only.bat" (
     call "%~dp0special\flash_only.bat"
 ) else (
     echo [%CL_R%FAIL%CL_NC%] Could not find special\flash_only.bat.
-    pause
-)
-goto :advanced_menu
-
-:advanced_flash_slot0
-echo.
-echo Launching Flash Slot 0...
-echo.
-if exist "%~dp0special\flash_slot0.bat" (
-    call "%~dp0special\flash_slot0.bat"
-) else (
-    echo [%CL_R%FAIL%CL_NC%] Could not find special\flash_slot0.bat.
     pause
 )
 goto :advanced_menu

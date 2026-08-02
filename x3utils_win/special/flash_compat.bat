@@ -2,12 +2,12 @@
 setlocal
 
 :: Load configuration settings
-if not exist "%~dp0config.cmd" (
+if not exist "%~dp0..\config.cmd" (
     echo [%CL_R%FAIL%CL_NC%] Missing config.cmd
     goto :fail_exit
 )
 
-call "%~dp0config.cmd"
+call "%~dp0..\config.cmd"
 if errorlevel 1 goto :fail_exit
 
 echo.
@@ -52,7 +52,7 @@ goto :end
 if /i "%RACE%"=="true" goto :race_compat
 
 :: Set up 'compatible' directory for dumps
-set "compat_dir=%~dp0compat"
+set "compat_dir=%~dp0..\compat"
 if not exist "%compat_dir%" (
     mkdir "%compat_dir%"
     if errorlevel 1 (
@@ -130,7 +130,7 @@ goto :cdump_attempt
 :cdump_ok
 
 :: Validate bin file
-call "%~dp0validate_bin.cmd" "%raw_dump%"
+call "%~dp0..\validate_bin.cmd" "%raw_dump%"
 if not "%VALIDATE_RESULT%"=="OK" (
     echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     goto :fail_exit
@@ -188,7 +188,7 @@ if errorlevel 1 (
 )
 
 :: Validate patched bin file
-call "%~dp0validate_bin.cmd" "%patched_dump%"
+call "%~dp0..\validate_bin.cmd" "%patched_dump%"
 if not "%VALIDATE_RESULT%"=="OK" (
     echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     goto :fail_exit
@@ -255,7 +255,7 @@ goto :end
 :: (0x1420 signature); stage 3 races a flash of the patched image.
 :: =========================================================================
 :race_compat
-set "compat_dir=%~dp0compat"
+set "compat_dir=%~dp0..\compat"
 if not exist "%compat_dir%" mkdir "%compat_dir%"
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do set "timestamp=%%i"
 set "raw_dump=%compat_dir%\dump_%timestamp%.bin"
@@ -298,13 +298,13 @@ set /a race_tries+=1
     -c "exit" > "%race_last%" 2>&1
 if not errorlevel 1 goto :rc_dumped
 if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== dump attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
-call "%~dp0race_grade.cmd"
+call "%~dp0..\race_grade.cmd"
 goto :rc_dump_loop
 :rc_dumped
 echo.
 echo.
 echo [ %CL_G%CAUGHT%CL_NC% ] Firmware dumped on attempt %race_tries%.
-call "%~dp0validate_bin.cmd" "%raw_dump%"
+call "%~dp0..\validate_bin.cmd" "%raw_dump%"
 if not "%VALIDATE_RESULT%"=="OK" (
     echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     echo        Cannot patch what we cannot read ^(read-protected?^). Aborting.
@@ -335,7 +335,7 @@ if errorlevel 1 (
     echo [%CL_R%FAIL%CL_NC%] Binary patch process failed.
     goto :fail_exit
 )
-call "%~dp0validate_bin.cmd" "%patched_dump%"
+call "%~dp0..\validate_bin.cmd" "%patched_dump%"
 if not "%VALIDATE_RESULT%"=="OK" (
     echo [%CL_R%FAIL%CL_NC%] %VALIDATE_MSG%
     goto :fail_exit
@@ -359,7 +359,7 @@ set /a race_tries+=1
     -c "exit" > "%race_last%" 2>&1
 if not errorlevel 1 goto :rc_flashed
 if /i "%RACE_DEBUG%"=="true" ( >>"%race_dbg_log%" echo(=== flash attempt %race_tries% === & type "%race_last%" >>"%race_dbg_log%" )
-call "%~dp0race_grade.cmd"
+call "%~dp0..\race_grade.cmd"
 goto :rc_flash_loop
 :rc_flashed
 echo.

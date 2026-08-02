@@ -88,14 +88,18 @@ The main menu is:
 
 1. Check Connection
 2. Backup Full Memory (128 KB)
-3. Flash SHU Compatible
-4. Backup + Flash Loaded File
+3. Backup + Flash Loaded File
+4. Flash Slot 0
 5. Load / Change Target `.bin` File
 6. Advanced
 7. Exit
 
-Option 4 uses the file loaded with Option 5. The SHU-compatible and Advanced
+Option 3 uses the file loaded with Option 5. Flash Slot 0 and the Advanced
 flash actions keep their own prompts and do not reuse that loaded file.
+
+Option 5 accepts only a full 128 KB (131072-byte) image, so its file cannot be
+used for Flash Slot 0, which takes a slot-sized payload instead. Flash Slot 0
+asks for its own file for that reason.
 
 The selected connection mode is saved in `config.cmd`:
 
@@ -108,8 +112,8 @@ Mode B also exposes `T` to change the guided countdown timeout.
 
 ### Advanced Menu
 
-1. Flash Only — No Backup
-2. Flash Slot 0
+1. Flash SHU Compatible
+2. Flash Only — No Backup
 3. Check Protection
 4. Unlock / Rescue — Mass Erase
 5. Back
@@ -183,21 +187,23 @@ or run it from terminal:
 
 `flash.bat` validates the file, asks for confirmation, runs a backup first, then flashes and verifies.
 
-### SHU Compatible Directly
+### Flash Slot 0 Directly
 
 From `x3utils_win`:
 
 ```powershell
-.\flash_compat.bat
+.\flash_slot0.bat
+.\flash_slot0.bat C:\path\to\firmware.bin
 ```
 
-This uses the connection mode currently saved in `config.cmd`.
+Backs up first, then writes slot 0 only. Without an argument it prompts for the
+file. This uses the connection mode currently saved in `config.cmd`.
 
 ### Advanced Scripts Directly
 
 ```powershell
+.\special\flash_compat.bat
 .\special\flash_only.bat
-.\special\flash_slot0.bat
 powershell -NoProfile -ExecutionPolicy Bypass -File .\special\rdp\rdp.ps1 -Check -Launcher
 powershell -NoProfile -ExecutionPolicy Bypass -File .\special\rdp\rdp.ps1 -Rescue -Launcher
 ```
@@ -218,9 +224,9 @@ The launcher saves the selected connection mode by editing:
 config.cmd
 ```
 
-If you run `connection_test.bat`, `dump.bat`, `flash.bat`, or
-`flash_compat.bat` directly, they use the last connection mode selected in the
-launcher.
+If you run `connection_test.bat`, `dump.bat`, `flash.bat`, `flash_slot0.bat`, or
+`special\flash_compat.bat` directly, they use the last connection mode selected
+in the launcher.
 
 So if you are not sure:
 
@@ -247,9 +253,10 @@ Runs a full 128 KB dump using the saved connection mode.
 
 Flashes a selected `.bin` file after validating it and forcing a backup first.
 
-`flash_compat.bat`
+`flash_slot0.bat`
 
-Dumps, patches, and flashes back for SHU-compatible workflows.
+Backs up first, then writes slot 0 only. Boot, slot 1, and user data stay
+untouched.
 
 `validate_bin.cmd`
 
@@ -269,7 +276,7 @@ Bundled OpenOCD for Windows.
 
 `special\`
 
-Advanced Flash Only, Slot 0, and protection/rescue scripts. Read
+Advanced SHU Compatible, Flash Only, and protection/rescue scripts. Read
 `special\notes.txt` before using anything there.
 
 ## Common Windows Problems
