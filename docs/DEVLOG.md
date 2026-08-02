@@ -3492,3 +3492,48 @@ Linux/macOS get the same code but were not rebuilt this session.
   is accepted rather than chased. Check Connection, Flash Only and Check
   Protection were not part of this pass either — none of them moved, and the RDP
   log folder shows nothing newer than 2026-07-31, consistent with that.
+
+## OPEN — macOS still owes the v1.8.2 relayout (handoff, 2026-08-02)
+
+Windows and Linux both shipped the relayout at v1.8.2; `x3utils_mac` is the last
+tree on the OLD layout AND the old default mode, so it carries two changes, not
+one. The tree was inspected from Linux at handoff time and is a structural twin
+of pre-change Linux, so this is close to a mechanical replay of the Linux commit
+(3edf8c0) — with the deltas below, which are the parts that are NOT a replay.
+
+- THE TWO MOVES ARE IDENTICAL: `flash_compat.sh` root -> `special/`, and
+  `special/flash_slot0.sh` -> root. Use `git mv`. Ref counts match Linux exactly
+  — flash_compat.sh has 8 `$SCRIPT_DIR/` refs to gain `../`, flash_slot0.sh has
+  7 `$SCRIPT_DIR/../` refs to lose it — so if the counts come out different on
+  the Mac box, something was missed rather than the tree being different.
+- BOTH `compat_dir` ASSIGNMENTS, not one. This is the bug the Linux hardware run
+  was aimed at: flash_compat.sh assigns `compat_dir` separately in the mode-D
+  branch and in the normal branch, and missing either splits SHU output by
+  connection mode instead of erroring. Verify by running SHU compat and
+  confirming exactly ONE `compat` directory exists in the tree afterwards.
+- DELTA 1, THE `artery/` PATH SEGMENT. Mac cfg paths carry a subdirectory the
+  other platforms do not: mode A is `target/artery/at32f4x.cfg`, not
+  `target/at32f4x.cfg`. So `config.sh` moves from
+  `TARGET="target/artery/at32f4x_c45.cfg"` to `TARGET="target/artery/at32f4x.cfg"`
+  with `RACE=false`. `detect_radio` already falls through to A and `set_radio`
+  already writes the `artery/` prefix, so no launcher logic changes — only the
+  committed default line.
+- DELTA 2, DO NOT COPY THE LINUX FILE CONTENTS ACROSS. Mac is on bash 3.2 and
+  its scripts already use `"$(echo "$x" | tr '[:upper:]' '[:lower:]')"` where
+  Linux uses `${x,,}`; a grep at handoff found ZERO `,,}` occurrences in the Mac
+  tree, i.e. the adaptation is complete and would be silently undone by a
+  file-level copy. Replay the MOVES and EDITS against Mac's own files.
+- MENUS ARE THE SAME PRE-CHANGE SHAPE (main 3 = Flash SHU Compatible, 4 = Backup
+  + Flash Loaded File; Advanced 1 = Flash Only, 2 = Flash Slot 0), so the same
+  reorder applies: main becomes 1 Check, 2 Backup, 3 Backup + Flash Loaded File,
+  4 Flash Slot 0, 5 Load, 6 Advanced, 7 Exit; Advanced becomes 1 Flash SHU
+  Compatible, 2 Flash Only, 3 Check Protection, 4 Unlock / Rescue, 5 Back.
+- ALSO OWED IN THE SAME PASS: `VERSION` 1.8.1 -> 1.8.2, `special/notes.txt`
+  (swap the flash_slot0 line for the flash_compat one), README menus / direct
+  usage / file list, and the `race_grade.sh` caller comment if it names
+  flash_compat. Watch the exec bit on both moved files — a lost `+x` is the
+  failure mode the Flutter macOS bundle already hit once.
+- WHAT WOULD CLOSE IT: a mode-A bench run of Backup, Flash Slot 0 from the main
+  menu, and SHU compat from its new Advanced slot, then reset `config.sh` to the
+  shipped default before committing. Mode D's flash_compat branch stays
+  inspection-only, as on Linux.
