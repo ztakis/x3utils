@@ -3537,3 +3537,86 @@ of pre-change Linux, so this is close to a mechanical replay of the Linux commit
   menu, and SHU compat from its new Advanced slot, then reset `config.sh` to the
   shipped default before committing. Mode D's flash_compat branch stays
   inspection-only, as on Linux.
+
+## 2026-08-02 — CLI v1.8.2 mirrors the relayout on macOS, bench-validated
+
+- SCOPE: `x3utils_mac` only, closing the handoff entry directly above. All three
+  CLIs now share one layout and one shipped default mode, which ends the parity
+  debt the Windows 1.8.2 entry opened the same day. The handoff's "WHAT WOULD
+  CLOSE IT" bench run — Backup, Flash Slot 0, SHU compat, all mode A — was run
+  and PASSED; evidence is in the macOS row in `docs/testing.md`.
+- THE BENCH RESULT IN ONE LINE: SHU compat wrote to the ROOT `compat/` with
+  exactly one `compat` directory in the tree, its patch was byte-exact (16 bytes
+  at 0x1420-0x142f over a `0xFF`-filled original, so a genuine first-time
+  patch), and the post-run backup came back BYTE-IDENTICAL to the patched image
+  — the reflash demonstrably landed on the chip rather than just producing a
+  file. Flash Slot 0's write is visible as a slot-sized 59207-byte change across
+  0x1000-0xffff between consecutive dumps.
+- THE HANDOFF'S REF COUNTS HELD, which is the useful confirmation rather than a
+  formality — it was the stated tripwire for "the Mac tree is not the twin we
+  assumed". `flash_compat.sh` had exactly 8 `$SCRIPT_DIR/` refs to gain `../`
+  and `flash_slot0.sh` exactly 7 `$SCRIPT_DIR/../` refs to lose it, matching
+  Linux. Both moves went through `git mv` and both kept mode 100755 in the
+  index, so the exec bit the Flutter macOS bundle once lost survived here.
+- BOTH `compat_dir` ASSIGNMENTS were rewritten, the mode-D branch one at line 55
+  and the normal-branch one at 197, so SHU output stays in the single ROOT
+  `compat/`. Verified structurally (`special/../compat` resolves to the existing
+  root folder, and no `special/compat/` exists), NOT by running SHU compat —
+  that is precisely the check the owed bench run has to make, since a missed
+  rewrite splits output by connection mode instead of erroring.
+- DELTA 1 APPLIED AS DESCRIBED: `config.sh` now ships
+  `TARGET="target/artery/at32f4x.cfg"` with `RACE=false`. The `artery/` segment
+  is real and mac-only; `set_radio` already wrote that prefix and `detect_radio`
+  already falls through to A, so no launcher logic moved. Note the earlier
+  commit-hygiene rule of resetting `config.sh` to mode B before committing is
+  now superseded on all three platforms, not just Linux — mode A IS the shipped
+  default, so the one-line diff in `config.sh` is the intended change and not
+  leftover bench state.
+- DELTA 2 RESPECTED: no Linux file contents were copied across. Moves and edits
+  were replayed against Mac's own files, and a post-change grep still finds ZERO
+  `,,}` occurrences in the Mac tree, i.e. the bash 3.2 `tr`-based lowercasing is
+  intact rather than silently reverted by a file-level copy.
+- STATIC CHECKS, which ran BEFORE the bench and are worth keeping separate from
+  it. `bash -n` passes on launcher, both moved scripts, race_grade and config. A
+  scripted launcher run (`6`, `5`, `7`) rendered the new main menu 1-7 and the
+  new Advanced 1-5, showed `[X] A` preselected, and exited 0 without rewriting
+  `config.sh`. Every rewritten relative path was resolved and confirmed to
+  exist. And the whole Mac launcher now diffs against the Linux launcher in
+  EXACTLY four hunks, all of them the `artery/at32f4x*` vs `at32f415xx*` cfg
+  names — no menu, dispatch or path difference survives, which is a stronger
+  parity statement than reading the two menus side by side.
+- A SECOND ROUND WAS RUN FROM THE LAUNCHER at 15:22-15:24, which closes the gap
+  the first round left: whether Flash Slot 0 went through the new main-menu `[4]`
+  dispatch arm or was invoked directly. It reproduced the FIRST round's slot
+  transition exactly — sha1-prefix `d8299d` -> `d6d4a9` over 0x1000-0xffff,
+  59207 bytes, same before and same after — which is a much better result than
+  two passes that merely both succeeded. A lone delta can be argued as drift; an
+  identical transition repeated cannot.
+- A REGION MAP OVER ALL NINE IMAGES re-proved an invariant worth having on the
+  record independently of this relayout: bootloader 0x0-0xfff and identity
+  0x1f600-0x1ffff each show exactly ONE state across both rounds, while the slot
+  region shows four and the mid region three. Neither slot0 flashing nor SHU
+  compat touched boot or identity, so identity-safety is observed here rather
+  than only intended.
+- FOLLOW-UP WORTH HAVING, surfaced by writing this entry rather than by the
+  relayout itself: the CLI flash/dump path writes NO logs. `dump.sh`, `flash.sh`,
+  `flash_slot0.sh`, `special/flash_compat.sh`, `special/flash_only.sh` and
+  `connection_test.sh` have no `tee` and no log redirect; only
+  `special/rdp/rdp_check.sh` logs, and `~/x3utils/logs/` belongs to the Flutter
+  GUI. So a CLI bench run can only be reconstructed from dump bytes plus what
+  the operator remembers — which is how this session ended up inferring, then
+  correcting, which action produced which file. The GUI already logs every
+  action; the CLI teaching its flash/dump scripts the same trick would make
+  rows like today's evidence-backed instead of testimony-backed. NOT done here:
+  it is a behavior change to six scripts on three platforms and does not belong
+  in a parity commit.
+- ALSO IN THIS PASS: `VERSION` 1.8.1 -> 1.8.2, `special/notes.txt` swapped its
+  flash_slot0 line for the flash_compat one, `race_grade.sh`'s caller comment now
+  names flash_slot0.sh, and the README took the same menu / direct-usage / file
+  list edits as Linux, including the note that Option 5 only accepts a full
+  131072-byte image and so cannot feed Flash Slot 0.
+- ONE THING LEFT DELIBERATELY ALONE: the ROOT `README.md` still documents a much
+  older five-item menu (`[1] Flash SHU compatible` … `[5] Exit`). That is stale
+  for Windows and Linux too, predates this relayout, and neither 1.8.2 CLI commit
+  touched it — so fixing it is its own cross-platform docs job, not something to
+  smuggle into the macOS parity commit.

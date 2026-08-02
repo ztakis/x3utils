@@ -3,7 +3,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load configuration settings
-CONFIG_FILE="$SCRIPT_DIR/config.sh"
+CONFIG_FILE="$SCRIPT_DIR/../config.sh"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "[${CL_R}FAIL${CL_NC}] Missing config.sh"
@@ -52,7 +52,7 @@ while true; do
 done
 
 if [[ "${RACE:-false}" == "true" ]]; then
-    compat_dir="$SCRIPT_DIR/compat"
+    compat_dir="$SCRIPT_DIR/../compat"
     mkdir -p "$compat_dir" || {
         echo
         echo -e "[${CL_R}FAIL${CL_NC}] Failed to create compat directory."
@@ -106,13 +106,13 @@ if [[ "${RACE:-false}" == "true" ]]; then
         if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
             { echo "=== dump attempt $race_tries ==="; cat "$race_last"; } >> "$race_dbg_log"
         fi
-        bash "$SCRIPT_DIR/race_grade.sh" "$race_last"
+        bash "$SCRIPT_DIR/../race_grade.sh" "$race_last"
     done
     echo
     echo
     echo -e "[ ${CL_G}CAUGHT${CL_NC} ] Firmware dumped on attempt $race_tries."
 
-    source "$SCRIPT_DIR/validate_bin.sh" "$raw_dump"
+    source "$SCRIPT_DIR/../validate_bin.sh" "$raw_dump"
     if [[ "$VALIDATE_RESULT" != "OK" ]]; then
         echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
         echo "       Cannot patch what we cannot read (read-protected?). Aborting."
@@ -154,7 +154,7 @@ EOF
         exit 1
     fi
 
-    source "$SCRIPT_DIR/validate_bin.sh" "$patched_dump"
+    source "$SCRIPT_DIR/../validate_bin.sh" "$patched_dump"
     if [[ "$VALIDATE_RESULT" != "OK" ]]; then
         echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
         exit 1
@@ -180,7 +180,7 @@ EOF
         if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
             { echo "=== flash attempt $race_tries ==="; cat "$race_last"; } >> "$race_dbg_log"
         fi
-        bash "$SCRIPT_DIR/race_grade.sh" "$race_last"
+        bash "$SCRIPT_DIR/../race_grade.sh" "$race_last"
     done
     echo
     echo
@@ -194,7 +194,7 @@ EOF
 fi
 
 # Set up compat directory
-compat_dir="$SCRIPT_DIR/compat"
+compat_dir="$SCRIPT_DIR/../compat"
 
 if [[ ! -d "$compat_dir" ]]; then
     mkdir -p "$compat_dir" || {
@@ -268,7 +268,7 @@ while true; do
 done
 
 # Validate bin file
-source "$SCRIPT_DIR/validate_bin.sh" "$raw_dump"
+source "$SCRIPT_DIR/../validate_bin.sh" "$raw_dump"
 if [[ "$VALIDATE_RESULT" != "OK" ]]; then
     echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
     read -rp "Aborting..."

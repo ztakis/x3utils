@@ -3,7 +3,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load configuration settings
-CONFIG_FILE="$SCRIPT_DIR/../config.sh"
+CONFIG_FILE="$SCRIPT_DIR/config.sh"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     echo -e "[${CL_R}FAIL${CL_NC}] Missing config.sh"
@@ -28,7 +28,7 @@ fi
 bin_file_path="${bin_file_path//\"/}"
 bin_file_path="${bin_file_path//\'/}"
 
-source "$SCRIPT_DIR/../validate_bin.sh" "$bin_file_path" nosize
+source "$SCRIPT_DIR/validate_bin.sh" "$bin_file_path" nosize
 if [[ "$VALIDATE_RESULT" != "OK" ]]; then
     echo -e "[${CL_R}FAIL${CL_NC}] $VALIDATE_MSG"
     exit 1
@@ -74,11 +74,11 @@ if [[ "${RACE:-false}" == "true" ]]; then
     echo "$D"
     echo "   Stage 1/2: backup current firmware (dump.sh)"
     echo "$D"
-    if [[ ! -f "$SCRIPT_DIR/../dump.sh" ]]; then
+    if [[ ! -f "$SCRIPT_DIR/dump.sh" ]]; then
         echo -e "[${CL_R}FAIL${CL_NC}] dump.sh not found - cannot back up. Aborting."
         exit 1
     fi
-    bash "$SCRIPT_DIR/../dump.sh"
+    bash "$SCRIPT_DIR/dump.sh"
     if [[ $? -ne 0 ]]; then
         echo
         echo -e "[${CL_R}FAIL${CL_NC}] Backup (dump.sh) failed - aborting flash for safety."
@@ -118,7 +118,7 @@ if [[ "${RACE:-false}" == "true" ]]; then
         if [[ "${RACE_DEBUG:-false}" == "true" ]]; then
             { echo "=== slot0 attempt $race_tries ==="; cat "$race_last"; } >> "$race_dbg_log"
         fi
-        bash "$SCRIPT_DIR/../race_grade.sh" "$race_last"
+        bash "$SCRIPT_DIR/race_grade.sh" "$race_last"
     done
     echo
     echo
@@ -141,8 +141,8 @@ echo "          Step 1: Invoking External Backup Script..."
 echo "$D"
 echo
 
-if [[ -f "$SCRIPT_DIR/../dump.sh" ]]; then
-    bash "$SCRIPT_DIR/../dump.sh"
+if [[ -f "$SCRIPT_DIR/dump.sh" ]]; then
+    bash "$SCRIPT_DIR/dump.sh"
 else
     echo -e "[${CL_R}FAIL${CL_NC}] External component dump.sh was not found."
     exit 1

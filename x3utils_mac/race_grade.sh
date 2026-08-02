@@ -2,8 +2,8 @@
 #
 # race_grade.sh - shared power-race attempt classifier.
 #
-# Called by dump.sh / flash.sh / flash_compat.sh and special flash tools after a
-# missed attempt. Reads the supplied attempt log and prints one live symbol:
+# Called by dump.sh / flash.sh / flash_slot0.sh and the special flash tools after
+# a missed attempt. Reads the supplied attempt log and prints one live symbol:
 #   x  ST-Link/probe gone from USB
 #   H  target halted, near catch
 #   N  Cortex-M4 seen but not halted, noisy/marginal contact
