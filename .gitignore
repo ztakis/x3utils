@@ -17,6 +17,10 @@ Desktop.ini
 # Kilo
 .kilo/
 
+# Claude Code — local agent instructions and skills, deliberately not shared
+CLAUDE.md
+.claude/
+
 # VS Code local workspace settings
 .vscode/
 
