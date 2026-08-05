@@ -3,6 +3,22 @@
 Short development notes for decisions, test results, and context that should
 survive machine switches and chat history loss.
 
+## 2026-08-06
+
+- Removed the incorrect 0x1420 SHU-key rejection from ZIP3 Slice/Make zip3.
+  The key-region state is now neutral diagnostic evidence (`defaultKey`, blank,
+  or other), not a BLE-compatibility verdict; non-default bytes no longer block
+  a package when the independent ZP, identity, and payload checks pass.
+- The optional SHU-compatible "Attempt to also make zip3" path uses the same
+  `PackV3.buildZip3FromDump` call after the compat patch and therefore has no
+  separate key-based rejection. It remains VCU-only and best-effort: missing or
+  conflicting ZP evidence can still skip packaging without demoting the flash
+  success.
+- Updated the focused key-state/pack tests and validation-bin generator's
+  manifest oracle.
+  `flutter test test/pack_zip3_dump_test.dart` passed 40/40 and `flutter
+  analyze --no-pub` was clean. No BLE or hardware run was performed.
+
 ## 2026-07-01
 
 - Added root `AGENTS.md` guidance in the `_Codex` reference folder for

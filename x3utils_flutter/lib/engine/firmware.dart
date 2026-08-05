@@ -671,30 +671,20 @@ class Firmware {
       .replaceAll('T', '_');
 }
 
-/// State of the 16-byte firmware key at [CompatPatch.offset] (0x1420) — the
-/// region the SHU compat patch writes. SHU BLE flashing decrypts with the
-/// default (SHU) key, so a dump can only be repackaged into a BLE-loadable zip3
-/// if it carries that key here, or leaves it blank (`0xFF`, the newer repo
-/// default). OEM/stock firmware holds a different production key and would fail
-/// a BLE flash. This gate is NECESSARY, NOT SUFFICIENT: a present key only rules
-/// out the obvious OEM case — it does not guarantee SHU BLE will accept the
-/// package. Whether an OEM dump could be made SHU-flashable just by rewriting
-/// this key is unresolved (suspected enough for older firmware, not newer), so
-/// Make zip3 refuses OEM dumps rather than guess. NB 0x1420 is INSIDE the
-/// payload (0x20 past the banner), so some older repo builds hold unrelated
-/// bytes there and trip this as a known exception — unconfirmed theory: that fw
-/// doesn't look for a key, and newer fw adopted the blank convention.
+/// State of the 16-byte firmware region at [CompatPatch.offset] (0x1420) — the
+/// region the SHU compat patch writes. This is diagnostic evidence only. It is
+/// not a ZIP3 acceptance rule and does not prove whether BLE will accept a
+/// package. NB 0x1420 is INSIDE the payload (0x20 past the banner), so older
+/// firmware may legitimately contain unrelated bytes there.
 enum FwKeyState {
-  /// The default SHU key — repo/Compat firmware.
+  /// The default SHU key — commonly seen in repo/Compat firmware.
   defaultKey,
 
-  /// All `0xFF` — the newer repo default.
+  /// All `0xFF` — commonly seen in newer repo firmware.
   blank,
 
-  /// A different production key — OEM/stock, not BLE-flashable as-is.
-  oem;
-
-  bool get bleFlashable => this != FwKeyState.oem;
+  /// Any other bytes. The region alone does not establish their provenance.
+  other,
 }
 
 /// The SHU-compatible patch (flash_compat step 2): inject a fixed 16-byte
@@ -709,11 +699,11 @@ class CompatPatch {
   ];
 
   /// Classify the 16-byte firmware key at [offset] in a full 128 KB [image]
-  /// (a backup dump). Used to gate "Make zip3": only [FwKeyState.bleFlashable]
-  /// dumps — repo/Compat (default key) or newer repo default (blank) — can be
-  /// repackaged; OEM firmware is refused. See flash_compat's 0x1420 patch.
+  /// (a backup dump). This is an informational classification only; it does
+  /// not decide whether the dump may be repackaged. See flash_compat's 0x1420
+  /// patch.
   static FwKeyState keyState(List<int> image) {
-    if (image.length < offset + signature.length) return FwKeyState.oem;
+    if (image.length < offset + signature.length) return FwKeyState.other;
     var isKey = true;
     var isBlank = true;
     for (var i = 0; i < signature.length; i++) {
@@ -723,7 +713,7 @@ class CompatPatch {
     }
     if (isKey) return FwKeyState.defaultKey;
     if (isBlank) return FwKeyState.blank;
-    return FwKeyState.oem;
+    return FwKeyState.other;
   }
 
   /// Read [srcPath], write the signature at [offset], verify, save [dstPath].

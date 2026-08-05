@@ -310,9 +310,10 @@ ZIP3 tools is an offline local archive feature, not a compatibility or
 BLE-acceptance guarantee:
 
 - Slice is the guarded v1.2.0 full-dump path. It accepts exactly 131072 bytes,
-  requires trustworthy ZP evidence to determine the payload boundary, and keeps
-  the existing best-effort SHU-key filter. Its intended source is a fresh full
-  ST-LINK backup taken immediately after the current firmware was installed
+  requires trustworthy ZP evidence to determine the payload boundary, and treats
+  the 0x1420 key-region state as informational rather than as a ZIP3 gate.
+  Its intended source is a fresh full ST-LINK backup taken immediately after
+  the current firmware was installed
   through BLE, before any ST-LINK firmware write; a structurally valid ZP can
   still be stale and that cannot be detected from the dump alone.
 - Pack treats the selected `.bin` as the complete payload and supports X3 VCU,

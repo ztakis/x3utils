@@ -343,21 +343,21 @@ void main(List<String> args) {
     'temp copy mutated mid-run is rejected pre-Start and mid-backup; never modify this file',
   );
 
-  // ── 11: firmware-key gate (Make zip3) ─────────────────────────────────────
-  stdout.writeln('Key gate:');
+  // ── 11: firmware-key state (informational; not a Make zip3 gate) ──────────
+  stdout.writeln('Key state:');
   emit(
     '11a_zt3_vcu_key_shu_SYNTHETIC_FULL.bin',
     fullImage(payload('11a', key: KeyState.shu)),
     'full',
     'key @0x1420 = SHU default',
-    'Make zip3 accepts (defaultKey branch)',
+    'Make zip3 accepts (default key; informational state)',
   );
   emit(
     '11b_zt3_vcu_key_oemstyle_SYNTHETIC_FULL.bin',
     fullImage(payload('11b', key: KeyState.oemStyle)),
     'full',
     'key/rand @0x1420 = ASCII production-style',
-    'Make zip3 refuses (oem branch); Flash Only remains the operator override',
+    'Make zip3 accepts (other key state; informational only)',
   );
 
   // ── 12: ZP length-record guard ────────────────────────────────────────────
@@ -655,7 +655,7 @@ void main(List<String> args) {
     'repo/g3/VCU/FIRM_1.4.8 (Compat).bin',
     '17a_g3_vcu_v1.4.8_oldrepo_key_REAL.bin',
     'old-repo slot bin with donor ASCII key+rand at 0x420',
-    'slot structural+banner PASS (key not gated on slot path); a dump of it is refused by Make zip3',
+    'slot structural+banner PASS (key state is informational; Pack accepts the slot payload)',
   );
   copyReal(
     corpusRoot,
@@ -676,7 +676,7 @@ void main(List<String> args) {
     'full_dumps/MEMORY_ZT3Pro.bin',
     '17d_zt3_oem_key_REAL_FULL.bin',
     'real OEM dump: ASCII key+rand, real serial pair, valid ZP',
-    'Make zip3 refuses (oem key); guarded flash accepts (banner ok)',
+    'Make zip3 accepts (key state is informational); guarded flash accepts (banner ok)',
   );
 
   // ── Manifest ──────────────────────────────────────────────────────────────

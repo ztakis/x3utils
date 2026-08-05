@@ -265,27 +265,10 @@ class PackV3 {
       throw FormatException(verdict.reason);
     }
 
-    // The 16 bytes at 0x1420: newer repo firmware leaves them blank (0xFF), and
-    // flash_compat writes the default SHU key there. Anything else is USUALLY
-    // OEM/stock (a different production key) and would fail a BLE flash — so
-    // refuse it. Two caveats, both UNCONFIRMED maintainer guesses:
-    //  * 0x1420 is INSIDE the payload (0x20 past the banner), so some OLDER repo
-    //    builds hold unrelated firmware bytes there (observed: an ASCII token on
-    //    a real g3 VCU 1.4.8) yet still BLE-flash fine. Working theory: that fw
-    //    was patched to not look for a key at all, and newer fw later adopted
-    //    the simpler blank convention. Those older builds trip this gate as a
-    //    known EXCEPTION, not a bug.
-    //  * Passing is NECESSARY, NOT SUFFICIENT: a blank/key here does not
-    //    guarantee SHU BLE will accept the package.
-    // So this is a best-effort filter for the obvious OEM case, not a proof.
-    if (!CompatPatch.keyState(dumpBytes).bleFlashable) {
-      throw const FormatException(
-        'This dump has neither the default SHU key nor a blank key. '
-        'It is usually OEM/stock firmware and may not be BLE-flashable, so Make '
-        'zip3 was stopped. Some older repo firmware may also be rejected by '
-        'this safety check.',
-      );
-    }
+    // The 16 bytes at 0x1420 are inside the payload. Their value is useful
+    // diagnostic evidence for SHU/compat work, but it is not a ZIP3
+    // acceptance rule: the BLE app does not reject a package merely because
+    // this payload region contains non-default bytes.
 
     // Exact slot-0 payload from the device's own committed length.
     final payload = Zp.payloadFromDump(dumpBytes);

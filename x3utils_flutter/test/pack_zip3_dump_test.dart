@@ -24,17 +24,12 @@ const _zpError =
     'record, so x3utils cannot safely determine the exact payload. This '
     'optional tool requires a fresh full backup taken immediately after a BLE '
     'flash, before any ST-Link firmware write, and refuses rather than guessing.';
-const _shuKeyError =
-    'This dump has neither the default SHU key nor a blank key. It '
-    'is usually OEM/stock firmware and may not be BLE-flashable, so Make zip3 '
-    'was stopped. Some older repo firmware may also be rejected by this safety '
-    'check.';
 
 /// A valid slot-0 payload length inside the window and ≡4 (mod 8).
 const _len = 51204;
 
-/// The default SHU firmware key at 0x1420 (matches CompatPatch.signature) — its
-/// presence marks a repo/SHU-compatible dump, the only kind Make zip3 accepts.
+/// The default SHU firmware key at 0x1420 (matches CompatPatch.signature).
+/// Key-region bytes are diagnostic evidence; Make zip3 does not gate on them.
 final _defaultKey = <int>[
   0xFE, 0x80, 0x1C, 0xB2, 0xD1, 0xEF, 0x41, 0xA6, //
   0xA4, 0x17, 0x31, 0xF5, 0xA0, 0x68, 0x24, 0xF0,
@@ -391,7 +386,7 @@ void main() {
       expect(_fw(r.zipBytes)['compatible'], ['zt3_VCU_AT32']);
     });
 
-    group('SHU key gate (repo-only)', () {
+    group('SHU key state (informational)', () {
       test('default SHU key at 0x1420 packs', () {
         final r = PackV3.buildZip3FromDump(
           _dump(keyAt1420: _defaultKey),
@@ -412,22 +407,14 @@ void main() {
         expect(r.payloadLength, _len);
       });
 
-      test('OEM production key at 0x1420 is refused', () {
-        expect(
-          () => PackV3.buildZip3FromDump(
-            _dump(keyAt1420: List.filled(16, 0xAB)),
-            type: 'VCU',
-            model: 'g3',
-            enforceModel: true,
-          ),
-          throwsA(
-            isA<FormatException>().having(
-              (e) => e.message,
-              'message',
-              _shuKeyError,
-            ),
-          ),
+      test('other key bytes do not block packing', () {
+        final r = PackV3.buildZip3FromDump(
+          _dump(keyAt1420: List.filled(16, 0xAB)),
+          type: 'VCU',
+          model: 'g3',
+          enforceModel: true,
         );
+        expect(r.payloadLength, _len);
       });
     });
   });
@@ -626,16 +613,11 @@ void main() {
         FwKeyState.blank,
       );
     });
-    test('anything else is oem', () {
+    test('anything else is other', () {
       expect(
         CompatPatch.keyState(_dump(keyAt1420: List.filled(16, 0x00))),
-        FwKeyState.oem,
+        FwKeyState.other,
       );
-    });
-    test('bleFlashable: key and blank yes, oem no', () {
-      expect(FwKeyState.defaultKey.bleFlashable, true);
-      expect(FwKeyState.blank.bleFlashable, true);
-      expect(FwKeyState.oem.bleFlashable, false);
     });
   });
 }

@@ -314,8 +314,7 @@ class AppController extends ChangeNotifier {
 
   // ── SHU-compat: also pack a BLE zip3 of the patched image ───────────────────
   // Opt-in checkbox under the "Make SHU compatible" action. When on and the
-  // compat flash succeeds, the patched image (default SHU key by construction,
-  // so the packer's key gate passes trivially) is repackaged as a BLE-loadable
+  // compat flash succeeds, the patched image is repackaged as a BLE-loadable
   // zip3. VCU only — its banner declares the model; an MCU dump carries no model
   // identity, so an MCU compat run silently skips the zip rather than guess.
   // Best-effort: a packaging hiccup never demotes the compat flash success.
@@ -2415,8 +2414,9 @@ class AppController extends ChangeNotifier {
     );
   }
 
-  /// Repack the compat [patchedPath] image (a full 128 KB dump with the SHU key
-  /// written at 0x1420) into a BLE-loadable zip3, and return a one-line location
+  /// Repack the compat [patchedPath] image (a full 128 KB dump with the compat
+  /// patch written at 0x1420) into a BLE-loadable zip3, and return a one-line
+  /// location
   /// note for the success screen — or null when it is skipped or fails.
   ///
   /// VCU only: the banner declares the model, so identity is derived, not
@@ -2439,8 +2439,7 @@ class AppController extends ChangeNotifier {
       // carries lineage; the internal info.json displayName stays the clean
       // "<model>_<TYPE>" the BLE app shows.
       // The default builder format is zip3.2. enforceModel is passed only for
-      // the explicit legacy alternative; the key gate passes by construction
-      // because the compat patch just wrote the default SHU key.
+      // the explicit legacy alternative.
       final result = PackV3.buildZip3FromDump(
         bytes,
         type: det.type!,
@@ -2560,8 +2559,8 @@ class AppController extends ChangeNotifier {
         outputPath: outPath,
       );
     } on FormatException catch (e) {
-      // Slice's ZP/SHU-key guards and Pack's metadata validation fail closed
-      // through here.
+      // Slice's ZP guard and Pack's metadata validation fail closed through
+      // here.
       _log('== make zip3 failed: ${e.message} ==');
       _finishReal(false, '', e.message, reseat: false);
     } catch (e) {
