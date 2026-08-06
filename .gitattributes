@@ -13,3 +13,11 @@ x3utils_win/oocd/** linguist-vendored
 *.cfg text eol=lf
 # Bundled native OpenOCD binaries — never touch line endings
 x3utils_flutter/native/**/oocd/bin/* binary
+
+# git-crypt encrypted docs — -text overrides the *.md text eol=lf rule above;
+# without it, LF normalization runs on ciphertext (checkin) or ahead of the
+# smudge filter (checkout) and corrupts the encrypted blob.
+docs/CLAUDE.md filter=git-crypt diff=git-crypt -text
+docs/AGENTS.md filter=git-crypt diff=git-crypt -text
+docs/DEVLOG.md filter=git-crypt diff=git-crypt -text
+docs/testing.md filter=git-crypt diff=git-crypt -text
