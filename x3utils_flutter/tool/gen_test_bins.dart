@@ -50,11 +50,21 @@ const kMarker = 'SYNTHETIC-TEST-BIN-DO-NOT-FLASH';
 const kMarkerOff = 0x800; // gate-neutral spot inside the payload
 
 const kBannerZt3Vcu = 'SCOOTER_VCU_xxU2';
+const kBannerG3Vcu = 'SCOOTER_VCU_xxG3';
 const kBannerGt3Vcu = 'SCOOTER_VCU_xGT3';
 const kBannerMcu = 'SCOOTER_MCU_0001';
 const kBannerUnknown = 'SCOOTER_VCU_xxZ9'; // shape-valid, unsupported code
 
+// Version constants, measured 2026-08-07. The firmware version is a 16-bit
+// immediate, one nibble per field (1.6.3 -> 0x163), loaded by MOVW or MOV.W at
+// an offset that moves every build. Real ones sit in narrow per-line bands, so
+// the synthetics plant theirs inside the observed band for their model rather
+// than somewhere a real build never puts one.
+const kVerBandZt3Vcu = 0x8A00; // observed zt3 VCU span 0x88dc-0x8e66
+const kVerBandG3Vcu = 0x9A00; // observed g3 VCU span 0x986c-0xa9c6
+
 const kSerialZt3Generic = '1K1E0000000001';
+const kSerialG3 = '1CG00000000001'; // 1CG -> g3, so no serial/banner clash
 const kSerialGt3 = '03S00000000001';
 const kSerialMcuPart = 'Z025A400000001';
 
@@ -143,6 +153,38 @@ Uint8List payload(
     b.setAll(kMarkerOff, asciiBytes(kMarker));
   }
   return b;
+}
+
+/// Plant a `MOVW Rd,#0xMmp` version constant at [off] in a slot payload.
+///
+/// Encoded here from the ARM spec rather than by importing the app's decoder:
+/// this file is an INDEPENDENT statement of the layout, so a decoder that
+/// drifts fails a test instead of silently agreeing with itself.
+///
+/// Encoding: `1111 0i10 0100 imm4 : 0 imm3 Rd imm8`, with the 16-bit value
+/// split imm4:i:imm3:imm8. Rd is deliberately r0 here; real builds vary it, and
+/// the app must not key on it.
+void plantVersion(Uint8List pay, int off, int major, int minor, int patch) {
+  assert(major <= 15 && minor <= 15 && patch <= 15);
+  final v = (major << 8) | (minor << 4) | patch;
+  final hw1 = 0xF240 | (((v >> 11) & 1) << 10) | ((v >> 12) & 0xF);
+  final hw2 = (((v >> 8) & 7) << 12) | (v & 0xFF);
+  pay[off] = hw1 & 0xFF;
+  pay[off + 1] = hw1 >> 8;
+  pay[off + 2] = hw2 & 0xFF;
+  pay[off + 3] = hw2 >> 8;
+  // Self-check: the planted bytes must decode back to the value asked for, so
+  // an encoding slip cannot ship a bin whose manifest row is a lie.
+  final back =
+      ((pay[off] | (pay[off + 1] << 8)) & 0xF) << 12 |
+      ((((pay[off] | (pay[off + 1] << 8)) >> 10) & 1) << 11) |
+      ((((pay[off + 2] | (pay[off + 3] << 8)) >> 12) & 7) << 8) |
+      (pay[off + 2] & 0xFF);
+  if (back != v) {
+    throw StateError(
+      'planted version decoded back as 0x${back.toRadixString(16)}',
+    );
+  }
 }
 
 enum ZpMode { valid, zero, allFf, absurd }
@@ -677,6 +719,38 @@ void main(List<String> args) {
     '17d_zt3_oem_key_REAL_FULL.bin',
     'real OEM dump: ASCII key+rand, real serial pair, valid ZP',
     'Make zip3 accepts (key state is informational); guarded flash accepts (banner ok)',
+  );
+
+  // ── 18: blacklisted firmware versions (SHU compat identity gate) ──────────
+  // Full images, because compat identifies from the backup it takes off the
+  // chip — not from a file the operator picks. To exercise the refusal on a
+  // testbed board, write one of these with Flash Only and then run SHU compat:
+  // it must abort after the backup, before the patch, naming the version.
+  //
+  // These carry a supported banner and a real-looking version constant, and are
+  // otherwise the usual unflashable garbage. Note fullImage also copies the
+  // payload into slot 1, so the constant appears twice in the image exactly as
+  // it does on a real device; identification reads slot 0 only.
+  stdout.writeln('Blacklisted versions:');
+  final zt3Blacklisted = payload('18a', banner: kBannerZt3Vcu);
+  plantVersion(zt3Blacklisted, kVerBandZt3Vcu, 1, 5, 9);
+  emit(
+    '18a_zt3_vcu_v1.5.9_blacklisted_SYNTHETIC_FULL.bin',
+    fullImage(zt3Blacklisted),
+    'full',
+    'ZT3 VCU version constant 1.5.9 (0x159) at 0x8A00, on the compat blacklist',
+    'SHU compat refuses after the backup: version not supported, nothing written',
+  );
+  final g3Blacklisted = payload('18b', banner: kBannerG3Vcu);
+  plantVersion(g3Blacklisted, kVerBandG3Vcu, 1, 6, 3);
+  emit(
+    '18b_g3_vcu_v1.6.3_blacklisted_SYNTHETIC_FULL.bin',
+    // A G3 serial, so the version is the ONLY knob: the default ZT3 serial
+    // beside a G3 banner would raise a serial/model clash of its own.
+    fullImage(g3Blacklisted, serial: kSerialG3),
+    'full',
+    'G3 VCU version constant 1.6.3 (0x163) at 0x9A00, on the compat blacklist',
+    'SHU compat refuses after the backup: version not supported, nothing written',
   );
 
   // ── Manifest ──────────────────────────────────────────────────────────────

@@ -14,7 +14,25 @@ import 'engine/firmware.dart';
 import 'engine/firmware_inspection.dart';
 import 'engine/pack_zip3.dart';
 import 'engine/confirmed_file_writer.dart';
+import 'engine/fw_version.dart';
 import 'engine/trash.dart';
+import 'engine/zp_extract.dart';
+
+/// Asks the operator which model an MCU dump belongs to.
+///
+/// MCU firmware carries no model identity — every build banners as
+/// `SCOOTER_MCU_0001` — and the binaries genuinely differ between models, so
+/// this is a DECLARATION we cannot verify, not a check. Returning null cancels.
+typedef AskMcuModel = Future<String?> Function(List<String> models);
+
+/// Asks whether to continue when the installed firmware could not be
+/// identified. Only consulted when the policy is [UnsurePolicy.ask].
+typedef ConfirmUnidentified = Future<bool> Function(String finding);
+
+/// What to do when a guarded action cannot identify the installed firmware.
+/// Fail closed by default: an unrecognised build is the shape every future
+/// release arrives in, and we would rather refuse than patch one blind.
+enum UnsurePolicy { abort, ask }
 
 /// Drives the whole UI via a single StageState the hero binds to.
 class AppController extends ChangeNotifier {
@@ -43,6 +61,12 @@ class AppController extends ChangeNotifier {
   String backupPrefix = '';
   bool secondCopy = true; // redundant %LOCALAPPDATA%\x3utils_backup copy
 
+  /// What SHU compat does when it cannot name the installed firmware. The
+  /// blacklist is checked first and always aborts; this governs only the
+  /// leftover cases (a build we have never catalogued, or one whose evidence is
+  /// contradictory).
+  UnsurePolicy compatUnsurePolicy = UnsurePolicy.abort;
+
   /// BETA3 bench switch — safe ACP validation is the default; this deliberately
   /// restores the unrestricted BETA2 behavior for comparison runs only.
   bool bypassWindowsPathSafety = false;
@@ -65,6 +89,9 @@ class AppController extends ChangeNotifier {
     Firmware.setRoot(x3utilsRoot);
     backupPrefix = _prefs!.getString('backupPrefix') ?? '';
     secondCopy = _prefs!.getBool('secondCopy') ?? true;
+    compatUnsurePolicy = (_prefs!.getBool('compatAskWhenUnidentified') ?? false)
+        ? UnsurePolicy.ask
+        : UnsurePolicy.abort;
     // Deliberately a new BETA3 key. A BETA2 "allow everything" preference must
     // not carry forward silently, and no stored bench setting may activate in
     // a later beta or stable build whose stage does not explicitly opt in.
@@ -155,6 +182,12 @@ class AppController extends ChangeNotifier {
   void setSecondCopy(bool v) {
     secondCopy = v;
     _prefs?.setBool('secondCopy', v);
+    notifyListeners();
+  }
+
+  void setCompatUnsurePolicy(UnsurePolicy v) {
+    compatUnsurePolicy = v;
+    _prefs?.setBool('compatAskWhenUnidentified', v == UnsurePolicy.ask);
     notifyListeners();
   }
 
@@ -1253,12 +1286,18 @@ class AppController extends ChangeNotifier {
   /// re-enters [start] with no arguments, and a retried dump that fails again
   /// must still be able to offer its cleanup.
   ConfirmTrash? _confirmTrash;
+  AskMcuModel? _askMcuModel;
+  ConfirmUnidentified? _confirmUnidentified;
 
   Future<void> start({
     ConfirmFileReplace? confirmFileReplace,
     ConfirmTrash? confirmTrash,
+    AskMcuModel? askMcuModel,
+    ConfirmUnidentified? confirmUnidentified,
   }) async {
     if (confirmTrash != null) _confirmTrash = confirmTrash;
+    if (askMcuModel != null) _askMcuModel = askMcuModel;
+    if (confirmUnidentified != null) _confirmUnidentified = confirmUnidentified;
     _runIssue = null;
     _runIssuePriority = 0;
     messageTone = MessageTone.normal;
@@ -2378,6 +2417,12 @@ class AppController extends ChangeNotifier {
     _setInstruction('Original backup saved. Preparing the patch...');
     _maybeSecondCopy(raw);
 
+    // Step 1b — identify what is actually installed, BEFORE touching it.
+    // Until now compat patched whatever it dumped: its only test was that the
+    // file reached 0x1430. The backup is already on disk, so every refusal here
+    // costs the operator nothing they wanted to keep.
+    if (!await _compatIdentityGate(raw)) return;
+
     // Step 2 — patch (pure Dart, no hardware).
     _showOpenOcdProgress(eyebrow: 'Patching');
     _setInstruction('Patching the SHU compatibility signature...');
@@ -2426,6 +2471,163 @@ class AppController extends ChangeNotifier {
       outputPath: raw,
       outputNote: zipNote,
     );
+  }
+
+  /// Slot 0 occupies `0x1000`-`0xFFFF` of a full dump. Identification reads
+  /// THIS REGION ONLY: slot 1 holds the OTA copy, which can be the previous
+  /// firmware, and scanning both would surface two versions and refuse a
+  /// perfectly normal device. Deliberately a fixed region rather than the ZP
+  /// payload length — a stale ZP record must not turn identification into a
+  /// failure.
+  static const _slot0RegionEnd = 0x10000;
+
+  /// Decide whether SHU compat may proceed against the firmware in [rawPath]
+  /// (the backup just taken). Returns false when the run has already been
+  /// finished with a failure screen.
+  ///
+  /// Order matters: the banner establishes model/type, GT3 is refused outright,
+  /// and the version blacklist is consulted BEFORE identification, so a
+  /// known-bad build refuses without depending on the known-version list being
+  /// complete.
+  Future<bool> _compatIdentityGate(String rawPath) async {
+    _setInstruction('Identifying the installed firmware...');
+    final List<int> bytes;
+    try {
+      bytes = File(rawPath).readAsBytesSync();
+    } catch (e) {
+      await _finishRealAfterHold(
+        false,
+        '',
+        'Nothing was written — the backup could not be re-read to identify the '
+            'installed firmware: $e',
+        reseat: false,
+        outputPath: rawPath,
+      );
+      return false;
+    }
+
+    final id = DeviceSpec.describeBin(bytes, slotBin: false);
+    _log('== installed firmware: ${id.logLine} ==');
+
+    final type = id.bannerType;
+    if (type == null || !id.bannerSupported) {
+      await _finishRealAfterHold(
+        false,
+        '',
+        'Nothing was written — this chip is not running firmware x3utils '
+            'recognises (${id.bannerLabel}). SHU compat only applies to '
+            'supported ZT3, G3 and F3 firmware. The backup was saved.',
+        reseat: false,
+        finding: true,
+        outputPath: rawPath,
+      );
+      return false;
+    }
+
+    // MCU carries no model identity and the binaries differ between models, so
+    // the operator declares it. We cannot check that declaration; it only
+    // selects which version list to consult.
+    var model = id.bannerModel;
+    var modelDeclared = false;
+    if (type == 'MCU') {
+      // Offered models come from the matrix itself, so the picker cannot drift
+      // out of sync with the lists it selects.
+      final models =
+          FwVersionMatrix.known.keys
+              .where((k) => k.endsWith('/MCU'))
+              .map((k) => k.split('/').first)
+              .toList()
+            ..sort();
+      final ask = _askMcuModel;
+      final picked = ask == null ? null : await ask(models);
+      if (picked == null) {
+        await _finishRealAfterHold(
+          false,
+          '',
+          'Nothing was written — this is MCU firmware, which does not say which '
+              'model it belongs to, and no model was selected. The backup was '
+              'saved.',
+          reseat: false,
+          finding: true,
+          outputPath: rawPath,
+        );
+        return false;
+      }
+      model = picked;
+      modelDeclared = true;
+      _log('== operator declared MCU model: $model (not verifiable) ==');
+    }
+
+    // Applied to the declared model as well as the banner-derived one, so the
+    // refusal cannot be dodged by picking it from the MCU list.
+    if (FwVersionMatrix.unsupportedModels.contains(model)) {
+      await _finishRealAfterHold(
+        false,
+        '',
+        'Nothing was written — SHU compat is not supported on '
+            '${model!.toUpperCase()} at any firmware version. The backup was '
+            'saved.',
+        reseat: false,
+        finding: true,
+        outputPath: rawPath,
+      );
+      return false;
+    }
+
+    final fw = FwVersionScanner.identify(
+      bytes.sublist(Zp.slot0Offset, _slot0RegionEnd),
+      model: model!,
+      type: type,
+    );
+    _log('== ${fw.logLine} ==');
+
+    if (fw.blocked) {
+      await _finishRealAfterHold(
+        false,
+        '',
+        'Nothing was written — this chip runs '
+            '${model.toUpperCase()} $type ${fw.version}, and SHU compat does '
+            'not work on that firmware. Patching it would overwrite the key '
+            'without making the scooter SHU-compatible. The backup was saved.',
+        reseat: false,
+        finding: true,
+        outputPath: rawPath,
+      );
+      return false;
+    }
+
+    if (fw.uncertain) {
+      final finding = fw.verdict == FwVerdict.ambiguous
+          ? 'The installed firmware gave contradictory version evidence '
+                '(${fw.matches.join(', ')}).'
+          : 'x3utils does not recognise the installed firmware version'
+                '${modelDeclared ? ' for the $model MCU you selected' : ''}.';
+      final ask = _confirmUnidentified;
+      final proceed =
+          compatUnsurePolicy == UnsurePolicy.ask &&
+          ask != null &&
+          await ask(finding);
+      if (!proceed) {
+        await _finishRealAfterHold(
+          false,
+          '',
+          'Nothing was written — $finding SHU compat is only known to work on '
+              'firmware older than the published ceilings, so it stopped rather '
+              'than patch a build it cannot place. The backup was saved.',
+          reseat: false,
+          finding: true,
+          outputPath: rawPath,
+        );
+        return false;
+      }
+      _log('== operator continued past an unidentified firmware version ==');
+      return true;
+    }
+
+    _setInstruction(
+      'Installed firmware: ${model.toUpperCase()} $type ${fw.version}.',
+    );
+    return true;
   }
 
   /// Repack the compat [patchedPath] image (a full 128 KB dump with the compat

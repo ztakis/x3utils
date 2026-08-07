@@ -73,6 +73,9 @@ class _HomeScreenState extends State<HomeScreen> {
     await c.start(
       confirmFileReplace: _showZip3ReplaceConfirm,
       confirmTrash: _showTrashConfirm,
+      askMcuModel: (models) => _showMcuModelPicker(context, models),
+      confirmUnidentified: (finding) =>
+          _showUnidentifiedConfirm(context, finding),
     );
   }
 
@@ -2849,6 +2852,156 @@ class _StageButtons extends StatelessWidget {
 /// supported, so entering the action requires acknowledging the known version
 /// ceilings after a short countdown. Anything except acceptance keeps the
 /// previous action selected.
+/// MCU firmware carries no model identity and the binaries differ per model, so
+/// the operator declares which scooter this is. Deliberately worded as a
+/// selection, not a check — nothing here can verify the answer.
+Future<String?> _showMcuModelPicker(BuildContext context, List<String> models) {
+  return showDialog<String>(
+    context: context,
+    barrierColor: const Color(0xB3040A0F),
+    builder: (ctx) => Dialog(
+      backgroundColor: AppColors.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.line2),
+      ),
+      child: Container(
+        width: 460,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Which scooter is this?',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.txt,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'This is MCU firmware. Unlike the VCU, an MCU image does not say '
+              'which model it belongs to, so x3utils cannot work it out from '
+              'the backup. Your answer only selects which firmware versions to '
+              'compare against — it is not checked.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: AppColors.dim,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final m in models)
+                  _PillButton(
+                    label: m.toUpperCase(),
+                    onTap: () => Navigator.pop(ctx, m),
+                    bg: AppColors.line,
+                    fg: AppColors.txt,
+                    border: AppColors.line2,
+                    small: true,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _PillButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.pop(ctx, null),
+                  bg: AppColors.line,
+                  fg: AppColors.txt,
+                  border: AppColors.line2,
+                  small: true,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Shown only when the "ask when firmware is unrecognised" setting is on. The
+/// backup is already saved by the time this appears, which is why continuing is
+/// offered at all.
+Future<bool> _showUnidentifiedConfirm(
+  BuildContext context,
+  String finding,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierColor: const Color(0xB3040A0F),
+    builder: (ctx) => Dialog(
+      backgroundColor: AppColors.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.line2),
+      ),
+      child: Container(
+        width: 500,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Unrecognised firmware',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.txt,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '$finding\n\nSHU compat is only known to work below the published '
+              'firmware ceilings. On a build x3utils cannot place, patching may '
+              'do nothing except overwrite the key the scooter needs for its '
+              'own updates. Your backup has already been saved.',
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: AppColors.dim,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _PillButton(
+                  label: 'Stop',
+                  onTap: () => Navigator.pop(ctx, false),
+                  bg: AppColors.line,
+                  fg: AppColors.txt,
+                  border: AppColors.line2,
+                  small: true,
+                ),
+                const SizedBox(width: 10),
+                _PillButton(
+                  label: 'Patch anyway',
+                  onTap: () => Navigator.pop(ctx, true),
+                  gradient: const [Color(0xFFFFC247), AppColors.hold],
+                  fg: const Color(0xFF211600),
+                  small: true,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  return ok ?? false;
+}
+
 Future<bool?> _showShuCompatWarning(BuildContext context) {
   return showDialog<bool>(
     context: context,
@@ -4407,6 +4560,42 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
             fontSize: 12,
             fontFamily: kMono,
           ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Ask when firmware is unrecognised',
+                style: TextStyle(
+                  color: AppColors.txt,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Transform.scale(
+              scale: 0.8,
+              alignment: Alignment.centerRight,
+              child: Switch(
+                value: c.compatUnsurePolicy == UnsurePolicy.ask,
+                activeThumbColor: AppColors.brand,
+                onChanged: (v) {
+                  c.setCompatUnsurePolicy(
+                    v ? UnsurePolicy.ask : UnsurePolicy.abort,
+                  );
+                  setState(() {});
+                },
+              ),
+            ),
+          ],
+        ),
+        const Text(
+          'SHU compat identifies the installed firmware from the backup it '
+          'takes. Firmware known not to work is always refused. This governs '
+          'only the leftover case — a build x3utils cannot place. OFF stops; '
+          'ON asks you and lets you continue anyway.',
+          style: TextStyle(color: AppColors.mut, fontSize: 12),
         ),
         // BETA3 Windows-only bench instrument. Safe ACP validation is the
         // default; this restores unrestricted BETA2 behavior for comparison.
