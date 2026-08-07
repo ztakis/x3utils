@@ -4131,41 +4131,63 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
   }
 }
 
-/// Faint opt-in under the "Make SHU compatible" pill: after the patched image
-/// flashes, also repackage it as a BLE-loadable zip3. Off by default; VCU only
-/// (an MCU compat run silently skips — see AppController.compatMakeZip3).
+/// Faint opt-ins under the "Make SHU compatible" pill: after the patched image
+/// flashes, also repackage BOTH the patched and the stock firmware as
+/// BLE-loadable packages. Each ticked format produces two files.
+///
+/// Two boxes rather than one because two generations of the BLE app are in the
+/// field — 3.x reads only legacy zip3, 4.x is expected to read both — and the
+/// operator, not x3utils, knows which one their phone is running. Off by
+/// default; VCU only (an MCU compat run skips — see AppController.compatMakeZip3).
 class _CompatZip3Toggle extends StatelessWidget {
   const _CompatZip3Toggle({required this.c});
   final AppController c;
+
+  Widget _box(String label, bool on, void Function(bool) set) => InkWell(
+    onTap: () => set(!on),
+    borderRadius: BorderRadius.circular(8),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            on
+                ? Icons.check_box_rounded
+                : Icons.check_box_outline_blank_rounded,
+            size: 16,
+            color: on ? AppColors.brand : AppColors.mut,
+          ),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: on ? AppColors.txt : AppColors.dim,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
-    final on = c.compatMakeZip3;
-    return InkWell(
-      onTap: () => c.setCompatMakeZip3(!on),
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              on
-                  ? Icons.check_box_rounded
-                  : Icons.check_box_outline_blank_rounded,
-              size: 16,
-              color: on ? AppColors.brand : AppColors.mut,
-            ),
-            const SizedBox(width: 7),
-            Text(
-              'Attempt to also make zip 3.2',
-              style: TextStyle(
-                fontSize: 12,
-                color: on ? AppColors.txt : AppColors.dim,
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _box(
+          'Also make zip 3 (SHU 3.x and 4.x)',
+          c.compatMakeZip3,
+          c.setCompatMakeZip3,
         ),
-      ),
+        _box(
+          'Also make zip 3.2 (SHU 4.x only)',
+          c.compatMakeZip32,
+          c.setCompatMakeZip32,
+        ),
+      ],
     );
   }
 }

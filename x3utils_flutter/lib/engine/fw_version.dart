@@ -167,8 +167,17 @@ class FwVersionMatrix {
       '1.5.0',
       '1.5.7',
     ], // verified; incomplete
-    'f3/VCU': ['1.5.4', '1.5.6', '1.5.8', '1.5.13'], // verified; incomplete
-    'f3/MCU': ['1.4.1', '1.4.12', '1.5.0'], // verified; incomplete
+    'f3/VCU': [
+      '1.5.4',
+      '1.5.5',
+      '1.5.6',
+      '1.5.8',
+      '1.5.13',
+      '1.6.0',
+      '1.6.1',
+      '1.6.2',
+    ], // verified; incomplete
+    'f3/MCU': ['1.4.1', '1.4.5', '1.4.12', '1.5.0'], // verified; incomplete
     'gt3/VCU': ['1.5.8'], // verified; GT3 is refused at the banner regardless
     'gt3/MCU': ['1.8.4'], // verified; incomplete
   };

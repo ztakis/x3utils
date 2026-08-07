@@ -34,6 +34,39 @@ typedef ConfirmUnidentified = Future<bool> Function(String finding);
 /// release arrives in, and we would rather refuse than patch one blind.
 enum UnsurePolicy { abort, ask }
 
+/// What identification established about the firmware on the chip, carried
+/// forward so the packaging step names its output from evidence gathered
+/// before the write rather than re-deriving it from the image afterwards.
+///
+/// [version] is null only when the operator chose to continue past a build
+/// x3utils could not place — the one case where a package cannot claim a
+/// version and must not look as though it does.
+///
+/// [modelDeclared] records that the model was picked by the operator (MCU
+/// firmware carries no model identity) rather than read from the banner. It is
+/// not verifiable, so anything named from it inherits that uncertainty.
+class CompatIdentity {
+  const CompatIdentity({
+    required this.model,
+    required this.type,
+    required this.version,
+    required this.modelDeclared,
+  });
+
+  final String model;
+  final String type;
+  final String? version;
+  final bool modelDeclared;
+
+  /// The identity stem both packages of a run share: `zt3_vcu_v1.5.5`, or
+  /// `zt3_vcu_unknownfw` when the operator waved an unplaceable build through.
+  /// Only the trailing `_stock` / `_compat` tells the two apart.
+  String get nameStem {
+    final v = version == null ? 'unknownfw' : 'v$version';
+    return '${model.toLowerCase()}_${type.toLowerCase()}_$v';
+  }
+}
+
 /// Drives the whole UI via a single StageState the hero binds to.
 class AppController extends ChangeNotifier {
   AppController({@visibleForTesting OpenOcdRunner? runner}) {
@@ -347,15 +380,28 @@ class AppController extends ChangeNotifier {
   // Opt-in checkbox under the "Make SHU compatible" action. When on and the
   // compat flash succeeds, the patched image is repackaged as a BLE-loadable
   // zip3. VCU only — its banner declares the model; an MCU dump carries no model
-  // identity, so an MCU compat run silently skips the zip rather than guess.
+  // identity, so an MCU compat run skips the zips rather than guess.
   // Best-effort: a packaging hiccup never demotes the compat flash success.
   // Off by default and transient (reset on every action switch).
-  bool compatMakeZip3 = false;
+  //
+  // Two formats, independently selectable, because two generations of the BLE
+  // app are in the field: 3.x reads only legacy zip3 (schemaVersion 1), and
+  // 4.x is expected to read both. Emitting both is a checkbox and two files;
+  // handing someone the one format their app refuses is a dead end at the
+  // moment they need it.
+  bool compatMakeZip3 = false; // legacy zip3, NinebotTEA
+  bool compatMakeZip32 = false; // zip3.2, plaintext + MD5
   Zip3WorkspacePage zip3WorkspacePage = Zip3WorkspacePage.slice;
 
   void setCompatMakeZip3(bool v) {
     if (running) return;
     compatMakeZip3 = v;
+    notifyListeners();
+  }
+
+  void setCompatMakeZip32(bool v) {
+    if (running) return;
+    compatMakeZip32 = v;
     notifyListeners();
   }
 
@@ -1043,7 +1089,8 @@ class AppController extends ChangeNotifier {
     flashScope =
         FlashScope.fullImage; // scope is per action entry, never sticky
     _resetZip3Form(); // the packer form is transient, per action entry
-    compatMakeZip3 = false; // the compat zip3 opt-in is transient too
+    compatMakeZip3 = false; // the compat zip3 opt-ins are transient too
+    compatMakeZip32 = false;
     _firmwareSelected = null; // no action remembers a loaded bin
     _firmwareSelectedDigest = null;
     _firmwareNote = null;
@@ -2421,7 +2468,8 @@ class AppController extends ChangeNotifier {
     // Until now compat patched whatever it dumped: its only test was that the
     // file reached 0x1430. The backup is already on disk, so every refusal here
     // costs the operator nothing they wanted to keep.
-    if (!await _compatIdentityGate(raw)) return;
+    final identity = await _compatIdentityGate(raw);
+    if (identity == null) return;
 
     // Step 2 — patch (pure Dart, no hardware).
     _showOpenOcdProgress(eyebrow: 'Patching');
@@ -2462,7 +2510,9 @@ class AppController extends ChangeNotifier {
       _setInstruction('SHU-compatible firmware verified.');
       // Optional, best-effort: repack the just-flashed patched image as a
       // BLE-loadable zip3. Never lets a packaging problem demote the success.
-      if (compatMakeZip3) zipNote = _maybeCompatZip3(patched);
+      if (compatMakeZip3 || compatMakeZip32) {
+        zipNote = _maybeCompatZip3(raw, patched, identity);
+      }
     }
     await _finishRealAfterHold(
       flashOk,
@@ -2482,14 +2532,14 @@ class AppController extends ChangeNotifier {
   static const _slot0RegionEnd = 0x10000;
 
   /// Decide whether SHU compat may proceed against the firmware in [rawPath]
-  /// (the backup just taken). Returns false when the run has already been
+  /// (the backup just taken). Returns null when the run has already been
   /// finished with a failure screen.
   ///
   /// Order matters: the banner establishes model/type, GT3 is refused outright,
   /// and the version blacklist is consulted BEFORE identification, so a
   /// known-bad build refuses without depending on the known-version list being
   /// complete.
-  Future<bool> _compatIdentityGate(String rawPath) async {
+  Future<CompatIdentity?> _compatIdentityGate(String rawPath) async {
     _setInstruction('Identifying the installed firmware...');
     final List<int> bytes;
     try {
@@ -2503,7 +2553,7 @@ class AppController extends ChangeNotifier {
         reseat: false,
         outputPath: rawPath,
       );
-      return false;
+      return null;
     }
 
     final id = DeviceSpec.describeBin(bytes, slotBin: false);
@@ -2521,7 +2571,7 @@ class AppController extends ChangeNotifier {
         finding: true,
         outputPath: rawPath,
       );
-      return false;
+      return null;
     }
 
     // MCU carries no model identity and the binaries differ between models, so
@@ -2551,7 +2601,7 @@ class AppController extends ChangeNotifier {
           finding: true,
           outputPath: rawPath,
         );
-        return false;
+        return null;
       }
       model = picked;
       modelDeclared = true;
@@ -2571,7 +2621,7 @@ class AppController extends ChangeNotifier {
         finding: true,
         outputPath: rawPath,
       );
-      return false;
+      return null;
     }
 
     final fw = FwVersionScanner.identify(
@@ -2593,7 +2643,7 @@ class AppController extends ChangeNotifier {
         finding: true,
         outputPath: rawPath,
       );
-      return false;
+      return null;
     }
 
     if (fw.uncertain) {
@@ -2618,64 +2668,154 @@ class AppController extends ChangeNotifier {
           finding: true,
           outputPath: rawPath,
         );
-        return false;
+        return null;
       }
       _log('== operator continued past an unidentified firmware version ==');
-      return true;
+      // No version to carry: anything named from this run says so rather than
+      // inheriting a number nobody established.
+      return CompatIdentity(
+        model: model,
+        type: type,
+        version: null,
+        modelDeclared: modelDeclared,
+      );
     }
 
     _setInstruction(
       'Installed firmware: ${model.toUpperCase()} $type ${fw.version}.',
     );
-    return true;
+    return CompatIdentity(
+      model: model,
+      type: type,
+      version: fw.version?.toString(),
+      modelDeclared: modelDeclared,
+    );
   }
 
-  /// Repack the compat [patchedPath] image (a full 128 KB dump with the compat
-  /// patch written at 0x1420) into a BLE-loadable zip3, and return a one-line
-  /// location
-  /// note for the success screen — or null when it is skipped or fails.
+  /// Repack BOTH images of a compat run into BLE-loadable zip3 packages: the
+  /// SHU-patched image just flashed, and the original firmware exactly as it
+  /// was found. Returns a location note for the success screen, or null when
+  /// neither could be built.
+  ///
+  /// The original is packaged because it is the only route back that does not
+  /// need an ST-Link: the raw backup is a full 128 KB dump the BLE app cannot
+  /// load, so without this the undo path requires the cable that compat exists
+  /// to avoid needing twice.
   ///
   /// VCU only: the banner declares the model, so identity is derived, not
   /// guessed. An MCU dump carries no model identity (banner `SCOOTER_MCU_0001`,
-  /// generic part serial), so an MCU compat run silently skips — the maintainer's
-  /// call, since MCU compat is rare and its model can't be self-declared. Every
-  /// failure is swallowed: the compat flash already succeeded, and this extra is
-  /// strictly best-effort.
-  String? _maybeCompatZip3(String patchedPath) {
+  /// generic part serial), so an MCU compat run skips both. Every failure is
+  /// swallowed: the compat flash already succeeded, and this extra is strictly
+  /// best-effort — but a package that failed to build is NAMED rather than
+  /// passed over in silence, so the operator never assumes an undo they do not
+  /// have.
+  String? _maybeCompatZip3(
+    String rawPath,
+    String patchedPath,
+    CompatIdentity identity,
+  ) {
+    // Both packages of a run share one folder named for the run, so the two
+    // clean identity filenames can repeat across runs without a later compat
+    // on the same model and version overwriting an earlier scooter's stock
+    // package — the one artifact that is unit-specific, since it carries that
+    // board's own key.
+    final Directory folder;
     try {
-      final bytes = File(patchedPath).readAsBytesSync();
+      folder = Directory(
+        patchedPath.replaceFirst(RegExp(r'_patched\.bin$'), '_zips'),
+      )..createSync(recursive: true);
+    } catch (e) {
+      _log('== compat zip3 skipped: could not create the zip folder: $e ==');
+      return null;
+    }
+
+    final stem = identity.nameStem;
+    final formats = <Zip3Format>[
+      if (compatMakeZip3) Zip3Format.legacy,
+      if (compatMakeZip32) Zip3Format.rev2,
+    ];
+
+    // The format token is always present, even when only one is selected: a
+    // package the operator's app version cannot read is worse than a long name,
+    // and 3.x/4.x users share these files with each other.
+    // A package that fails to build is named in the log by _packCompatZip3.
+    // Only the stock case reaches the success screen, because it is the only
+    // one whose absence changes what the operator can still do.
+    final built = <String>[];
+    var stockBuilt = false;
+    for (final format in formats) {
+      final token = format == Zip3Format.legacy ? 'zip3' : 'zip32';
+      for (final (suffix, src) in [
+        ('compat', patchedPath),
+        ('stock', rawPath),
+      ]) {
+        final file = _packCompatZip3(
+          src,
+          folder,
+          '${stem}_${suffix}_$token',
+          format,
+        );
+        if (file == null) continue;
+        built.add(file);
+        if (suffix == 'stock') stockBuilt = true;
+      }
+    }
+
+    if (built.isEmpty) {
+      if (folder.listSync().isEmpty) folder.deleteSync();
+      return null;
+    }
+
+    // Two sentences, hard limit. Filenames, formats and per-file failures are
+    // in the folder and in the log; nobody reads a paragraph on a success
+    // screen. What loading a stock package does cannot be recovered from
+    // either, so that is the sentence that earns its place.
+    final where = folder.path.split(RegExp(r'[\\/]')).last;
+    final count =
+        '${built.length} package${built.length == 1 ? '' : 's'} saved in $where.';
+    return stockBuilt
+        ? '$count Loading a stock package restores the original key.'
+        : '$count No stock package — going back needs the ST-Link.';
+  }
+
+  /// Build one zip3 from [binPath] into [folder] as `<name>.zip`, returning its
+  /// filename or null.
+  ///
+  /// [name] is used for BOTH the filename and the package's internal
+  /// displayName, so what the BLE app lists is what sits on disk — the packages
+  /// are told apart in the app, not only in the file picker.
+  String? _packCompatZip3(
+    String binPath,
+    Directory folder,
+    String name,
+    Zip3Format format,
+  ) {
+    try {
+      final bytes = File(binPath).readAsBytesSync();
       final det = PackV3.detect(bytes);
       if (det.type != 'VCU' || det.model == null) {
-        _log('== compat zip3 skipped: not a VCU (no model to declare) ==');
+        _log('== compat zip3 ($name) skipped: not a VCU (no model) ==');
         return null;
       }
-      // Co-locate the package with its source run: same folder, same timestamp
-      // as the compat .bin/_patched.bin, so the three artifacts of one run stay
-      // together (compat_<ts>.bin, _patched.bin, _patched.zip). The filename
-      // carries lineage; the internal info.json displayName stays the clean
-      // "<model>_<TYPE>" the BLE app shows.
-      // The default builder format is zip3.2. enforceModel is passed only for
-      // the explicit legacy alternative.
+      // enforceModel applies to legacy only; rev2 uses `models` and ignores it.
       final result = PackV3.buildZip3FromDump(
         bytes,
         type: det.type!,
         model: det.model!,
         enforceModel: true,
+        displayName: name,
+        format: format,
       );
-      // Swap .bin → .zip on the patched path to inherit its exact timestamp and
-      // prefix, rather than minting a fresh stamp that could desync the trio.
-      final outPath = patchedPath.replaceFirst(RegExp(r'\.bin$'), '.zip');
+      final outPath = '${folder.path}${Platform.pathSeparator}$name.zip';
       File(outPath).writeAsBytesSync(result.zipBytes);
       _log(
-        '== compat zip3: ${result.model}/${result.type} · '
+        '== compat zip3 ($name): ${result.model}/${result.type} · '
         '${result.payloadLength} B payload → $outPath ==',
       );
-      final file = outPath.split(RegExp(r'[\\/]')).last;
-      return 'A BLE-loadable zip3 was saved beside the backup: $file. '
-          'Test it through the BLE app’s Load from file before relying on it.';
+      return '$name.zip';
     } catch (e) {
       // Best-effort only — the compat flash succeeded regardless.
-      _log('== compat zip3 skipped: $e ==');
+      _log('== compat zip3 ($name) skipped: $e ==');
       return null;
     }
   }

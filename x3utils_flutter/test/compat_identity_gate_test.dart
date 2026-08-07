@@ -8,6 +8,7 @@ import 'package:x3utils_flutter/engine/device_spec.dart';
 import 'package:x3utils_flutter/engine/firmware.dart';
 import 'package:x3utils_flutter/engine/openocd_paths.dart';
 import 'package:x3utils_flutter/engine/openocd_runner.dart';
+import 'package:x3utils_flutter/engine/pack_zip3.dart';
 import 'package:x3utils_flutter/models.dart';
 
 /// SHU compat used to patch whatever it dumped — its only test was that the
@@ -78,8 +79,25 @@ class _RecordingRunner extends OpenOcdRunner {
 /// The `i % 251` filler cannot accidentally decode as a version load — its
 /// consecutive bytes differ by one, so the `40 f2` / `4f f0` opcode pairs never
 /// occur.
-List<int> _dump({required String banner, int? versionValue}) {
+/// [zpPayloadLength] plants the device's own firmware-length record at 0x1F800
+/// (`ZP`, six zeros, then the LE u32 ENCRYPTED length = payload + 4), which is
+/// what the zip3 packer slices on. Without it the packer refuses, so the tests
+/// that assert a package exists must ask for one.
+List<int> _dump({
+  required String banner,
+  int? versionValue,
+  int? zpPayloadLength,
+}) {
   final b = List<int>.generate(131072, (i) => i % 251);
+  if (zpPayloadLength != null) {
+    final encLen = zpPayloadLength + 4;
+    b.setRange(0x1F800, 0x1F810, [
+      0x5A, 0x50, 0, 0, 0, 0, 0, 0, // "ZP" + six zeros
+      encLen & 0xFF, (encLen >> 8) & 0xFF,
+      (encLen >> 16) & 0xFF, (encLen >> 24) & 0xFF,
+      0, 0, 0, 0,
+    ]);
+  }
   b.setRange(
     kSlotBannerOffset,
     kSlotBannerOffset + kBannerLength,
@@ -209,6 +227,129 @@ void main() {
 
     expect(runner.wroteFlash, isTrue);
     expect(compatFiles('_patched.bin'), isNotEmpty);
+  });
+
+  /// The zips of a run live in their own `<run>_zips` folder, so the two clean
+  /// identity filenames can repeat across runs without collision.
+  List<String> zipNames() {
+    final compat = Directory(p.join(rootDir.path, 'compat'));
+    if (!compat.existsSync()) return [];
+    return compat
+        .listSync()
+        .whereType<Directory>()
+        .where((d) => d.path.endsWith('_zips'))
+        .expand((d) => d.listSync().whereType<File>())
+        .map((f) => p.basename(f.path))
+        .toList()
+      ..sort();
+  }
+
+  test('each ticked format packages both the stock and patched firmware', () async {
+    // 58436 ≡ 4 (mod 8): the ZP guard invariant, and the exact constraint
+    // legacy NinebotTEA packing needs for an exact round trip.
+    final runner = _RecordingRunner(
+      _dump(
+        banner: 'SCOOTER_VCU_xxG3',
+        versionValue: 0x155,
+        zpPayloadLength: 58436,
+      ),
+    );
+    final c = await compatRunner(runner);
+    c.setCompatMakeZip3(true);
+    c.setCompatMakeZip32(true);
+
+    await c.start();
+
+    expect(runner.wroteFlash, isTrue);
+    // The stock packages are the point: the raw backup is a 128 KB dump the BLE
+    // app cannot load, so these are the only ST-Link-free way back. Every name
+    // carries the version identified BEFORE the write, plus the format token a
+    // 3.x user needs to pick the file their app can read.
+    expect(zipNames(), [
+      'g3_vcu_v1.5.5_compat_zip3.zip',
+      'g3_vcu_v1.5.5_compat_zip32.zip',
+      'g3_vcu_v1.5.5_stock_zip3.zip',
+      'g3_vcu_v1.5.5_stock_zip32.zip',
+    ]);
+    expect(
+      c.resultNote,
+      allOf(
+        contains('4 packages saved in'),
+        contains('Loading a stock package restores the original key.'),
+      ),
+    );
+  });
+
+  test(
+    'the zip3 box alone emits legacy packages a SHU 3.x app can read',
+    () async {
+      final runner = _RecordingRunner(
+        _dump(
+          banner: 'SCOOTER_VCU_xxG3',
+          versionValue: 0x155,
+          zpPayloadLength: 58436,
+        ),
+      );
+      final c = await compatRunner(runner);
+      c.setCompatMakeZip3(true);
+
+      await c.start();
+
+      expect(zipNames(), [
+        'g3_vcu_v1.5.5_compat_zip3.zip',
+        'g3_vcu_v1.5.5_stock_zip3.zip',
+      ]);
+      // schemaVersion 1 is what the 3.x app demanded; assert the built artifact
+      // rather than the request, and that the payload survives the round trip.
+      final dir = Directory(p.join(rootDir.path, 'compat'))
+          .listSync()
+          .whereType<Directory>()
+          .firstWhere((d) => d.path.endsWith('_zips'));
+      final bytes = File(
+        p.join(dir.path, 'g3_vcu_v1.5.5_stock_zip3.zip'),
+      ).readAsBytesSync();
+      final pkg = PackV3.unpackV3(bytes, policy: Zip3UnpackPolicy.extract);
+      expect(pkg.format, Zip3Format.legacy);
+      expect(pkg.displayName, 'g3_vcu_v1.5.5_stock_zip3');
+      expect(pkg.firmware, hasLength(58436));
+    },
+  );
+
+  test(
+    'a waved-through build is not named as though it were identified',
+    () async {
+      // Ask policy, operator continues past a version x3utils cannot place, so
+      // there is no version to put in the name.
+      final runner = _RecordingRunner(
+        _dump(banner: 'SCOOTER_VCU_xxG3', zpPayloadLength: 58436),
+      );
+      final c = await compatRunner(runner, policy: UnsurePolicy.ask);
+      c.setCompatMakeZip3(true);
+
+      await c.start(confirmUnidentified: (_) async => true);
+
+      expect(runner.wroteFlash, isTrue);
+      expect(zipNames(), [
+        'g3_vcu_unknownfw_compat_zip3.zip',
+        'g3_vcu_unknownfw_stock_zip3.zip',
+      ]);
+    },
+  );
+
+  test('compat names the package it could not build', () async {
+    // No ZP record, so the packer refuses both — the success screen must say
+    // so rather than leave the operator assuming an undo package exists.
+    final runner = _RecordingRunner(
+      _dump(banner: 'SCOOTER_VCU_xxG3', versionValue: 0x155),
+    );
+    final c = await compatRunner(runner);
+    c.setCompatMakeZip3(true);
+
+    await c.start();
+
+    expect(runner.wroteFlash, isTrue);
+    expect(zipNames(), isEmpty);
+    expect(c.resultNote ?? '', isNot(contains('zip3')));
   });
 
   test('an unsupported banner aborts before the patch', () async {
