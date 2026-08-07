@@ -662,10 +662,12 @@ class _HomeScreenState extends State<HomeScreen> {
   String _confirmBody(FlashAction a) => switch (a.id) {
     'flash_only' =>
       'No backup is taken and the target-match guard is skipped — nothing checks that this firmware belongs on this controller. If the write goes wrong there is nothing to restore from. Only continue if you already have a good dump and you are sure about the target.',
-    'flash_slot0' =>
-      'Only application slot 0 is erased and written. The bootloader and identity block stay untouched.',
     'flash_backup' =>
-      'A full 128 KB backup runs first, then your firmware is written and verified. Keep the wires steady the whole time.',
+      c.isSlotAction
+          ? 'A full 128 KB backup runs first, then only application slot 0 is erased and written — the bootloader and identity block stay untouched. Keep the wires steady the whole time.'
+          : 'A full 128 KB backup runs first, then your firmware is written and verified. Keep the wires steady the whole time.',
+    'flash_slot0' => // retired, hidden
+    'Only application slot 0 is erased and written. The bootloader and identity block stay untouched.',
     'flash_compat' =>
       'Backs up the chip, patches its own firmware for SHU compatibility, and flashes it back. The original is saved first. Keep the wires steady.',
     'rdp_rescue' =>
@@ -1170,7 +1172,7 @@ class _Rail extends StatelessWidget {
             const SizedBox(height: 20),
             const _RailLabel('Actions'),
             for (final a in kActions.where(
-              (a) => a.section == Section.standard,
+              (a) => a.section == Section.standard && !a.hidden,
             ))
               _ActionTile(c: c, action: a),
             const SizedBox(height: 14),
@@ -1187,7 +1189,7 @@ class _Rail extends StatelessWidget {
                         for (final m in c.modesIn(Section.advanced))
                           _ModeTile(c: c, mode: m),
                         for (final a in kActions.where(
-                          (a) => a.section == Section.advanced,
+                          (a) => a.section == Section.advanced && !a.hidden,
                         ))
                           _ActionTile(c: c, action: a),
                       ],
@@ -3570,9 +3572,13 @@ class _FirmwareBar extends StatelessWidget {
     final path = c.firmwarePath;
     final name = path?.split(RegExp(r'[\\/]')).last;
     final has = name != null;
-    final flashOnly = c.actionId == 'flash_only';
+    // The two flash actions share the scoped two-line bar; every other firmware
+    // action writes one fixed kind of file and keeps the single-line picker.
+    // Retired flash_slot0 keeps the two-line bar (it needs the .zip button) but
+    // has no scope to choose.
+    final scoped = c.hasFlashScope;
     final slot0 = c.isSlotAction;
-    final twoLine = flashOnly || c.actionId == 'flash_slot0';
+    final twoLine = scoped || c.actionId == 'flash_slot0';
 
     if (!twoLine) {
       return Container(
@@ -3626,11 +3632,11 @@ class _FirmwareBar extends StatelessWidget {
       );
     }
 
-    final hint = !has && flashOnly
-        ? (slot0
-              ? 'Choose a slot-sized .bin or import a VCU/MCU zip3 or zip3.2 package.'
-              : 'zip3 and zip3.2 packages contain slot firmware — select Slot 0 only.')
-        : null;
+    final hint = has
+        ? null
+        : slot0
+        ? 'Choose a slot-sized .bin or import a VCU/MCU zip3 or zip3.2 package.'
+        : 'zip3 and zip3.2 packages contain slot firmware — select Slot 0 only.';
     return Container(
       constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 11),
@@ -3671,8 +3677,8 @@ class _FirmwareBar extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              if (flashOnly)
-                Expanded(child: _FlashOnlyScopeControl(c: c))
+              if (scoped)
+                Expanded(child: _FlashScopeControl(c: c))
               else
                 const Spacer(),
               const SizedBox(width: 12),
@@ -3709,8 +3715,8 @@ class _FirmwareBar extends StatelessWidget {
   }
 }
 
-class _FlashOnlyScopeControl extends StatelessWidget {
-  const _FlashOnlyScopeControl({required this.c});
+class _FlashScopeControl extends StatelessWidget {
+  const _FlashScopeControl({required this.c});
   final AppController c;
 
   @override
@@ -3725,15 +3731,15 @@ class _FlashOnlyScopeControl extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _item('Full image', FlashOnlyScope.fullImage),
-          _item('Slot 0 only', FlashOnlyScope.slot0),
+          _item('Full image', FlashScope.fullImage),
+          _item('Slot 0 only', FlashScope.slot0),
         ],
       ),
     );
   }
 
-  Widget _item(String label, FlashOnlyScope scope) {
-    final selected = c.flashOnlyScope == scope;
+  Widget _item(String label, FlashScope scope) {
+    final selected = c.flashScope == scope;
     return Expanded(
       child: Semantics(
         button: true,
@@ -3741,7 +3747,7 @@ class _FlashOnlyScopeControl extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: selected ? null : () => c.setFlashOnlyScope(scope),
+            onTap: selected ? null : () => c.setFlashScope(scope),
             borderRadius: BorderRadius.circular(999),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 140),

@@ -20,7 +20,8 @@ Actions:
 - **Check connection** — read-only probe
 - **Backup** — full 128 KB dump, validated
 - **SHU compatible** — dump → patch the chip's own firmware → flash back
-- **Backup + Flash** / **Flash Only** / **Flash slot 0** — flash a `.bin` (slot 0 is identity-safe)
+- **Backup + Flash** / **Flash Only** — flash a `.bin`, either the full image or
+  slot 0 only (slot 0 is identity-safe, and accepts a zip3/zip3.2 package too)
 - **Check protection** / **Unlock / rescue** — read-protection (FAP) verdict + WRP-safe rescue
 
 Plus: firmware validation (size / all-zeros / write-protected diagnostics),
@@ -158,7 +159,7 @@ The Dart orchestration is shared; each OS supplies its native backend:
 
 Version lives in four places — **keep them in sync**: `VERSION`,
 `pubspec.yaml` (`version:`), and `kAppVersion` in `lib/theme.dart` (drives the
-UI). Current: **1.2.7**. Also in installer/x3utils.iss `AppVer`. The release
+UI). Current: **1.2.8**. Also in installer/x3utils.iss `AppVer`. The release
 channel is a separate `kAppStage` in `lib/theme.dart` (`BETA`, or `''` for
 stable), kept out of those four strings so they stay byte-equal.
 

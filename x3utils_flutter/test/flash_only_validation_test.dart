@@ -540,7 +540,7 @@ void main() {
       });
 
       controller.selectAction('flash_only');
-      controller.setFlashOnlyScope(FlashOnlyScope.slot0);
+      controller.setFlashScope(FlashScope.slot0);
       final result = await controller.loadSlotFirmwareFromZip(zipFile.path);
 
       expect(result.ok, isFalse);
@@ -572,7 +572,8 @@ void main() {
         addTearDown(controller.dispose);
         await Future<void>.delayed(Duration.zero);
         controller.setX3utilsRoot(root.path);
-        controller.selectAction('flash_slot0');
+        controller.selectAction('flash_backup');
+        controller.setFlashScope(FlashScope.slot0);
 
         final result = await controller.loadSlotFirmwareFromZip(zipFile.path);
 
@@ -587,7 +588,7 @@ void main() {
     );
 
     test(
-      'both slot-0 actions load zip3.2 without claiming a hardware match',
+      'both flash actions load zip3.2 in slot-0 scope without claiming a hardware match',
       () async {
         SharedPreferences.setMockInitialValues({});
         final temp = Directory.systemTemp.createTempSync('x3utils_zip_valid_');
@@ -600,7 +601,7 @@ void main() {
               type: 'VCU',
             ),
           );
-        for (final action in ['flash_slot0', 'flash_only']) {
+        for (final action in ['flash_backup', 'flash_only']) {
           final controller = AppController();
           addTearDown(() {
             final unpacked = controller.firmwarePath;
@@ -611,9 +612,7 @@ void main() {
           });
 
           controller.selectAction(action);
-          if (action == 'flash_only') {
-            controller.setFlashOnlyScope(FlashOnlyScope.slot0);
-          }
+          controller.setFlashScope(FlashScope.slot0);
           final result = await controller.loadSlotFirmwareFromZip(zipFile.path);
 
           expect(result.ok, isTrue, reason: action);
@@ -635,20 +634,67 @@ void main() {
     );
   });
 
-  test('Flash Only scope defaults to full and clears firmware on change', () {
+  test('flash scope defaults to full and clears firmware on change', () {
     SharedPreferences.setMockInitialValues({});
     final controller = AppController();
     addTearDown(controller.dispose);
 
-    controller.selectAction('flash_only');
-    expect(controller.flashOnlyScope, FlashOnlyScope.fullImage);
-    expect(controller.isSlotAction, isFalse);
+    for (final action in ['flash_backup', 'flash_only']) {
+      controller.selectAction(action);
+      expect(controller.hasFlashScope, isTrue, reason: action);
+      expect(controller.flashScope, FlashScope.fullImage, reason: action);
+      expect(controller.isSlotAction, isFalse, reason: action);
 
-    controller.setFirmware('selected.bin');
-    controller.setFlashOnlyScope(FlashOnlyScope.slot0);
+      controller.setFirmware('selected.bin');
+      controller.setFlashScope(FlashScope.slot0);
+      expect(controller.isSlotAction, isTrue, reason: action);
+      expect(controller.firmwarePath, isNull, reason: action);
+      expect(controller.firmwareInspection, isNull, reason: action);
+    }
+  });
+
+  test('retired flash_slot0 is hidden from the rail but still wired', () {
+    SharedPreferences.setMockInitialValues({});
+    final controller = AppController();
+    addTearDown(controller.dispose);
+
+    final retired = kActions.firstWhere((a) => a.id == 'flash_slot0');
+    expect(retired.hidden, isTrue);
+    expect(
+      kActions.where((a) => !a.hidden).map((a) => a.id),
+      isNot(contains('flash_slot0')),
+    );
+
+    // Still selectable in code, and still slot-scoped without a scope control.
+    controller.selectAction('flash_slot0');
+    expect(controller.hasFlashScope, isFalse);
     expect(controller.isSlotAction, isTrue);
+    expect(controller.heroEyebrow, 'Slot 0 only');
+  });
+
+  test('SHU compatible sits in the standard rail section', () {
+    final compat = kActions.firstWhere((a) => a.id == 'flash_compat');
+    expect(compat.section, Section.standard);
+    expect(compat.hidden, isFalse);
+  });
+
+  test('no flash action carries a selected bin across an action switch', () {
+    SharedPreferences.setMockInitialValues({});
+    final controller = AppController();
+    addTearDown(controller.dispose);
+
+    controller.selectAction('flash_backup');
+    controller.setFirmware('selected.bin');
+    expect(controller.firmwarePath, 'selected.bin');
+
+    controller.selectAction('flash_only');
     expect(controller.firmwarePath, isNull);
-    expect(controller.firmwareInspection, isNull);
+
+    // Coming back re-enters at Full image with nothing armed, so a slot bin
+    // chosen earlier can never sit under full-image rules.
+    controller.selectAction('flash_backup');
+    expect(controller.firmwarePath, isNull);
+    expect(controller.flashScope, FlashScope.fullImage);
   });
 
   test('Flash Only retains findings and switches the idle eyebrow', () {

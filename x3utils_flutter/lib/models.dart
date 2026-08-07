@@ -83,8 +83,10 @@ extension SectionX on Section {
 
 enum DangerLevel { none, soft, hard }
 
-/// Write scope inside the deliberately unguarded Flash Only action.
-enum FlashOnlyScope { fullImage, slot0 }
+/// Write scope shared by the two firmware flash actions. Backup + Flash and
+/// Flash Only differ in their guards, not in what they can address, so both
+/// carry the same Full image / Slot 0 choice rather than a separate slot action.
+enum FlashScope { fullImage, slot0 }
 
 /// Page shown by the offline zip3 workspace.
 enum Zip3WorkspacePage { slice, pack, unpack }
@@ -126,6 +128,10 @@ class FlashAction {
   final DangerLevel danger;
   final String okMsg;
   final bool needsFirmware; // gates the .bin picker
+  /// Kept wired but not rendered in the rail. A retired action stays complete —
+  /// definition, dispatch, confirm copy and evidence — so bringing it back is
+  /// flipping this flag, not rebuilding it.
+  final bool hidden;
   const FlashAction({
     required this.id,
     required this.section,
@@ -137,6 +143,7 @@ class FlashAction {
     required this.okMsg,
     this.danger = DangerLevel.none,
     this.needsFirmware = false,
+    this.hidden = false,
   });
 }
 
@@ -168,7 +175,8 @@ const kActions = <FlashAction>[
     section: Section.standard,
     name: 'Backup + Flash',
     script: 'flash',
-    sub: 'Back up the chip first, then write and verify your firmware.',
+    sub:
+        'Back up the chip first, then write and verify your firmware — the full image, or slot 0 only.',
     chips: [InfoChipData('backs up first', ChipKind.brand)],
     cta: 'Start flash',
     danger: DangerLevel.soft,
@@ -176,25 +184,8 @@ const kActions = <FlashAction>[
     needsFirmware: true,
   ),
   FlashAction(
-    id: 'flash_slot0',
-    section: Section.standard,
-    name: 'Flash slot 0',
-    script: 'flash_slot0',
-    sub:
-        'Backs up the chip first, then writes slot 0 only — boot, slot 1 and user-data stay untouched.',
-    chips: [
-      InfoChipData('backs up first', ChipKind.brand),
-      InfoChipData('identity-safe', ChipKind.ok),
-    ],
-    cta: 'Flash slot 0',
-    danger: DangerLevel.soft,
-    okMsg: 'Slot 0 flashed & verified. Identity intact.',
-    needsFirmware: true,
-  ),
-  // ── Advanced ──────────────────────────────────────────────
-  FlashAction(
     id: 'flash_compat',
-    section: Section.advanced,
+    section: Section.standard,
     name: 'SHU compatible',
     script: 'flash_compat',
     sub:
@@ -207,6 +198,7 @@ const kActions = <FlashAction>[
     danger: DangerLevel.soft,
     okMsg: 'SHU-compatible firmware flashed & verified.',
   ),
+  // ── Advanced ──────────────────────────────────────────────
   FlashAction(
     id: 'flash_only',
     section: Section.advanced,
@@ -256,5 +248,27 @@ const kActions = <FlashAction>[
     danger: DangerLevel.hard,
     okMsg:
         'Rewrite sent. Power-cycle the board, then run Check protection to confirm it’s unlocked.',
+  ),
+  // ── Retired (hidden, still wired) ─────────────────────────
+  // Superseded by Backup + Flash's Slot 0 scope, which runs the same
+  // `_runFlash(backup: true, slot0: true)` with the same guards. Kept whole
+  // rather than deleted: if the merged action ever needs splitting back out,
+  // dropping `hidden` returns the tile with its own copy and confirm text.
+  FlashAction(
+    id: 'flash_slot0',
+    section: Section.standard,
+    hidden: true,
+    name: 'Flash slot 0',
+    script: 'flash_slot0',
+    sub:
+        'Backs up the chip first, then writes slot 0 only — boot, slot 1 and user-data stay untouched.',
+    chips: [
+      InfoChipData('backs up first', ChipKind.brand),
+      InfoChipData('identity-safe', ChipKind.ok),
+    ],
+    cta: 'Flash slot 0',
+    danger: DangerLevel.soft,
+    okMsg: 'Slot 0 flashed & verified. Identity intact.',
+    needsFirmware: true,
   ),
 ];

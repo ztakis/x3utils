@@ -179,19 +179,17 @@ class AppController extends ChangeNotifier {
   String openOcdStatus = 'checking';
   bool _realRun = false;
   String? _diagnosis; // a specific cause parsed from OpenOCD output this run
-  // Only the standard "Backup + Flash" remembers a bin. The advanced firmware
-  // actions (Flash Only, Flash slot 0) never remember — cleared on every action
-  // switch — so nothing stale or wrong-sized ever carries over.
-  String? _firmwareStandard; // flash_backup
-  String? _firmwareAdvanced; // flash_only / flash_slot0 (transient)
-  String? _firmwareStandardDigest;
-  String? _firmwareAdvancedDigest;
+  // No firmware action remembers a bin. The selection is cleared on every
+  // action switch AND on every scope change, so a full image can never stay
+  // armed under slot-0 rules (or the reverse) after the operator moved on.
+  String? _firmwareSelected;
+  String? _firmwareSelectedDigest;
   // One-line identity/claim note shown under the loaded filename (zip3
   // "Package says …" or the bin's own "Firmware says …"); warn = amber.
   String? _firmwareNote;
   bool _firmwareNoteWarn = false;
   FirmwareInspection? _firmwareInspection;
-  FlashOnlyScope flashOnlyScope = FlashOnlyScope.fullImage;
+  FlashScope flashScope = FlashScope.fullImage;
 
   // ── ZIP3 tools (offline slice / pack / unpack) form state ──────────────────
   // Slice keeps the guarded X3 VCU/MCU full-dump workflow. Pack is the generic
@@ -340,16 +338,20 @@ class AppController extends ChangeNotifier {
     setFirmware(null);
   }
 
-  bool get isFlashOnlySlot0 =>
-      actionId == 'flash_only' && flashOnlyScope == FlashOnlyScope.slot0;
+  /// The two firmware flash actions carry the Full image / Slot 0 scope
+  /// control. They differ in their guards — Backup + Flash backs up and
+  /// enforces identity, Flash Only does neither — not in what they can write.
+  bool get hasFlashScope =>
+      actionId == 'flash_backup' || actionId == 'flash_only';
 
-  bool get isSlotAction => actionId == 'flash_slot0' || isFlashOnlySlot0;
+  /// Retired `flash_slot0` is slot-scoped by definition; it has no control of
+  /// its own, so it answers here rather than through [flashScope].
+  bool get isSlotAction =>
+      actionId == 'flash_slot0' ||
+      (hasFlashScope && flashScope == FlashScope.slot0);
 
-  String? get firmwarePath =>
-      actionId == 'flash_backup' ? _firmwareStandard : _firmwareAdvanced;
-  String? get _firmwareDigest => actionId == 'flash_backup'
-      ? _firmwareStandardDigest
-      : _firmwareAdvancedDigest;
+  String? get firmwarePath => _firmwareSelected;
+  String? get _firmwareDigest => _firmwareSelectedDigest;
   String? get firmwareNote => _firmwareNote;
   bool get firmwareNoteWarn => _firmwareNoteWarn;
   FirmwareInspection? get firmwareInspection => _firmwareInspection;
@@ -469,16 +471,19 @@ class AppController extends ChangeNotifier {
   /// consequence sits right above the button. Label + colour travel together.
   ({String label, Color color}) get _stakes {
     switch (actionId) {
-      case 'flash_slot0':
-        return (label: 'Slot 0 only', color: AppColors.ok);
       case 'flash_only':
         if (firmwarePath != null) {
           return (label: 'Compatibility warning', color: AppColors.hold);
         }
-        return flashOnlyScope == FlashOnlyScope.slot0
+        return isSlotAction
             ? (label: 'Slot 0 only', color: AppColors.ok)
             : (label: 'Writes flash', color: AppColors.hold);
       case 'flash_backup':
+        return isSlotAction
+            ? (label: 'Slot 0 only', color: AppColors.ok)
+            : (label: 'Writes flash', color: AppColors.hold);
+      case 'flash_slot0': // retired, hidden
+        return (label: 'Slot 0 only', color: AppColors.ok);
       case 'flash_compat':
         return (label: 'Writes flash', color: AppColors.hold);
       case 'rdp_rescue':
@@ -568,13 +573,8 @@ class AppController extends ChangeNotifier {
     FirmwareInspection? inspection,
   }) {
     final digest = path == null ? null : _digestFile(path);
-    if (actionId == 'flash_backup') {
-      _firmwareStandard = path;
-      _firmwareStandardDigest = digest;
-    } else {
-      _firmwareAdvanced = path;
-      _firmwareAdvancedDigest = digest;
-    }
+    _firmwareSelected = path;
+    _firmwareSelectedDigest = digest;
     _firmwareNote = path == null ? null : note;
     _firmwareNoteWarn = path != null && warn;
     _firmwareInspection = path == null ? null : inspection;
@@ -611,8 +611,9 @@ class AppController extends ChangeNotifier {
 
   /// Validate + remember a picked `.bin` for the current action. Structural
   /// checks first (size/path/content), then the mainstream-only banner gate —
-  /// Backup+Flash / Flash slot 0 refuse a bin with no readable SCOOTER banner
-  /// (Flash Only stays permissive: crafted/unrecognized images are its job).
+  /// Backup + Flash refuses a bin with no readable SCOOTER banner in either
+  /// scope (Flash Only stays permissive: crafted/unrecognized images are its
+  /// job).
   /// On success the bin's readable identity (banner model/type + serial state)
   /// becomes the firmware-bar note; generic/cleared serials show amber.
   FirmwareCheck selectFirmwareBin(String path) {
@@ -700,7 +701,7 @@ class AppController extends ChangeNotifier {
     }
     final check = _validateFirmwareFile(
       path,
-      slot0: isFlashOnlySlot0,
+      slot0: isSlotAction,
       enforceBanner: false,
     );
     if (!check.ok) return check;
@@ -708,7 +709,7 @@ class AppController extends ChangeNotifier {
       final packageClaim = _firmwareInspection?.packageClaim;
       final inspection = FirmwareInspector.inspect(
         File(path).readAsBytesSync(),
-        slotBin: isFlashOnlySlot0,
+        slotBin: isSlotAction,
         packageClaim: packageClaim,
       );
       _firmwareInspection = inspection;
@@ -724,11 +725,14 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  void setFlashOnlyScope(FlashOnlyScope scope) {
-    if (running || actionId != 'flash_only' || flashOnlyScope == scope) return;
-    flashOnlyScope = scope;
-    _firmwareAdvanced = null;
-    _firmwareAdvancedDigest = null;
+  /// Switch the write scope. The selected bin is dropped with it: a full image
+  /// and a slot payload are different files, so carrying one across the change
+  /// could only leave a wrong-sized selection armed.
+  void setFlashScope(FlashScope scope) {
+    if (running || !hasFlashScope || flashScope == scope) return;
+    flashScope = scope;
+    _firmwareSelected = null;
+    _firmwareSelectedDigest = null;
     _firmwareNote = null;
     _firmwareNoteWarn = false;
     _firmwareInspection = null;
@@ -1003,11 +1007,12 @@ class AppController extends ChangeNotifier {
     if (running) return;
     actionId = id;
     zip3WorkspacePage = Zip3WorkspacePage.slice;
-    if (id == 'flash_only') flashOnlyScope = FlashOnlyScope.fullImage;
+    flashScope =
+        FlashScope.fullImage; // scope is per action entry, never sticky
     _resetZip3Form(); // the packer form is transient, per action entry
     compatMakeZip3 = false; // the compat zip3 opt-in is transient too
-    _firmwareAdvanced = null; // advanced actions don't remember loaded bins
-    _firmwareAdvancedDigest = null;
+    _firmwareSelected = null; // no action remembers a loaded bin
+    _firmwareSelectedDigest = null;
     _firmwareNote = null;
     _firmwareNoteWarn = false;
     _firmwareInspection = null;
@@ -1148,12 +1153,21 @@ class AppController extends ChangeNotifier {
     _rdpRetryPending = false;
     stage = StageState.idle;
     eyebrow = 'Ready';
-    if (actionId == 'flash_only') {
-      final slot0 = flashOnlyScope == FlashOnlyScope.slot0;
+    if (hasFlashScope) {
+      final slot0 = flashScope == FlashScope.slot0;
+      final backup = actionId == 'flash_backup';
       title = slot0 ? 'Choose slot-0 firmware' : 'Choose a full image';
-      sub = slot0
-          ? 'Writes application slot 0 only. Bootloader and identity stay untouched.'
-          : 'Writes the complete 128 KB image with no backup or target guard.';
+      sub = switch ((slot0, backup)) {
+        (true, true) =>
+          'Backs up the chip first, then writes application slot 0 only. '
+              'Bootloader and identity stay untouched.',
+        (true, false) =>
+          'Writes application slot 0 only. Bootloader and identity stay untouched.',
+        (false, true) =>
+          'Backs up the chip first, then writes and verifies the complete 128 KB image.',
+        (false, false) =>
+          'Writes the complete 128 KB image with no backup or target guard.',
+      };
     } else {
       title = action.name;
       sub = action.sub;
@@ -1321,10 +1335,10 @@ class AppController extends ChangeNotifier {
       case 'dump':
         await _runDump(runner, g);
       case 'flash_only':
-        await _runFlash(runner, g, backup: false, slot0: isFlashOnlySlot0);
+        await _runFlash(runner, g, backup: false, slot0: isSlotAction);
       case 'flash_backup':
-        await _runFlash(runner, g, backup: true, slot0: false);
-      case 'flash_slot0':
+        await _runFlash(runner, g, backup: true, slot0: isSlotAction);
+      case 'flash_slot0': // retired, hidden — same guarded slot-0 write
         await _runFlash(runner, g, backup: true, slot0: true);
       case 'flash_compat':
         await _runCompat(runner, g);
