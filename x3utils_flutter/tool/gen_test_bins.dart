@@ -491,8 +491,16 @@ void main(List<String> args) {
     'guarded flash rejects on missing banner (truthful message for a wrong-component bin)',
   );
 
-  // ── 14: slot-size window ──────────────────────────────────────────────────
-  stdout.writeln('Slot-size window (banner present so ONLY size varies):');
+  // ── 14: slot size ─────────────────────────────────────────────────────────
+  // The guessed 50–64 KiB window is disabled (Firmware.enforceSlotSizeHeuristics),
+  // so size alone no longer decides a slot bin: 14b/14c/14d now pass the size
+  // stage and are judged on banner and identity like any other slot payload.
+  // Note 14c: at 71684 B it is larger than slot 0, and the flash path has no
+  // measured ceiling of its own (the per-type ceilings live in the packer), so
+  // nothing now bounds a slot-0 write to the slot.
+  stdout.writeln(
+    'Slot size (window disabled; banner present so ONLY size varies):',
+  );
   emit(
     '14a_slot_zt3_vcu_SYNTHETIC.bin',
     payload('14a'),
@@ -504,22 +512,22 @@ void main(List<String> args) {
     '14b_slot_too_small_SYNTHETIC.bin',
     payload('14b', size: 40964),
     'slot',
-    'size 40964 < window min',
-    'reject: too small for slot 0',
+    'size 40964 (below the retired window min)',
+    'accept: size is no longer a slot-0 gate',
   );
   emit(
     '14c_slot_too_big_SYNTHETIC.bin',
     payload('14c', size: 71684),
     'slot',
-    'size 71684 > window max',
-    'reject: too big for slot 0',
+    'size 71684 (above the retired window max)',
+    'accept: size is no longer a slot-0 gate',
   );
   emit(
     '14d_slot_edge_64k_SYNTHETIC.bin',
     payload('14d', size: 65536),
     'slot',
-    'size exactly 65536 (window edge)',
-    'PINS CURRENT BEHAVIOR: passes the provisional window; revisit if window is tightened',
+    'size exactly 65536 (the retired window edge)',
+    'accept: size is no longer a slot-0 gate',
   );
 
   // ── 15: zip3 container mutations (derived from the known-good zip3) ───────
@@ -627,8 +635,8 @@ void main(List<String> args) {
     emitZip(
       '15j_zip3_oversize.zip',
       [...srcEntries, MapEntry('pad.bin', pad)],
-      'padded past the container size cap',
-      'reject before parsing: ZIP too large',
+      'padded past the retired container size cap',
+      'accept at the container stage: the 70 KiB pre-read cap is disabled',
     );
     final junk = Uint8List(4096);
     Rng(seedOf('15k_junk')).fill(junk);

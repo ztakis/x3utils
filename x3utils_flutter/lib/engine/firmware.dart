@@ -63,12 +63,33 @@ class Firmware {
   static const int expectedSize = 131072; // 128 KB
   static const int maxZip3Bytes = 70 * 1024; // reject before readAsBytes()
 
+  /// Master switch for the three GUESSED size gates: the
+  /// [slot0MinBytes]/[slot0MaxBytes] window in [_validateSlotLength], and the
+  /// [maxZip3Bytes] container cap on the flash-import path.
+  ///
+  /// Off because none of the three is a measurement. The window's upper edge
+  /// sits 4 KB above the end of slot 0, so it already permitted the overrun it
+  /// was written to prevent, and a firmware generation with different slot
+  /// geometry would be refused by numbers that never described it. The real
+  /// bounds that remain armed are measured or structural: the exact 128 KB
+  /// full-image reject below, the per-type payload ceilings, and the ZP
+  /// record's fits-in-dump check.
+  ///
+  /// Constants and call sites are left in place — set this true to re-arm all
+  /// three at once. Deliberately NOT read by [Zp]: the same two numbers also
+  /// filter candidate ZP length records, where they pick a payload rather than
+  /// permit one, and that use stays armed.
+  static const bool enforceSlotSizeHeuristics = false;
+
   /// Acceptable size window for a slot-0 bin, measured on the plaintext bin
   /// (what is actually written at 0x08001000). **PROVISIONAL placeholders** —
   /// change these two numbers once the exact slot-0 region spec is confirmed.
   /// Observed real firmware is ~57–61 KB; outside the window is a HARD reject
   /// (too small = not a real slot image; too big = would overrun slot 0 into
   /// slot 1 / identity and break the identity-safe guarantee).
+  ///
+  /// Currently enforced only by [Zp]'s record filter — see
+  /// [enforceSlotSizeHeuristics].
   static const int slot0MinBytes =
       0xC800; // 50 KB (51200)  — TODO: confirm spec
   static const int slot0MaxBytes =
@@ -78,8 +99,9 @@ class Firmware {
   /// (docs/plan-zip3-inputs.md): the region's last 4-byte word is at
   /// 0x0800FFFC (VCU) / 0x0800F7FC (MCU), so `payload + 4` fills the region
   /// exactly. Used by the sliced-bin packer path, which knows the declared
-  /// type; the flash-path window above is a separate, deliberately unchanged
-  /// gate (its 64 KiB edge is pinned by the gen_test_bins manifest).
+  /// type. These are measurements, so they stay armed while the guessed window
+  /// above does not — but they apply only where a supported banner names the
+  /// type, which is not the flash path.
   static const int slot0MaxPayloadVcu = 61436;
   static const int slot0MaxPayloadMcu = 59388;
 
@@ -257,9 +279,10 @@ class Firmware {
     }
   }
 
-  /// Slot-0 bins are NOT full images: reject a 128 KB image, then enforce the
-  /// provisional plaintext-size window [slot0MinBytes]..[slot0MaxBytes]. [len]
-  /// is the recovered payload size (ZIP import or a directly chosen .bin).
+  /// Slot-0 bins are NOT full images, so a 128 KB image is rejected outright.
+  /// The provisional [slot0MinBytes]..[slot0MaxBytes] window that used to
+  /// follow is gated off — see [enforceSlotSizeHeuristics]. [len] is the
+  /// recovered payload size (ZIP import or a directly chosen .bin).
   static FirmwareCheck validateSlot(String path) {
     final base = validate(path, requireSize: false);
     if (!base.ok) return base;
@@ -285,13 +308,13 @@ class Firmware {
         'That’s a full 128 KB image — slot 0 needs a smaller slot bin.',
       );
     }
-    if (len < slot0MinBytes) {
+    if (enforceSlotSizeHeuristics && len < slot0MinBytes) {
       return FirmwareCheck.fail(
         'This file is too small for Slot 0 '
         '($len bytes; minimum $slot0MinBytes).',
       );
     }
-    if (len > slot0MaxBytes) {
+    if (enforceSlotSizeHeuristics && len > slot0MaxBytes) {
       return FirmwareCheck.fail(
         'This file is too large for Slot 0 '
         '($len bytes; maximum $slot0MaxBytes).',
@@ -300,10 +323,13 @@ class Firmware {
     return FirmwareCheck.valid;
   }
 
-  /// Cheap ZIP3 container gate. Flash import retains the 70 KiB cap because it
-  /// only accepts slot-sized VCU/MCU payloads. Standalone extraction passes
-  /// [enforceFlashSizeLimit] false because legitimate BLE packages are much
-  /// larger and their payload member is integrity-checked by MD5.
+  /// Cheap ZIP3 container gate. The 70 KiB pre-read cap on the flash-import
+  /// path was sized to one slot payload; it is gated off (see
+  /// [enforceSlotSizeHeuristics]) because a package larger than slot 0 is
+  /// better refused by the payload checks that know what slot 0 actually is
+  /// than by a guess at the container's size. [enforceFlashSizeLimit] is kept
+  /// so standalone extraction stays explicitly exempt: legitimate BLE packages
+  /// are much larger, and their payload member is integrity-checked by MD5.
   static FirmwareCheck validateZip3Container(
     String path, {
     bool enforceFlashSizeLimit = true,
@@ -319,7 +345,9 @@ class Firmware {
       return FirmwareCheck.fail('Invalid file type. Only .zip is allowed.');
     }
     final len = f.lengthSync();
-    if (enforceFlashSizeLimit && len > maxZip3Bytes) {
+    if (enforceSlotSizeHeuristics &&
+        enforceFlashSizeLimit &&
+        len > maxZip3Bytes) {
       return FirmwareCheck.fail(
         'ZIP is too large ($len bytes). Slot-0 zip3/zip3.2 packages must be '
         '$maxZip3Bytes bytes or smaller.',

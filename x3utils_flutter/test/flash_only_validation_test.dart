@@ -41,7 +41,10 @@ void main() {
       );
     });
 
-    test('slot image accepts only the configured inclusive window', () {
+    // Both size-window tests assert against Firmware.enforceSlotSizeHeuristics
+    // rather than a fixed expectation, so re-arming the switch re-arms the
+    // tests instead of turning them red.
+    test('slot-size window follows the heuristics switch', () {
       expect(
         Firmware.validateSlot(
           firmwareFile('min.bin', Firmware.slot0MinBytes).path,
@@ -58,34 +61,55 @@ void main() {
       final smallResult = Firmware.validateSlot(
         firmwareFile('too-small.bin', tooSmall).path,
       );
-      expect(smallResult.ok, isFalse);
-      expect(
-        smallResult.message,
-        'This file is too small for Slot 0 '
-        '($tooSmall bytes; minimum ${Firmware.slot0MinBytes}).',
-      );
       final tooLarge = Firmware.slot0MaxBytes + 1;
       final largeResult = Firmware.validateSlot(
         firmwareFile('too-big.bin', tooLarge).path,
       );
-      expect(largeResult.ok, isFalse);
-      expect(
-        largeResult.message,
-        'This file is too large for Slot 0 '
-        '($tooLarge bytes; maximum ${Firmware.slot0MaxBytes}).',
-      );
+
+      if (Firmware.enforceSlotSizeHeuristics) {
+        expect(smallResult.ok, isFalse);
+        expect(
+          smallResult.message,
+          'This file is too small for Slot 0 '
+          '($tooSmall bytes; minimum ${Firmware.slot0MinBytes}).',
+        );
+        expect(largeResult.ok, isFalse);
+        expect(
+          largeResult.message,
+          'This file is too large for Slot 0 '
+          '($tooLarge bytes; maximum ${Firmware.slot0MaxBytes}).',
+        );
+      } else {
+        expect(smallResult.ok, isTrue);
+        expect(largeResult.ok, isTrue);
+      }
     });
 
-    test('ZIP3 container is rejected before reading above 70 KiB', () {
+    test('a 128 KB image is never accepted as a slot bin', () {
+      // Not a window edge but an exact identity check, so it survives the
+      // heuristics switch: writing a full dump into slot 0 stays refused.
+      final result = Firmware.validateSlot(
+        firmwareFile('full-as-slot.bin', Firmware.expectedSize).path,
+      );
+      expect(result.ok, isFalse);
+      expect(result.message, contains('full 128 KB image'));
+    });
+
+    test('ZIP3 container cap follows the heuristics switch', () {
       final atLimit = File(p.join(temp.path, 'limit.zip'))
         ..writeAsBytesSync(Uint8List(Firmware.maxZip3Bytes));
       final aboveLimit = File(p.join(temp.path, 'large.zip'))
         ..writeAsBytesSync(Uint8List(Firmware.maxZip3Bytes + 1));
 
       expect(Firmware.validateZip3Container(atLimit.path).ok, isTrue);
-      final rejected = Firmware.validateZip3Container(aboveLimit.path);
-      expect(rejected.ok, isFalse);
-      expect(rejected.message, contains('too large'));
+      final result = Firmware.validateZip3Container(aboveLimit.path);
+      if (Firmware.enforceSlotSizeHeuristics) {
+        expect(result.ok, isFalse);
+        expect(result.message, contains('too large'));
+      } else {
+        expect(result.ok, isTrue);
+      }
+      // Standalone extraction is exempt either way.
       expect(
         Firmware.validateZip3Container(
           aboveLimit.path,
@@ -560,12 +584,16 @@ void main() {
           Firmware.setRoot(null);
           temp.deleteSync(recursive: true);
         });
+        // A full 128 KB image packaged as a slot payload. The guessed size
+        // window is disabled, so this is the surviving pre-write size refusal
+        // — and the point of this test is the ordering, not the number: a
+        // rejected package must not have created an output path first.
         final payload = Uint8List.fromList(
-          List<int>.generate(2000, (i) => (i * 31 + 7) & 0xff),
+          List<int>.generate(Firmware.expectedSize, (i) => (i * 31 + 7) & 0xff),
         );
         const banner = 'SCOOTER_VCU_xxU2';
         payload.setRange(0x400, 0x400 + banner.length, banner.codeUnits);
-        final zipFile = File(p.join(temp.path, 'too-small.zip'))
+        final zipFile = File(p.join(temp.path, 'full-image.zip'))
           ..writeAsBytesSync(_zip32(payload, model: 'zt3', type: 'VCU'));
         final root = Directory(p.join(temp.path, 'root'))..createSync();
         final controller = AppController();
@@ -578,7 +606,7 @@ void main() {
         final result = await controller.loadSlotFirmwareFromZip(zipFile.path);
 
         expect(result.ok, isFalse);
-        expect(result.message, contains('too small for Slot 0'));
+        expect(result.message, contains('full 128 KB image'));
         expect(controller.firmwarePath, isNull);
         expect(
           Directory(p.join(root.path, 'unpacked_zip3')).existsSync(),
