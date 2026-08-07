@@ -268,7 +268,10 @@ class AppController extends ChangeNotifier {
   String? zip3Type; // null = operator has not chosen
   String?
   zip3Model; // 'zt3' | 'g3' | 'gt3' | 'f3' (null = operator hasn't chosen)
-  Zip3Format zip3Format = Zip3Format.rev2;
+  // Legacy zip3 is the default because it is what the BLE app in the field
+  // reads: SHU 4.1 rejects zip3.2 outright ("Unsupported schema version: 2"),
+  // and 3.x never knew it. Revisit when a release that accepts it is out.
+  Zip3Format zip3Format = Zip3Format.legacy;
   bool zip3EnforceModel = true; // legacy info.json enforceModel checkbox
   String zip3Name = ''; // editable displayName; blank → defaultZip3Name
 
@@ -368,7 +371,7 @@ class AppController extends ChangeNotifier {
     zip3Type = null;
     zip3Model = null;
     zip3EnforceModel = true;
-    zip3Format = Zip3Format.rev2;
+    zip3Format = Zip3Format.legacy;
     zip3Name = '';
     _unpackZip3Path = null;
     _unpackZip3Digest = null;

@@ -139,31 +139,35 @@ void main() {
     expect(find.text('PACKAGE IDENTITY'), findsOneWidget);
     expect(find.text('Type'), findsOneWidget);
     expect(find.text('Model'), findsOneWidget);
-    expect(find.textContaining('Enforce model'), findsNothing);
+    // Legacy zip3 is the default format, so its enforceModel option is shown
+    // from the start — SHU 4.1 rejects zip3.2, so the default is the format the
+    // app in the field actually reads.
+    expect(find.textContaining('Enforce model'), findsOneWidget);
     expect(find.textContaining('Package name'), findsOneWidget);
     expect(find.text('Choose a backup dump'), findsOneWidget);
     expect(
       find.text('Choose a full 128 KB backup .bin below.'),
       findsOneWidget,
     );
-    expect(find.text('Pack zip 3.2'), findsOneWidget);
+    expect(find.text('Pack zip 3'), findsWidgets);
 
-    // The split arrow changes format only. Legacy reveals its one remaining
-    // metadata option, while selecting it does not start the pack operation.
+    // The split arrow changes format only. Selecting zip3.2 hides the legacy
+    // metadata option, and does not start the pack operation.
     final dynamic zipHomeState = tester.state(find.byType(HomeScreen));
     await tester.tap(find.byTooltip('Choose package format'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    // First entry is zip3.2; legacy is the default now, so this is the switch.
     await tester.tap(
-      find.byType(CheckedPopupMenuItem<Zip3Format>).last,
+      find.byType(CheckedPopupMenuItem<Zip3Format>).first,
       warnIfMissed: false,
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(zipHomeState.c.zip3Format, Zip3Format.legacy);
+    expect(zipHomeState.c.zip3Format, Zip3Format.rev2);
     expect(zipHomeState.c.stage, StageState.idle);
-    expect(find.textContaining('Enforce model'), findsOneWidget);
-    expect(find.text('Pack zip 3'), findsWidgets);
+    expect(find.textContaining('Enforce model'), findsNothing);
+    expect(find.text('Pack zip 3.2'), findsOneWidget);
 
     final pageView = tester.widget<PageView>(find.byType(PageView));
     expect(pageView.scrollDirection, Axis.vertical);

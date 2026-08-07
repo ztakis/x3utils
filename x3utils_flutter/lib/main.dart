@@ -4171,22 +4171,25 @@ class _CompatZip3Toggle extends StatelessWidget {
     ),
   );
 
+  /// The zip3.2 box is hidden, not removed: SHU 4.1 rejects the format and no
+  /// released app reads it, so offering it only produces files nobody can load.
+  /// Flip to true when a release that accepts zip3.2 is out — and fix its label
+  /// to the version that does (4.2+ if that is the one).
+  static const bool _offerZip32 = false;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        _box(
-          'Also make zip 3 (SHU 3.x and 4.x)',
-          c.compatMakeZip3,
-          c.setCompatMakeZip3,
-        ),
-        _box(
-          'Also make zip 3.2 (SHU 4.x only)',
-          c.compatMakeZip32,
-          c.setCompatMakeZip32,
-        ),
+        _box('Also make zip 3', c.compatMakeZip3, c.setCompatMakeZip3),
+        if (_offerZip32)
+          _box(
+            'Also make zip 3.2 (SHU 4.x only)',
+            c.compatMakeZip32,
+            c.setCompatMakeZip32,
+          ),
       ],
     );
   }
