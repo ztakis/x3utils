@@ -4138,7 +4138,7 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
 /// Two boxes rather than one because two generations of the BLE app are in the
 /// field — 3.x reads only legacy zip3, 4.x is expected to read both — and the
 /// operator, not x3utils, knows which one their phone is running. Off by
-/// default; VCU only (an MCU compat run skips — see AppController.compatMakeZip3).
+/// default; MCU packages use the operator-declared model.
 class _CompatZip3Toggle extends StatelessWidget {
   const _CompatZip3Toggle({required this.c});
   final AppController c;
