@@ -427,5 +427,44 @@ void main() {
       expect(c.sub, contains('GT3'));
       expect(runner.wroteFlash, isFalse);
     });
+
+    test('the declared model packs MCU zips named from the identity', () async {
+      // g3 MCU 1.5.0 is a known build, so declaring g3 identifies it and the
+      // run reaches packing. 58436 ≡ 4 (mod 8) and sits under the 59388-byte
+      // MCU slot-0 ceiling.
+      final runner = _RecordingRunner(
+        _dump(
+          banner: 'SCOOTER_MCU_0001',
+          versionValue: 0x150,
+          zpPayloadLength: 58436,
+        ),
+      );
+      final c = await compatRunner(runner);
+      c.setCompatMakeZip3(true);
+
+      await c.start(askMcuModel: (_) async => 'g3');
+
+      expect(runner.wroteFlash, isTrue);
+      // Same slice and format as VCU; the operator-declared model names the
+      // files, which is the whole reason an MCU run can pack now.
+      expect(zipNames(), [
+        'g3_mcu_v1.5.0_compat_zip3.zip',
+        'g3_mcu_v1.5.0_stock_zip3.zip',
+      ]);
+      // Round-trip the stock package: unpackV3 checks the compatible board, so
+      // this also asserts the MCU tag is the generic x3_MCU_AT32 that SHU's
+      // real packages use — not a per-model VCU-style tag.
+      final dir = Directory(p.join(rootDir.path, 'compat'))
+          .listSync()
+          .whereType<Directory>()
+          .firstWhere((d) => d.path.endsWith('_zips'));
+      final bytes = File(
+        p.join(dir.path, 'g3_mcu_v1.5.0_stock_zip3.zip'),
+      ).readAsBytesSync();
+      final pkg = PackV3.unpackV3(bytes, policy: Zip3UnpackPolicy.extract);
+      expect(pkg.normalizedType, 'MCU');
+      expect(pkg.format, Zip3Format.legacy);
+      expect(pkg.firmware, hasLength(58436));
+    });
   });
 }

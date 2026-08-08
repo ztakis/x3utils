@@ -382,8 +382,8 @@ class AppController extends ChangeNotifier {
   // ── SHU-compat: also pack a BLE zip3 of the patched image ───────────────────
   // Opt-in checkbox under the "Make SHU compatible" action. When on and the
   // compat flash succeeds, the patched image is repackaged as a BLE-loadable
-  // zip3. VCU only — its banner declares the model; an MCU dump carries no model
-  // identity, so an MCU compat run skips the zips rather than guess.
+  // zip3. A VCU model is read from its banner; an MCU carries no model of its
+  // own, so it packs with the model the operator declared during identification.
   // Best-effort: a packaging hiccup never demotes the compat flash success.
   // Off by default and transient (reset on every action switch).
   //
@@ -2705,13 +2705,14 @@ class AppController extends ChangeNotifier {
   /// load, so without this the undo path requires the cable that compat exists
   /// to avoid needing twice.
   ///
-  /// VCU only: the banner declares the model, so identity is derived, not
-  /// guessed. An MCU dump carries no model identity (banner `SCOOTER_MCU_0001`,
-  /// generic part serial), so an MCU compat run skips both. Every failure is
-  /// swallowed: the compat flash already succeeded, and this extra is strictly
-  /// best-effort — but a package that failed to build is NAMED rather than
-  /// passed over in silence, so the operator never assumes an undo they do not
-  /// have.
+  /// Identity comes from [identity], settled by the gate before the write: a
+  /// VCU model is banner-derived, and an MCU (banner `SCOOTER_MCU_0001`, no
+  /// model of its own) uses the model the operator declared at the prompt. That
+  /// declaration is what now lets an MCU run pack — the packer no longer has to
+  /// read a model the image does not carry. Every failure is swallowed: the
+  /// compat flash already succeeded, and this extra is strictly best-effort —
+  /// but a package that failed to build is NAMED rather than passed over in
+  /// silence, so the operator never assumes an undo they do not have.
   String? _maybeCompatZip3(
     String rawPath,
     String patchedPath,
@@ -2757,6 +2758,8 @@ class AppController extends ChangeNotifier {
           folder,
           '${stem}_${suffix}_$token',
           format,
+          identity.type,
+          identity.model,
         );
         if (file == null) continue;
         built.add(file);
@@ -2792,19 +2795,21 @@ class AppController extends ChangeNotifier {
     Directory folder,
     String name,
     Zip3Format format,
+    String type,
+    String model,
   ) {
     try {
       final bytes = File(binPath).readAsBytesSync();
-      final det = PackV3.detect(bytes);
-      if (det.type != 'VCU' || det.model == null) {
-        _log('== compat zip3 ($name) skipped: not a VCU (no model) ==');
-        return null;
-      }
+      // [type]/[model] come from the identity gate, not re-detected from the
+      // image: an MCU image carries no model, so re-detection returned null and
+      // an MCU run skipped. The operator declared the MCU model at the prompt;
+      // a VCU model is banner-derived. buildZip3FromDump still fails closed if
+      // the declared identity is unsupported or the ZP slice is missing.
       // enforceModel applies to legacy only; rev2 uses `models` and ignores it.
       final result = PackV3.buildZip3FromDump(
         bytes,
-        type: det.type!,
-        model: det.model!,
+        type: type,
+        model: model,
         enforceModel: true,
         displayName: name,
         format: format,
