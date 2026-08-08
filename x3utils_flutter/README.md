@@ -159,7 +159,7 @@ The Dart orchestration is shared; each OS supplies its native backend:
 
 Version lives in four places — **keep them in sync**: `VERSION`,
 `pubspec.yaml` (`version:`), and `kAppVersion` in `lib/theme.dart` (drives the
-UI). Current: **1.2.8**. Also in installer/x3utils.iss `AppVer`. The release
+UI). Current: **1.2.9**. Also in installer/x3utils.iss `AppVer`. The release
 channel is a separate `kAppStage` in `lib/theme.dart` (`BETA`, or `''` for
 stable), kept out of those four strings so they stay byte-equal.
 
