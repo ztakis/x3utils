@@ -209,6 +209,26 @@ class FwVersionMatrix {
 
   static List<FwVersion> blacklistFor(String model, String type) =>
       _versions(blacklist, key(model, type));
+
+  /// The LOWEST blacklisted version for this model/type, or null when none is
+  /// listed.
+  ///
+  /// The blacklist is a FLOOR, not a set of exact matches: a found version at
+  /// or above it is refused. That way a new release only has to be added to
+  /// [known] — it is refused automatically without a second edit here — and the
+  /// list stays a statement of where support ends rather than a catalogue that
+  /// must chase every future build.
+  ///
+  /// Comparing is only safe because the version was FOUND, which means it
+  /// matched a value we deliberately looked for. Comparing a value discovered
+  /// by an open-ended scan would be a different and much worse idea: measured
+  /// over the corpus, a payload holds around ten version-shaped constants and
+  /// the model's offset band still contains more than one in most builds.
+  static FwVersion? refusedFrom(String model, String type) {
+    final rows = blacklistFor(model, type);
+    if (rows.isEmpty) return null;
+    return rows.reduce((a, b) => a.value <= b.value ? a : b);
+  }
 }
 
 /// Decodes 16-bit immediate loads out of a Thumb-2 instruction stream and
@@ -233,12 +253,18 @@ class FwVersionScanner {
       for (final v in FwVersionMatrix.knownFor(model, type)) v.value: v,
     });
 
-    // Blacklist first and unconditionally: a known-bad hit refuses even when
-    // the image also matches something else, and does not wait on the known
-    // list being complete.
-    for (final v in blacklist) {
-      if (found.contains(v)) {
-        return FwIdentity(FwVerdict.blacklisted, version: v, matches: found);
+    // The floor is applied FIRST and to the HIGHEST match: a chip at or above
+    // where support ends is refused even if the image also matches something
+    // older, and the refusal does not wait on the known list being complete.
+    final floor = FwVersionMatrix.refusedFrom(model, type);
+    if (floor != null && found.isNotEmpty) {
+      final highest = found.last; // _scan returns ascending
+      if (highest.value >= floor.value) {
+        return FwIdentity(
+          FwVerdict.blacklisted,
+          version: highest,
+          matches: found,
+        );
       }
     }
     if (found.isEmpty) return const FwIdentity(FwVerdict.unknown);

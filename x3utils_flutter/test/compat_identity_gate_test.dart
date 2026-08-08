@@ -125,10 +125,7 @@ void main() {
     if (rootDir.existsSync()) rootDir.deleteSync(recursive: true);
   });
 
-  Future<AppController> compatRunner(
-    _RecordingRunner runner, {
-    UnsurePolicy policy = UnsurePolicy.abort,
-  }) async {
+  Future<AppController> compatRunner(_RecordingRunner runner) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'defaultAutoRetry': 0,
     });
@@ -137,7 +134,6 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     c.setX3utilsRoot(rootDir.path);
     c.setSecondCopy(false);
-    c.setCompatUnsurePolicy(policy);
     c.selectAction('flash_compat');
     return c;
   }
@@ -173,8 +169,10 @@ void main() {
     },
   );
 
-  test('an unrecognised version aborts when the policy is abort', () async {
-    // A supported banner, but no version constant we can place.
+  test('an unrecognised version fails closed with no way to ask', () async {
+    // A supported banner, but no version constant we can place — and no
+    // confirmation callback, so there is no way to obtain consent. Refusing is
+    // the only safe reading of silence.
     final runner = _RecordingRunner(_dump(banner: 'SCOOTER_VCU_xxG3'));
     final c = await compatRunner(runner);
 
@@ -186,31 +184,31 @@ void main() {
     expect(compatFiles('.bin'), isNotEmpty);
   });
 
-  test(
-    'ask policy lets the operator continue past an unrecognised build',
-    () async {
-      final runner = _RecordingRunner(_dump(banner: 'SCOOTER_VCU_xxG3'));
-      final c = await compatRunner(runner, policy: UnsurePolicy.ask);
-      var asked = false;
-
-      await c.start(
-        confirmUnidentified: (finding) async {
-          asked = true;
-          expect(finding, contains('does not recognise'));
-          return true;
-        },
-      );
-
-      expect(asked, isTrue);
-      expect(runner.wroteFlash, isTrue, reason: 'operator approved the patch');
-    },
-  );
-
-  test('ask policy still stops when the operator declines', () async {
+  test('an unrecognised build asks, and the operator may continue', () async {
     final runner = _RecordingRunner(_dump(banner: 'SCOOTER_VCU_xxG3'));
-    final c = await compatRunner(runner, policy: UnsurePolicy.ask);
+    final c = await compatRunner(runner);
+    var asked = false;
 
-    await c.start(confirmUnidentified: (_) async => false);
+    await c.start(
+      confirmUnidentified: (finding, ceiling) async {
+        asked = true;
+        expect(finding, contains('does not recognise'));
+        // The ceiling arrives separately so the view can weight it — it is the
+        // number that would have decided this, and the operator reads it first.
+        expect(ceiling, contains('On G3 VCU, 1.6.3 and newer'));
+        return true;
+      },
+    );
+
+    expect(asked, isTrue);
+    expect(runner.wroteFlash, isTrue, reason: 'operator approved the patch');
+  });
+
+  test('an unrecognised build stops when the operator declines', () async {
+    final runner = _RecordingRunner(_dump(banner: 'SCOOTER_VCU_xxG3'));
+    final c = await compatRunner(runner);
+
+    await c.start(confirmUnidentified: (_, _) async => false);
 
     expect(c.stage, StageState.fail);
     expect(runner.wroteFlash, isFalse);
@@ -318,15 +316,15 @@ void main() {
   test(
     'a waved-through build is not named as though it were identified',
     () async {
-      // Ask policy, operator continues past a version x3utils cannot place, so
+      // Operator continues past a version x3utils cannot place, so
       // there is no version to put in the name.
       final runner = _RecordingRunner(
         _dump(banner: 'SCOOTER_VCU_xxG3', zpPayloadLength: 58436),
       );
-      final c = await compatRunner(runner, policy: UnsurePolicy.ask);
+      final c = await compatRunner(runner);
       c.setCompatMakeZip3(true);
 
-      await c.start(confirmUnidentified: (_) async => true);
+      await c.start(confirmUnidentified: (_, _) async => true);
 
       expect(runner.wroteFlash, isTrue);
       expect(zipNames(), [
@@ -416,6 +414,31 @@ void main() {
         expect(c.console.any((l) => l.contains('not verifiable')), isTrue);
       },
     );
+
+    test('no MCU ceiling exists, and the prompt says so', () async {
+      // The VCU prompt names the model's ceiling. MCU has no blacklist rows,
+      // and the operator must be told that rather than left with a gap where
+      // the VCU gets a number — an absence of data is not a clean bill.
+      final runner = _RecordingRunner(_dump(banner: 'SCOOTER_MCU_0001'));
+      final c = await compatRunner(runner);
+      String? shown;
+      String? shownCeiling;
+
+      await c.start(
+        askMcuModel: (_) async => 'zt3',
+        confirmUnidentified: (finding, ceiling) async {
+          shown = finding;
+          shownCeiling = ceiling;
+          return false;
+        },
+      );
+
+      expect(shown, contains('zt3 MCU you selected'));
+      expect(shownCeiling, contains('no MCU version ceiling recorded'));
+      // Never a version claim we cannot support.
+      expect(shownCeiling, isNot(contains('known not to work')));
+      expect(runner.wroteFlash, isFalse);
+    });
 
     test('declaring GT3 is refused like a GT3 banner', () async {
       final runner = _RecordingRunner(_dump(banner: 'SCOOTER_MCU_0001'));

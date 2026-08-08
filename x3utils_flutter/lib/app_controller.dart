@@ -26,13 +26,15 @@ import 'engine/zp_extract.dart';
 typedef AskMcuModel = Future<String?> Function(List<String> models);
 
 /// Asks whether to continue when the installed firmware could not be
-/// identified. Only consulted when the policy is [UnsurePolicy.ask].
-typedef ConfirmUnidentified = Future<bool> Function(String finding);
-
-/// What to do when a guarded action cannot identify the installed firmware.
-/// Fail closed by default: an unrecognised build is the shape every future
-/// release arrives in, and we would rather refuse than patch one blind.
-enum UnsurePolicy { abort, ask }
+/// identified — the one outcome that is the operator's call rather than the
+/// tool's. Blacklisted builds never reach it, and a missing callback fails
+/// closed.
+///
+/// [ceiling] arrives separately from [finding] so the view can weight it: it
+/// carries the number that would have decided this, and it is the sentence the
+/// operator most needs to read before choosing.
+typedef ConfirmUnidentified =
+    Future<bool> Function(String finding, String ceiling);
 
 /// What identification established about the firmware on the chip, carried
 /// forward so the packaging step names its output from evidence gathered
@@ -94,12 +96,6 @@ class AppController extends ChangeNotifier {
   String backupPrefix = '';
   bool secondCopy = true; // redundant %LOCALAPPDATA%\x3utils_backup copy
 
-  /// What SHU compat does when it cannot name the installed firmware. The
-  /// blacklist is checked first and always aborts; this governs only the
-  /// leftover cases (a build we have never catalogued, or one whose evidence is
-  /// contradictory).
-  UnsurePolicy compatUnsurePolicy = UnsurePolicy.abort;
-
   /// BETA3 bench switch — safe ACP validation is the default; this deliberately
   /// restores the unrestricted BETA2 behavior for comparison runs only.
   bool bypassWindowsPathSafety = false;
@@ -122,9 +118,9 @@ class AppController extends ChangeNotifier {
     Firmware.setRoot(x3utilsRoot);
     backupPrefix = _prefs!.getString('backupPrefix') ?? '';
     secondCopy = _prefs!.getBool('secondCopy') ?? true;
-    compatUnsurePolicy = (_prefs!.getBool('compatAskWhenUnidentified') ?? false)
-        ? UnsurePolicy.ask
-        : UnsurePolicy.abort;
+    // NB `compatAskWhenUnidentified` (GUI v1.2.8 only) is never read again: an
+    // unrecognised build now always asks the operator, so there is nothing left
+    // for a stored preference to switch. The orphan key is inert.
     // Deliberately a new BETA3 key. A BETA2 "allow everything" preference must
     // not carry forward silently, and no stored bench setting may activate in
     // a later beta or stable build whose stage does not explicitly opt in.
@@ -215,12 +211,6 @@ class AppController extends ChangeNotifier {
   void setSecondCopy(bool v) {
     secondCopy = v;
     _prefs?.setBool('secondCopy', v);
-    notifyListeners();
-  }
-
-  void setCompatUnsurePolicy(UnsurePolicy v) {
-    compatUnsurePolicy = v;
-    _prefs?.setBool('compatAskWhenUnidentified', v == UnsurePolicy.ask);
     notifyListeners();
   }
 
@@ -2655,18 +2645,32 @@ class AppController extends ChangeNotifier {
                 '(${fw.matches.join(', ')}).'
           : 'x3utils does not recognise the installed firmware version'
                 '${modelDeclared ? ' for the $model MCU you selected' : ''}.';
+      // Name the ceiling for THIS model rather than talking about ceilings in
+      // the abstract: the operator is being asked to judge a version we could
+      // not read, so the one number that would have decided it is the useful
+      // thing to hand them.
+      //
+      // When no ceiling is recorded — MCU today — say THAT, rather than
+      // leaving a gap where the VCU gets a number. Silence there reads as
+      // reassurance; the truth is an absence of data, which is a different
+      // thing and the operator should weigh it themselves.
+      final floor = FwVersionMatrix.refusedFrom(model, type);
+      final ceiling = floor == null
+          ? ' x3utils has no $type version ceiling recorded at all, so it '
+                'cannot tell you whether this build is affected.'
+          : ' On ${model.toUpperCase()} $type, $floor and newer are known not '
+                'to work.';
+      // An unrecognised build is always the OPERATOR's call, never a silent
+      // refusal and never a silent pass. A missing callback fails closed: no
+      // way to ask means no way to consent.
       final ask = _confirmUnidentified;
-      final proceed =
-          compatUnsurePolicy == UnsurePolicy.ask &&
-          ask != null &&
-          await ask(finding);
+      final proceed = ask != null && await ask(finding, ceiling.trim());
       if (!proceed) {
         await _finishRealAfterHold(
           false,
           '',
-          'Nothing was written — $finding SHU compat is only known to work on '
-              'firmware older than the published ceilings, so it stopped rather '
-              'than patch a build it cannot place. The backup was saved.',
+          'Nothing was written — $finding$ceiling It stopped rather than patch '
+              'a build it cannot place. The backup was saved.',
           reseat: false,
           finding: true,
           outputPath: rawPath,

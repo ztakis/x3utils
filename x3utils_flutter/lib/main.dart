@@ -74,8 +74,8 @@ class _HomeScreenState extends State<HomeScreen> {
       confirmFileReplace: _showZip3ReplaceConfirm,
       confirmTrash: _showTrashConfirm,
       askMcuModel: (models) => _showMcuModelPicker(context, models),
-      confirmUnidentified: (finding) =>
-          _showUnidentifiedConfirm(context, finding),
+      confirmUnidentified: (finding, ceiling) =>
+          _showUnidentifiedConfirm(context, finding, ceiling),
     );
   }
 
@@ -2935,6 +2935,7 @@ Future<String?> _showMcuModelPicker(BuildContext context, List<String> models) {
 Future<bool> _showUnidentifiedConfirm(
   BuildContext context,
   String finding,
+  String ceiling,
 ) async {
   final ok = await showDialog<bool>(
     context: context,
@@ -2962,11 +2963,33 @@ Future<bool> _showUnidentifiedConfirm(
             ),
             const SizedBox(height: 10),
             Text(
-              '$finding\n\nSHU compat is only known to work below the published '
-              'firmware ceilings. On a build x3utils cannot place, patching may '
-              'do nothing except overwrite the key the scooter needs for its '
-              'own updates. Your backup has already been saved.',
+              finding,
               style: const TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: AppColors.dim,
+              ),
+            ),
+            // The ceiling is the fact that decides this, so it gets the weight
+            // the rest of the paragraph does not.
+            if (ceiling.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                ceiling,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.45,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.danger,
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            const Text(
+              'On a build x3utils cannot place, patching may do nothing except '
+              'overwrite the key the scooter needs for its own updates. Your '
+              'backup has already been saved.',
+              style: TextStyle(
                 fontSize: 13,
                 height: 1.45,
                 color: AppColors.dim,
@@ -2985,11 +3008,13 @@ Future<bool> _showUnidentifiedConfirm(
                   small: true,
                 ),
                 const SizedBox(width: 10),
+                // Red, not amber: this proceeds against evidence we could not
+                // read, on a chip whose key it is about to overwrite.
                 _PillButton(
                   label: 'Patch anyway',
                   onTap: () => Navigator.pop(ctx, true),
-                  gradient: const [Color(0xFFFFC247), AppColors.hold],
-                  fg: const Color(0xFF211600),
+                  gradient: const [Color(0xFFFF6472), AppColors.danger],
+                  fg: Colors.white,
                   small: true,
                 ),
               ],
@@ -4585,42 +4610,6 @@ class _BackupSettingsSectionState extends State<_BackupSettingsSection> {
             fontSize: 12,
             fontFamily: kMono,
           ),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Ask when firmware is unrecognised',
-                style: TextStyle(
-                  color: AppColors.txt,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            Transform.scale(
-              scale: 0.8,
-              alignment: Alignment.centerRight,
-              child: Switch(
-                value: c.compatUnsurePolicy == UnsurePolicy.ask,
-                activeThumbColor: AppColors.brand,
-                onChanged: (v) {
-                  c.setCompatUnsurePolicy(
-                    v ? UnsurePolicy.ask : UnsurePolicy.abort,
-                  );
-                  setState(() {});
-                },
-              ),
-            ),
-          ],
-        ),
-        const Text(
-          'SHU compat identifies the installed firmware from the backup it '
-          'takes. Firmware known not to work is always refused. This governs '
-          'only the leftover case — a build x3utils cannot place. OFF stops; '
-          'ON asks you and lets you continue anyway.',
-          style: TextStyle(color: AppColors.mut, fontSize: 12),
         ),
         // BETA3 Windows-only bench instrument. Safe ACP validation is the
         // default; this restores unrestricted BETA2 behavior for comparison.

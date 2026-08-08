@@ -92,6 +92,36 @@ void main() {
       expect(id.version.toString(), '1.6.3');
     });
 
+    test('the blacklist is a floor, not a set of exact matches', () {
+      // Only the lowest entry matters: everything at or above it is refused,
+      // so a new release needs adding to `known` and nowhere else.
+      expect(FwVersionMatrix.refusedFrom('zt3', 'VCU').toString(), '1.5.9');
+      expect(FwVersionMatrix.refusedFrom('g3', 'VCU').toString(), '1.6.3');
+      // No MCU ceiling exists yet, so nothing is refused by version there.
+      expect(FwVersionMatrix.refusedFrom('zt3', 'MCU'), isNull);
+    });
+
+    test('the highest match decides, so an older one cannot rescue it', () {
+      // A device carrying both 1.4.11 and the floor version is refused on the
+      // floor rather than reported as merely ambiguous.
+      final p = _payloadWith({
+        0x2000: _movw(0x14B), // 1.4.11, well below the floor
+        0x2400: _movw(0x159), // 1.5.9, the floor itself
+      });
+      final id = FwVersionScanner.identify(p, model: 'zt3', type: 'VCU');
+      expect(id.verdict, FwVerdict.blacklisted);
+      expect(id.version.toString(), '1.5.9');
+    });
+
+    test('two matches below the floor stay ambiguous', () {
+      final p = _payloadWith({
+        0x2000: _movw(0x14B), // 1.4.11
+        0x2400: _movw(0x152), // 1.5.2
+      });
+      final id = FwVersionScanner.identify(p, model: 'zt3', type: 'VCU');
+      expect(id.verdict, FwVerdict.ambiguous);
+    });
+
     test('an unlisted version is unknown, not silently allowed', () {
       // 1.9.9 is on nobody's list — the shape a future release arrives in.
       final p = _payloadWith({0x2000: _movw(0x199)});
