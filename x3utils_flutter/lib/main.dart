@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'app_controller.dart';
 import 'engine/dump_metadata.dart';
+import 'engine/file_info.dart';
+import 'engine/info_row.dart';
 import 'engine/firmware.dart';
 import 'engine/firmware_inspection.dart';
 import 'engine/pack_zip3.dart';
@@ -53,6 +55,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _onStart() async {
     final a = c.action;
+    // Get file info reads a local file and shows a dialog. It deliberately
+    // never reaches `c.start()`: that path owns the busy surface, the stage
+    // machine and `lastConnect`, and nothing here touches a target — a PASS
+    // connect verdict for a run that never connected would be a lie.
+    if (a.id == 'file_info') {
+      final path = c.firmwarePath;
+      if (path != null) await _showInfoReport(context, FileInfo.describe(path));
+      return;
+    }
     if (a.id == 'flash_only') {
       final refreshed = c.refreshFlashOnlyInspection();
       if (!refreshed.ok) {
@@ -296,6 +307,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _pickFirmware() async {
+    // Get file info describes a file rather than writing it, so its picker is
+    // deliberately PERMISSIVE: it takes .bin or .zip and applies none of the
+    // flash validators. A truncated dump, an unknown banner or an unreadable
+    // package is exactly what an operator reaches for this tool to understand,
+    // and a picker that refuses those refuses the tool's whole purpose. The
+    // bad news belongs in the report, not in a rejection.
+    if (c.actionId == 'file_info') {
+      const group = XTypeGroup(
+        label: 'firmware or package',
+        extensions: ['bin', 'zip'],
+      );
+      final picked = await openFile(acceptedTypeGroups: [group]);
+      if (picked != null) c.setFirmware(picked.path);
+      return;
+    }
     const group = XTypeGroup(label: 'firmware', extensions: ['bin']);
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
@@ -2059,151 +2085,161 @@ class _HeroStageState extends State<_HeroStage>
 }
 
 /// Reveals local backup identity data only after the operator asks for it.
+///
+/// Opening the dialog is the first deliberate step; the per-unit values behind
+/// it stay masked until [_InfoDialog]'s Reveal is pressed, so the dialog can be
+/// shown or screenshotted without exposing them.
 Future<void> _showBackupInfo(BuildContext context, String metadataPath) {
-  Map<String, Object?> metadata;
+  final InfoReport report;
   try {
-    metadata = DumpMetadata.readJson(metadataPath);
+    report = InfoReport(
+      title: 'Backup info',
+      intro:
+          'Read from the local sidecar. Identity fields stay hidden until you '
+          'reveal them; Copy all copies these rows as text.',
+      rows: DumpMetadata.rows(DumpMetadata.readJson(metadataPath)),
+    );
   } catch (e) {
-    return showDialog<void>(
+    return _showInfoReport(
+      context,
+      InfoReport(title: 'Backup info unavailable', message: '$e'),
+    );
+  }
+  return _showInfoReport(context, report);
+}
+
+Future<void> _showInfoReport(BuildContext context, InfoReport report) =>
+    showDialog<void>(
       context: context,
       barrierColor: const Color(0xB3040A0F),
-      builder: (ctx) => _BackupInfoDialog(
-        title: 'Backup info unavailable',
-        body: [
-          Text(
-            '$e',
-            style: const TextStyle(color: AppColors.dim, height: 1.45),
+      builder: (ctx) => _InfoDialog(report: report),
+    );
+
+class _InfoDialog extends StatefulWidget {
+  const _InfoDialog({required this.report});
+
+  final InfoReport report;
+
+  @override
+  State<_InfoDialog> createState() => _InfoDialogState();
+}
+
+class _InfoDialogState extends State<_InfoDialog> {
+  bool _revealed = false;
+  bool _copied = false;
+  Timer? _copiedReset;
+
+  @override
+  void dispose() {
+    _copiedReset?.cancel();
+    super.dispose();
+  }
+
+  /// Copy all hands over the rows as they read on screen, column-aligned so a
+  /// paste into a message or a report stays legible. It is deliberately
+  /// independent of Reveal: masking protects the screen, and an operator who
+  /// asks for the values gets the values.
+  void _copy() {
+    final labelWidth =
+        widget.report.rows.fold<int>(0, (w, f) => math.max(w, f.label.length)) +
+        2;
+    Clipboard.setData(
+      ClipboardData(
+        text: widget.report.rows
+            .map((field) => field.plainLine(labelWidth))
+            .join('\n'),
+      ),
+    );
+    _copiedReset?.cancel();
+    setState(() => _copied = true);
+    _copiedReset = Timer(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSecrets = widget.report.rows.any((field) => field.hasSecret);
+    return Dialog(
+      backgroundColor: AppColors.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: AppColors.line2),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.report.title,
+                style: const TextStyle(
+                  color: AppColors.txt,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (widget.report.intro != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  widget.report.intro!,
+                  style: const TextStyle(color: AppColors.dim, height: 1.4),
+                ),
+              ],
+              const SizedBox(height: 18),
+              if (widget.report.message != null)
+                Text(
+                  widget.report.message!,
+                  style: const TextStyle(color: AppColors.dim, height: 1.45),
+                ),
+              for (final field in widget.report.rows)
+                _InfoRow(field.label, field.display(revealed: _revealed)),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (hasSecrets) ...[
+                    _PillButton(
+                      label: _revealed ? 'Hide' : 'Reveal',
+                      onTap: () => setState(() => _revealed = !_revealed),
+                      bg: AppColors.line,
+                      border: AppColors.line2,
+                      small: true,
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  if (widget.report.rows.isNotEmpty) ...[
+                    _PillButton(
+                      label: _copied ? 'Copied' : 'Copy all',
+                      onTap: _copy,
+                      bg: AppColors.line,
+                      border: AppColors.line2,
+                      small: true,
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  _PillButton(
+                    label: 'Close',
+                    onTap: () => Navigator.pop(context),
+                    bg: AppColors.line,
+                    border: AppColors.line2,
+                    small: true,
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
-
-  final firmware = <String>[
-    if (metadata['model'] != null)
-      _metadataText(metadata['model']).toUpperCase(),
-    _metadataText(metadata['type']),
-    _metadataText(metadata['version']),
-  ].where((part) => part != '—').join(' ');
-  final uid = metadata['uid'] == null && metadata['uidState'] == 'conflict'
-      ? 'copies conflict: ${_groupDisplay(metadata['uidPrimary'], 4)} / '
-            '${_groupDisplay(metadata['uidBackup'], 4)}'
-      : _withMetadataState(metadata['uid'], metadata['uidState'], group: 4);
-  final zp = metadata['zpPayloadLen'] == null || metadata['zpEncLen'] == null
-      ? _metadataText(metadata['zpState'])
-      : '${metadata['zpPayloadLen']} payload / ${metadata['zpEncLen']} encoded '
-            '(${_metadataText(metadata['zpState'])})';
-
-  return showDialog<void>(
-    context: context,
-    barrierColor: const Color(0xB3040A0F),
-    builder: (ctx) => _BackupInfoDialog(
-      title: 'Backup info',
-      intro:
-          'Read from the local sidecar. Identity fields are shown only here.',
-      body: [
-        _BackupInfoRow('Backup', _metadataText(metadata['backup'])),
-        _BackupInfoRow('Verdict', _metadataText(metadata['dumpVerdict'])),
-        _BackupInfoRow(
-          'Firmware',
-          '${firmware.isEmpty ? '—' : firmware} '
-              '(${_metadataText(metadata['versionVerdict'])})',
-        ),
-        _BackupInfoRow(
-          'Serial',
-          _withMetadataState(metadata['serial'], metadata['serialState']),
-        ),
-        _BackupInfoRow('UID', uid),
-        _BackupInfoRow(
-          'Key',
-          _withMetadataState(metadata['key'], metadata['keyState'], group: 2),
-        ),
-        _BackupInfoRow('Rand', _groupDisplay(metadata['rand'], 2)),
-        _BackupInfoRow('ZP', zp),
-      ],
-    ),
-  );
 }
 
-String _metadataText(Object? value) => value?.toString() ?? '—';
-
-String _withMetadataState(Object? value, Object? state, {int? group}) =>
-    '${group == null ? _metadataText(value) : _groupDisplay(value, group)} '
-    '(${_metadataText(state)})';
-
-String _groupDisplay(Object? value, int groupSize) {
-  final text = _metadataText(value);
-  if (text == '—') return text;
-  final compact = text.replaceAll(RegExp(r'\s+'), '').toUpperCase();
-  return [
-    for (var i = 0; i < compact.length; i += groupSize)
-      compact.substring(i, math.min(i + groupSize, compact.length)),
-  ].join(' ');
-}
-
-class _BackupInfoDialog extends StatelessWidget {
-  const _BackupInfoDialog({
-    required this.title,
-    required this.body,
-    this.intro,
-  });
-
-  final String title;
-  final List<Widget> body;
-  final String? intro;
-
-  @override
-  Widget build(BuildContext context) => Dialog(
-    backgroundColor: AppColors.panel,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(18),
-      side: const BorderSide(color: AppColors.line2),
-    ),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 560),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                color: AppColors.txt,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (intro != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                intro!,
-                style: const TextStyle(color: AppColors.dim, height: 1.4),
-              ),
-            ],
-            const SizedBox(height: 18),
-            ...body,
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: _PillButton(
-                label: 'Close',
-                onTap: () => Navigator.pop(context),
-                bg: AppColors.line,
-                border: AppColors.line2,
-                small: true,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _BackupInfoRow extends StatelessWidget {
-  const _BackupInfoRow(this.label, this.value);
+class _InfoRow extends StatelessWidget {
+  const _InfoRow(this.label, this.value);
 
   final String label;
   final String value;
@@ -3992,7 +4028,11 @@ class _FirmwareBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 _PillButton(
-                  label: has ? 'Change' : 'Choose .bin',
+                  label: has
+                      ? 'Change'
+                      : c.actionId == 'file_info'
+                      ? 'Choose .bin / .zip'
+                      : 'Choose .bin',
                   onTap: () => onPick(),
                   bg: AppColors.line,
                   fg: AppColors.txt,

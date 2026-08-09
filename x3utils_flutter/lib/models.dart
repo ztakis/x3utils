@@ -223,6 +223,23 @@ const kActions = <FlashAction>[
     okMsg: 'zip3 package written.',
     needsFirmware: true,
   ),
+  // A normal selectable action with a normal hero, so the page has somewhere
+  // to grow display options. What it does NOT share is the run machinery:
+  // Start opens a report dialog and never enters the stage/verdict path,
+  // because nothing here connects to a target. `okMsg` is therefore unused —
+  // there is no run outcome to announce.
+  FlashAction(
+    id: 'file_info',
+    section: Section.advanced,
+    name: 'Get file info',
+    script: 'inspect · bin / zip3',
+    sub:
+        'Describe any local firmware .bin or zip3 package — identity, version and package metadata. Reads the file only.',
+    chips: [InfoChipData('read-only', ChipKind.ok)],
+    cta: 'Show file info',
+    okMsg: '',
+    needsFirmware: true,
+  ),
   FlashAction(
     id: 'rdp_check',
     section: Section.advanced,

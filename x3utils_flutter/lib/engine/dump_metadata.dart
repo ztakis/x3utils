@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 import 'device_spec.dart';
 import 'firmware.dart';
 import 'fw_version.dart';
+import 'info_row.dart';
 import 'zp_extract.dart';
 
 /// Reads a promoted 128 KB backup and writes its adjacent JSON sidecar.
@@ -127,6 +128,103 @@ class DumpMetadata {
     return sidecar;
   }
 
+  /// How a sidecar renders, and ONLY how a sidecar renders.
+  ///
+  /// The file inspector deliberately keeps its own rules rather than reusing
+  /// these: it describes bytes on disk right now, this describes what a
+  /// validated backup was when it was taken, and the two should be free to
+  /// diverge without dragging each other along.
+  static List<InfoRow> rows(Map<String, Object?> metadata) {
+    final firmware = <String>[
+      if (metadata['model'] != null) infoText(metadata['model']).toUpperCase(),
+      infoText(metadata['type']),
+      infoText(metadata['version']),
+    ].where((part) => part != '—').join(' ');
+    final uidConflict =
+        metadata['uid'] == null && metadata['uidState'] == 'conflict';
+    final zpKnown =
+        metadata['zpPayloadLen'] != null && metadata['zpEncLen'] != null;
+
+    return [
+      InfoRow('Backup', infoText(metadata['backup'])),
+      // No verdict row. A sidecar is only ever written after a dump has been
+      // validated and promoted, so `dumpVerdict` can only say `ok` — a row
+      // that cannot vary is not information. The field stays in the JSON for
+      // machine use.
+      InfoRow(
+        'Firmware',
+        firmware.isEmpty ? '—' : firmware,
+        state: infoText(metadata['versionVerdict']),
+      ),
+      // State only where something was PROVEN: a serial on the known-generic
+      // list, an erased pair, an unreadable region. A shape-valid serial that
+      // matched nothing has been recognised by nothing, and `real` would claim
+      // it was checked against something.
+      InfoRow(
+        'Serial',
+        infoText(metadata['serial']),
+        state: switch (metadata['serialState']) {
+          'generic' => 'generic replacement serial',
+          'cleared' => 'cleared',
+          'none' => 'unreadable',
+          _ => null,
+        },
+        secret: true,
+      ),
+      InfoRow(
+        'UID',
+        uidConflict
+            ? '${infoGrouped(metadata['uidPrimary'], 4)} / '
+                  '${infoGrouped(metadata['uidBackup'], 4)}'
+            : infoGrouped(metadata['uid'], 4),
+        state: uidConflict ? 'copies conflict' : infoText(metadata['uidState']),
+        secret: true,
+      ),
+      // ALWAYS HEX, even though the JSON stores the key as text when its bytes
+      // happen to be printable. Pairing text reads as 8 bytes for a 16-byte
+      // key, and uppercasing it changes the value — which is what Copy all
+      // would then hand over, from the dialog attached to the only copy of the
+      // original key. `oem`/`other` go the same way as `real` above.
+      InfoRow(
+        'Key',
+        _keyHex(metadata),
+        state: switch (metadata['keyState']) {
+          'defaultKey' => 'default key',
+          'blank' => 'blank',
+          _ => null,
+        },
+        secret: true,
+      ),
+      InfoRow('Rand', infoGrouped(metadata['rand'], 2), secret: true),
+      InfoRow(
+        'ZP',
+        zpKnown
+            ? '${metadata['zpPayloadLen']} payload / '
+                  '${metadata['zpEncLen']} encoded'
+            : '—',
+        state: infoText(metadata['zpState']),
+      ),
+    ];
+  }
+
+  /// The stored key as grouped hex, whichever form the sidecar recorded.
+  ///
+  /// `keyEncoding: ascii` means the 16 bytes were printable and [inspect]
+  /// stored them as text; its code units ARE those bytes, so the conversion
+  /// is lossless and the original case survives in the hex.
+  static String _keyHex(Map<String, Object?> metadata) {
+    final raw = infoText(metadata['key']);
+    if (raw == '—') return raw;
+    return infoGrouped(
+      metadata['keyEncoding'] == 'ascii'
+          ? raw.codeUnits
+                .map((unit) => unit.toRadixString(16).padLeft(2, '0'))
+                .join()
+          : raw,
+      2,
+    );
+  }
+
   /// Reads a sidecar produced by [writeValidatedSidecar].
   static Map<String, Object?> readJson(String sidecarPath) {
     final decoded = jsonDecode(File(sidecarPath).readAsStringSync());
@@ -136,19 +234,38 @@ class DumpMetadata {
     return Map<String, Object?>.from(decoded);
   }
 
-  static _Version _version(
-    List<int> dump, {
+  /// Version scan over a slot-0 payload region.
+  ///
+  /// Public because the same read has to serve a picked slot bin or a zip3
+  /// payload, which ARE that region rather than containing it. Pass slot 0
+  /// only — see [FwVersionScanner.identify] for why slot 1 must not be
+  /// included.
+  static ({String? version, String verdict}) scanVersion(
+    List<int> slot0, {
     required String? type,
     required String? model,
   }) {
-    if (type == 'MCU') return const _Version(null, 'modelRequired');
+    if (type == 'MCU') return (version: null, verdict: 'modelRequired');
     if (type != 'VCU' || model == null) {
-      return const _Version(null, 'unavailable');
+      return (version: null, verdict: 'unavailable');
     }
-    final slot0 = dump.sublist(Zp.slot0Offset, 0x10000);
     final found = FwVersionScanner.identify(slot0, model: model, type: type!);
-    return _Version(found.version?.toString(), found.verdict.name);
+    return (version: found.version?.toString(), verdict: found.verdict.name);
   }
+
+  /// Slot 0 out of a full image. The slice is skipped when the type/model
+  /// guards in [scanVersion] will short-circuit before reading it.
+  static ({String? version, String verdict}) _version(
+    List<int> dump, {
+    required String? type,
+    required String? model,
+  }) => scanVersion(
+    type == 'VCU' && model != null
+        ? dump.sublist(Zp.slot0Offset, 0x10000)
+        : const <int>[],
+    type: type,
+    model: model,
+  );
 
   static _Uid _uid(List<int> dump) {
     final primary = _uidAt(dump, uidPrimaryOffset);
@@ -191,12 +308,6 @@ class DumpMetadata {
     if (match == null) return DateTime.now().toIso8601String().split('.').first;
     return '${match.group(1)}T${match.group(2)}:${match.group(3)}:${match.group(4)}';
   }
-}
-
-class _Version {
-  const _Version(this.version, this.verdict);
-  final String? version;
-  final String verdict;
 }
 
 class _Uid {

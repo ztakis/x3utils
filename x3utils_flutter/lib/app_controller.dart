@@ -225,10 +225,18 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _maybeSecondCopy(String srcPath) {
+  /// The redundant copy carries the sidecar too when there is one: a backup
+  /// that outlives its root is a 128 KB blob without the file that says what
+  /// it is. The sidecar only follows a backup that copied successfully, so the
+  /// 2nd-copy dir can never hold metadata for an image that is not beside it.
+  void _maybeSecondCopy(String srcPath, {String? sidecarPath}) {
     if (!secondCopy) return;
     final dest = Firmware.secondCopy(srcPath);
-    if (dest != null) _log('== 2nd copy → $dest ==');
+    if (dest == null) return;
+    _log('== 2nd copy → $dest ==');
+    if (sidecarPath == null) return;
+    final info = Firmware.secondCopy(sidecarPath);
+    if (info != null) _log('== 2nd copy → $info ==');
   }
 
   OpenOcdRunner? _runner;
@@ -506,6 +514,7 @@ class AppController extends ChangeNotifier {
             ? 'Choose a backup dump'
             : 'Choose a firmware payload';
       }
+      if (actionId == 'file_info') return 'Choose a file';
       return 'Choose firmware';
     }
     if (actionId == 'make_zip3' && (zip3Type == null || zip3Model == null)) {
@@ -523,6 +532,10 @@ class AppController extends ChangeNotifier {
         }
         return 'Choose the complete firmware .bin to package below.';
       }
+      if (actionId == 'file_info') {
+        return 'Choose any firmware .bin or zip3 package below — nothing is '
+            'written and nothing is checked for flashing.';
+      }
       if (isSlotAction) {
         return 'Choose a slot-sized .bin or zip3 package below.';
       }
@@ -530,6 +543,9 @@ class AppController extends ChangeNotifier {
     }
     if (actionId == 'make_zip3' && (zip3Type == null || zip3Model == null)) {
       return _firmwareNote ?? 'Choose both Type and Model below.';
+    }
+    if (actionId == 'file_info') {
+      return 'File selected. Show its report when ready.';
     }
     if (action.needsFirmware) {
       return _firmwareNote ?? 'Firmware selected. Start when ready.';
@@ -2118,7 +2134,7 @@ class AppController extends ChangeNotifier {
     _log('== validated OK → $outPath ==');
     _setInstruction('Backup validated. Keep this file safe.');
     final metadataPath = _writeDumpMetadata(outPath);
-    _maybeSecondCopy(outPath);
+    _maybeSecondCopy(outPath, sidecarPath: metadataPath);
     await _finishRealAfterHold(
       true,
       'Backed up and verified.',
@@ -2323,7 +2339,7 @@ class AppController extends ChangeNotifier {
       _log('== backup ok → $outPath ==');
       _setInstruction('Backup validated. Writing can continue.');
       backupMetadataPath = _writeDumpMetadata(outPath);
-      _maybeSecondCopy(outPath);
+      _maybeSecondCopy(outPath, sidecarPath: backupMetadataPath);
       backupPath = outPath;
 
       // Device-side guard: does the target (from the backup we just took) match
@@ -2489,7 +2505,7 @@ class AppController extends ChangeNotifier {
 
     _setInstruction('Original backup saved. Preparing the patch...');
     final rawMetadataPath = _writeDumpMetadata(raw);
-    _maybeSecondCopy(raw);
+    _maybeSecondCopy(raw, sidecarPath: rawMetadataPath);
 
     // Step 1b — identify what is actually installed, BEFORE touching it.
     // Until now compat patched whatever it dumped: its only test was that the

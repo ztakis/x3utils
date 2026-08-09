@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:x3utils_flutter/engine/device_spec.dart';
 import 'package:x3utils_flutter/engine/dump_metadata.dart';
 import 'package:x3utils_flutter/engine/firmware.dart';
+import 'package:x3utils_flutter/engine/info_row.dart';
 
 List<int> _dump(String banner) {
   final bytes = List<int>.generate(131072, (i) => i % 251);
@@ -176,5 +177,52 @@ void main() {
       () => DumpMetadata.writeValidatedSidecar(dumpPath),
       throwsA(isA<FileSystemException>()),
     );
+  });
+
+  group('dialog rows', () {
+    String value(List<InfoRow> rows, String label) =>
+        rows.firstWhere((row) => row.label == label).display(revealed: true);
+
+    test('a printable key is rendered as hex, with its case recoverable', () {
+      // The JSON stores printable key bytes as TEXT. Grouping that text read
+      // as 8 bytes for a 16-byte key and uppercased it, so the value shown —
+      // and copied — was not the key on the chip.
+      final rows = DumpMetadata.rows({
+        'backup': 'dump.bin',
+        'key': 'OmZhXbB2MgUo2t3E',
+        'keyEncoding': 'ascii',
+        'keyState': 'other',
+      });
+      expect(
+        value(rows, 'Key'),
+        '4F 6D 5A 68 58 62 42 32 4D 67 55 6F 32 74 33 45',
+      );
+    });
+
+    test('states appear only where something was proven', () {
+      final rows = DumpMetadata.rows({
+        'backup': 'dump.bin',
+        'dumpVerdict': 'ok',
+        'serial': '1K1UA2510P9900',
+        'serialState': 'real', // shape-valid only — recognised by nothing
+        'key': 'aabb',
+        'keyState': 'oem', // not the default key, and that is all we know
+      });
+
+      expect(rows.any((row) => row.label == 'Verdict'), isFalse);
+      expect(rows.firstWhere((row) => row.label == 'Serial').state, isNull);
+      expect(rows.firstWhere((row) => row.label == 'Key').state, isNull);
+    });
+
+    test('a matched value and an observation keep their state', () {
+      final rows = DumpMetadata.rows({
+        'backup': 'dump.bin',
+        'serialState': 'cleared',
+        'key': 'fe801cb2',
+        'keyState': 'defaultKey',
+      });
+      expect(value(rows, 'Serial'), '— (cleared)');
+      expect(value(rows, 'Key'), 'FE 80 1C B2 (default key)');
+    });
   });
 }

@@ -726,16 +726,16 @@ class CompatPatch {
       int.parse(s.substring(i, i + 2), radix: 16),
   ];
 
-  /// Classify the 16-byte firmware key at [offset] in a full 128 KB [image]
-  /// (a backup dump). This is an informational classification only; it does
-  /// not decide whether the dump may be repackaged. See flash_compat's 0x1420
-  /// patch.
-  static FwKeyState keyState(List<int> image) {
-    if (image.length < offset + signature.length) return FwKeyState.other;
+  /// Classify the 16-byte firmware key at [at] — [offset] in a full 128 KB
+  /// image (a backup dump), or the same region seen from the start of a slot-0
+  /// payload. This is an informational classification only; it does not decide
+  /// whether the dump may be repackaged. See flash_compat's 0x1420 patch.
+  static FwKeyState keyState(List<int> image, {int at = offset}) {
+    if (image.length < at + signature.length) return FwKeyState.other;
     var isKey = true;
     var isBlank = true;
     for (var i = 0; i < signature.length; i++) {
-      final b = image[offset + i];
+      final b = image[at + i];
       if (b != signature[i]) isKey = false;
       if (b != 0xFF) isBlank = false;
     }

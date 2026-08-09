@@ -3,6 +3,7 @@ import 'dart:ui' show Size;
 
 import 'package:flutter/material.dart'
     show CheckedPopupMenuItem, InkWell, SelectableText;
+import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter/widgets.dart'
     show Axis, NeverScrollableScrollPhysics, PageView, ValueKey;
 import 'package:flutter_test/flutter_test.dart';
@@ -60,6 +61,19 @@ void main() {
 }
 ''');
 
+    final copied = <String>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
     await tester.pumpWidget(const X3UtilsApp());
     final dynamic homeState = tester.state(find.byType(HomeScreen));
     homeState.c.stage = StageState.ok;
@@ -75,14 +89,101 @@ void main() {
     await tester.pump();
     expect(find.text('Backup info'), findsOneWidget);
     expect(find.text('UID'), findsOneWidget);
-    expect(find.byType(SelectableText), findsNWidgets(8));
-    final values = tester
+    // Seven rows, not eight: a sidecar only exists for a dump that already
+    // validated, so a Verdict row could only ever say `ok`.
+    expect(find.byType(SelectableText), findsNWidgets(7));
+    expect(find.text('Verdict'), findsNothing);
+
+    // Opening the dialog reveals nothing per-unit: the identity rows keep
+    // their shape and their state, but not their value.
+    List<String?> shownValues() => tester
         .widgetList<SelectableText>(find.byType(SelectableText))
         .map((field) => field.data)
         .toList();
-    expect(values, contains('C49B 0DB9 0000 2193 A707 05E8 (matched)'));
-    expect(values, contains('FE 80 1C B2 D1 EF 41 A6 (defaultKey)'));
-    expect(values, contains('FF FF FF FF FF FF'));
+    expect(shownValues(), contains('•••• •••• •••• •••• •••• •••• (matched)'));
+    expect(shownValues(), contains('••••••••••••••'));
+    expect(shownValues(), contains('•• •• •• •• •• •• •• •• (default key)'));
+    expect(shownValues(), contains('•• •• •• •• •• ••'));
+    // Non-identity rows are never masked.
+    expect(shownValues(), contains('G3 VCU 1.6.1 (identified)'));
+    expect(shownValues(), contains('59028 payload / 59032 encoded (readable)'));
+
+    await tester.tap(find.text('Reveal'));
+    await tester.pump();
+    expect(shownValues(), contains('C49B 0DB9 0000 2193 A707 05E8 (matched)'));
+    expect(shownValues(), contains('1CGCC9926C8115'));
+    expect(shownValues(), contains('FE 80 1C B2 D1 EF 41 A6 (default key)'));
+    expect(shownValues(), contains('FF FF FF FF FF FF'));
+
+    await tester.tap(find.text('Hide'));
+    await tester.pump();
+    expect(shownValues(), contains('•••• •••• •••• •••• •••• •••• (matched)'));
+
+    // Copy all hands over the rows as read on screen — never the mask, and
+    // never raw JSON.
+    await tester.tap(find.text('Copy all'));
+    await tester.pump();
+    expect(copied, hasLength(1));
+    expect(copied.single, isNot(contains('•')));
+    expect(copied.single, isNot(contains('{')));
+    expect(
+      copied.single,
+      '''
+Backup    dump.bin
+Firmware  G3 VCU 1.6.1 (identified)
+Serial    1CGCC9926C8115
+UID       C49B 0DB9 0000 2193 A707 05E8 (matched)
+Key       FE 80 1C B2 D1 EF 41 A6 (default key)
+Rand      FF FF FF FF FF FF
+ZP        59028 payload / 59032 encoded (readable)'''
+          .trim(),
+    );
+    expect(find.text('Copied'), findsOneWidget);
+  });
+
+  testWidgets('Get file info sits in Advanced between ZIP3 and protection', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1024, 768);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(const X3UtilsApp());
+
+    expect(find.text('Get file info'), findsNothing); // Advanced is collapsed
+    await tester.tap(find.text('ADVANCED'));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    double top(String label) => tester.getTopLeft(find.text(label)).dy;
+    expect(top('Get file info'), greaterThan(top('ZIP3 tools')));
+    expect(top('Get file info'), lessThan(top('Check protection')));
+
+    // It selects like any other action and gets a normal hero page, which is
+    // where display options can live later. Fired through the tile's own
+    // callback because a fifth Advanced action sits below the fold of the
+    // 1024x768 rail, which scrolls.
+    final tile = tester.widget<InkWell>(
+      find
+          .ancestor(
+            of: find.text('Get file info'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    tile.onTap!();
+    await tester.pump();
+    final dynamic homeState = tester.state(find.byType(HomeScreen));
+    expect(homeState.c.actionId, 'file_info');
+    expect(find.text('Choose a file'), findsOneWidget);
+    expect(find.text('Choose .bin / .zip'), findsOneWidget);
+    expect(find.text('Show file info'), findsWidgets);
+    // Reading a file is not a run: it must not be able to enter the busy or
+    // verdict states, and its picker takes packages as well as images.
+    expect(homeState.c.canStart, isFalse); // nothing picked yet
+    expect(homeState.c.running, isFalse);
+    expect(homeState.c.stage, StageState.idle);
+    expect(homeState.c.hasFlashScope, isFalse);
+    expect(homeState.c.isSlotAction, isFalse);
   });
 
   testWidgets('SHU compat requires the timed firmware-version warning', (
