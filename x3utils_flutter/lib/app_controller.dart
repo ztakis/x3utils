@@ -14,6 +14,7 @@ import 'engine/firmware.dart';
 import 'engine/firmware_inspection.dart';
 import 'engine/pack_zip3.dart';
 import 'engine/confirmed_file_writer.dart';
+import 'engine/dump_metadata.dart';
 import 'engine/fw_version.dart';
 import 'engine/trash.dart';
 import 'engine/zp_extract.dart';
@@ -930,6 +931,7 @@ class AppController extends ChangeNotifier {
   MessageTone messageTone = MessageTone.normal;
   String? resultPath;
   String? resultNote;
+  String? resultMetadataPath;
   bool _failureNeedsInput = false;
   bool _failureIsFinding = false; // a chip verdict, not a rejected input
   bool _rdpRetryPending = false;
@@ -1221,6 +1223,7 @@ class AppController extends ChangeNotifier {
     _runStartedAt = null;
     resultPath = null;
     resultNote = null;
+    resultMetadataPath = null;
     _failureNeedsInput = false;
     _failureIsFinding = false;
     _rdpRetryPending = false;
@@ -1343,6 +1346,7 @@ class AppController extends ChangeNotifier {
     messageTone = MessageTone.normal;
     resultPath = null;
     resultNote = null;
+    resultMetadataPath = null;
     _failureNeedsInput = false;
     _failureIsFinding = false;
     _rdpRetryPending = false;
@@ -1917,10 +1921,12 @@ class AppController extends ChangeNotifier {
     bool finding = false,
     String? outputPath,
     String? outputNote,
+    String? outputMetadataPath,
   }) {
     lastConnect = ok ? 'PASS' : 'FAIL';
     resultPath = outputPath;
     resultNote = outputNote;
+    resultMetadataPath = outputMetadataPath;
     _failureNeedsInput = !ok && !reseat;
     _failureIsFinding = !ok && finding;
     final String msg;
@@ -1949,6 +1955,7 @@ class AppController extends ChangeNotifier {
     bool finding = false,
     String? outputPath,
     String? outputNote,
+    String? outputMetadataPath,
   }) async {
     final my = _token;
     final hadBusySurface = _busySurfaceIsVisible;
@@ -1963,6 +1970,7 @@ class AppController extends ChangeNotifier {
       finding: finding,
       outputPath: outputPath,
       outputNote: outputNote,
+      outputMetadataPath: outputMetadataPath,
     );
   }
 
@@ -2109,12 +2117,14 @@ class AppController extends ChangeNotifier {
     final outPath = Firmware.promoteDump(staged);
     _log('== validated OK → $outPath ==');
     _setInstruction('Backup validated. Keep this file safe.');
+    final metadataPath = _writeDumpMetadata(outPath);
     _maybeSecondCopy(outPath);
     await _finishRealAfterHold(
       true,
       'Backed up and verified.',
       '',
       outputPath: outPath,
+      outputMetadataPath: metadataPath,
     );
   }
 
@@ -2144,6 +2154,23 @@ class AppController extends ChangeNotifier {
   }
 
   String? _existingOrNull(String path) => File(path).existsSync() ? path : null;
+
+  /// Adds optional local identity metadata after a dump is already a backup.
+  /// Failure here is logged but intentionally never alters the run's verdict.
+  String? _writeDumpMetadata(String dumpPath) {
+    if (Firmware.isStagedDump(dumpPath)) {
+      _log('== backup info was not written: backup promotion failed ==');
+      return null;
+    }
+    try {
+      final sidecar = DumpMetadata.writeValidatedSidecar(dumpPath);
+      _log('== backup info → $sidecar ==');
+      return sidecar;
+    } catch (e) {
+      _log('== backup info was not written: $e ==');
+      return null;
+    }
+  }
 
   void _noteStagedFile(String staged) {
     if (!File(staged).existsSync()) return;
@@ -2247,6 +2274,7 @@ class AppController extends ChangeNotifier {
     }
 
     String? backupPath;
+    String? backupMetadataPath;
     String?
     serialNote; // identity change fact for the log + result (never blocks)
 
@@ -2294,6 +2322,7 @@ class AppController extends ChangeNotifier {
       final outPath = Firmware.promoteDump(staged);
       _log('== backup ok → $outPath ==');
       _setInstruction('Backup validated. Writing can continue.');
+      backupMetadataPath = _writeDumpMetadata(outPath);
       _maybeSecondCopy(outPath);
       backupPath = outPath;
 
@@ -2314,6 +2343,7 @@ class AppController extends ChangeNotifier {
               'backup: $e. The pre-flash backup was saved.',
           reseat: false,
           outputPath: outPath,
+          outputMetadataPath: backupMetadataPath,
         );
         return;
       }
@@ -2326,6 +2356,7 @@ class AppController extends ChangeNotifier {
               'checked. Choose it again. The pre-flash backup was saved.',
           reseat: false,
           outputPath: outPath,
+          outputMetadataPath: backupMetadataPath,
         );
         return;
       }
@@ -2351,6 +2382,7 @@ class AppController extends ChangeNotifier {
           'Flash aborted — ${tm.message} The pre-flash backup was saved.',
           reseat: false,
           outputPath: outPath,
+          outputMetadataPath: backupMetadataPath,
         );
         return;
       }
@@ -2405,6 +2437,7 @@ class AppController extends ChangeNotifier {
       failMsg,
       outputPath: backupPath,
       outputNote: flashOk ? serialNote : null,
+      outputMetadataPath: backupMetadataPath,
     );
   }
 
@@ -2455,13 +2488,17 @@ class AppController extends ChangeNotifier {
     final raw = Firmware.promoteDump(staged);
 
     _setInstruction('Original backup saved. Preparing the patch...');
+    final rawMetadataPath = _writeDumpMetadata(raw);
     _maybeSecondCopy(raw);
 
     // Step 1b — identify what is actually installed, BEFORE touching it.
     // Until now compat patched whatever it dumped: its only test was that the
     // file reached 0x1430. The backup is already on disk, so every refusal here
     // costs the operator nothing they wanted to keep.
-    final identity = await _compatIdentityGate(raw);
+    final identity = await _compatIdentityGate(
+      raw,
+      metadataPath: rawMetadataPath,
+    );
     if (identity == null) return;
 
     // Step 2 — patch (pure Dart, no hardware).
@@ -2477,6 +2514,7 @@ class AppController extends ChangeNotifier {
         'Patch failed — the chip was NOT written. ${patch.message}',
         reseat: false,
         outputPath: raw,
+        outputMetadataPath: rawMetadataPath,
       );
       return;
     }
@@ -2513,6 +2551,7 @@ class AppController extends ChangeNotifier {
       '${_flashFailMessage(f)} The original backup was saved.',
       outputPath: raw,
       outputNote: zipNote,
+      outputMetadataPath: rawMetadataPath,
     );
   }
 
@@ -2532,7 +2571,10 @@ class AppController extends ChangeNotifier {
   /// and the version blacklist is consulted BEFORE identification, so a
   /// known-bad build refuses without depending on the known-version list being
   /// complete.
-  Future<CompatIdentity?> _compatIdentityGate(String rawPath) async {
+  Future<CompatIdentity?> _compatIdentityGate(
+    String rawPath, {
+    String? metadataPath,
+  }) async {
     _setInstruction('Identifying the installed firmware...');
     final List<int> bytes;
     try {
@@ -2545,6 +2587,7 @@ class AppController extends ChangeNotifier {
             'installed firmware: $e',
         reseat: false,
         outputPath: rawPath,
+        outputMetadataPath: metadataPath,
       );
       return null;
     }
@@ -2563,6 +2606,7 @@ class AppController extends ChangeNotifier {
         reseat: false,
         finding: true,
         outputPath: rawPath,
+        outputMetadataPath: metadataPath,
       );
       return null;
     }
@@ -2593,6 +2637,7 @@ class AppController extends ChangeNotifier {
           reseat: false,
           finding: true,
           outputPath: rawPath,
+          outputMetadataPath: metadataPath,
         );
         return null;
       }
@@ -2613,6 +2658,7 @@ class AppController extends ChangeNotifier {
         reseat: false,
         finding: true,
         outputPath: rawPath,
+        outputMetadataPath: metadataPath,
       );
       return null;
     }
@@ -2635,6 +2681,7 @@ class AppController extends ChangeNotifier {
         reseat: false,
         finding: true,
         outputPath: rawPath,
+        outputMetadataPath: metadataPath,
       );
       return null;
     }
@@ -2674,6 +2721,7 @@ class AppController extends ChangeNotifier {
           reseat: false,
           finding: true,
           outputPath: rawPath,
+          outputMetadataPath: metadataPath,
         );
         return null;
       }

@@ -195,8 +195,11 @@ void main() {
 
       expect(c.stage, StageState.ok);
       expect(filesIn(backupDir, '.bin').length, 1);
+      expect(filesIn(backupDir, '.json').length, 1);
       expect(filesIn(backupDir, '.part'), isEmpty);
       expect(c.resultPath, endsWith('.bin'));
+      expect(c.resultMetadataPath, endsWith('.json'));
+      expect(File(c.resultMetadataPath!).existsSync(), isTrue);
     });
 
     test(
@@ -288,6 +291,49 @@ void main() {
   });
 
   group('Backup + Flash', () {
+    test('a guarded target mismatch keeps a backup info sidecar', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      final target = _image(131072)
+        ..setRange(
+          kSlotBannerOffset,
+          kSlotBannerOffset + kBannerLength,
+          'SCOOTER_VCU_xxG3'.codeUnits,
+        );
+      final runner = _DumpingRunner(
+        lines: ['target halted due to debug-request', 'dumped 131072 bytes'],
+        exitCode: 0,
+        bytes: target,
+      );
+      final c = AppController(runner: runner);
+      addTearDown(c.dispose);
+      await Future<void>.delayed(Duration.zero);
+      c.setX3utilsRoot(rootDir.path);
+      c.setSecondCopy(false);
+      c.selectAction('flash_backup');
+
+      final incoming = _image(131072)
+        ..setRange(
+          kSlotBannerOffset,
+          kSlotBannerOffset + kBannerLength,
+          'SCOOTER_VCU_xxU2'.codeUnits,
+        );
+      final fw = File(p.join(rootDir.path, 'incoming.bin'))
+        ..writeAsBytesSync(incoming);
+      addTearDown(() => fw.existsSync() ? fw.deleteSync() : null);
+      c.setFirmware(fw.path);
+
+      await c.start();
+
+      expect(c.stage, StageState.fail);
+      expect(c.sub, contains('Flash aborted'));
+      expect(c.resultPath, endsWith('.bin'));
+      expect(c.resultMetadataPath, endsWith('.json'));
+      expect(File(c.resultMetadataPath!).existsSync(), isTrue);
+      expect(filesIn(backupDir, '.json'), hasLength(1));
+    });
+
     test('an invalid pre-flash backup aborts before any write', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'defaultAutoRetry': 0,

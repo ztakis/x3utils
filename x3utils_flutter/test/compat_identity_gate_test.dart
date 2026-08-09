@@ -166,6 +166,9 @@ void main() {
       expect(runner.wroteFlash, isFalse, reason: 'must refuse before erasing');
       expect(compatFiles('.bin'), isNotEmpty, reason: 'backup must survive');
       expect(c.resultPath, isNotNull);
+      expect(c.resultMetadataPath, endsWith('.json'));
+      expect(File(c.resultMetadataPath!).existsSync(), isTrue);
+      expect(compatFiles('.json'), hasLength(1));
     },
   );
 

@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'dart:ui' show Size;
 
-import 'package:flutter/material.dart' show CheckedPopupMenuItem, InkWell;
+import 'package:flutter/material.dart'
+    show CheckedPopupMenuItem, InkWell, SelectableText;
 import 'package:flutter/widgets.dart'
     show Axis, NeverScrollableScrollPhysics, PageView, ValueKey;
 import 'package:flutter_test/flutter_test.dart';
@@ -22,6 +24,65 @@ void main() {
     expect(find.text('x3utils'), findsOneWidget);
     expect(find.text('Check connection'), findsWidgets);
     expect(find.text('Ready to start'), findsOneWidget);
+  });
+
+  testWidgets('backup info is revealed only from a result sidecar', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1024, 768);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final dir = Directory.systemTemp.createTempSync('x3utils_backup_info_ui_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final dump = File('${dir.path}${Platform.pathSeparator}dump.bin')
+      ..writeAsBytesSync([1]);
+    final sidecar = File('${dir.path}${Platform.pathSeparator}dump.json')
+      ..writeAsStringSync('''
+{
+  "schema": 1,
+  "backup": "dump.bin",
+  "dumpVerdict": "ok",
+  "type": "VCU",
+  "model": "g3",
+  "version": "1.6.1",
+  "versionVerdict": "identified",
+  "serial": "1CGCC9926C8115",
+  "serialState": "real",
+  "uid": "C49B0DB900002193A70705E8",
+  "uidState": "matched",
+  "key": "fe801cb2d1ef41a6",
+  "keyState": "defaultKey",
+  "rand": "ffffffffffff",
+  "zpPayloadLen": 59028,
+  "zpEncLen": 59032,
+  "zpState": "readable"
+}
+''');
+
+    await tester.pumpWidget(const X3UtilsApp());
+    final dynamic homeState = tester.state(find.byType(HomeScreen));
+    homeState.c.stage = StageState.ok;
+    homeState.c.resultPath = dump.path;
+    homeState.c.resultMetadataPath = sidecar.path;
+    homeState.c.notifyListeners();
+    await tester.pump();
+
+    expect(find.text('Show backup info'), findsOneWidget);
+    expect(find.text('C49B0DB900002193A70705E8'), findsNothing);
+
+    await tester.tap(find.text('Show backup info'));
+    await tester.pump();
+    expect(find.text('Backup info'), findsOneWidget);
+    expect(find.text('UID'), findsOneWidget);
+    expect(find.byType(SelectableText), findsNWidgets(8));
+    final values = tester
+        .widgetList<SelectableText>(find.byType(SelectableText))
+        .map((field) => field.data)
+        .toList();
+    expect(values, contains('C49B 0DB9 0000 2193 A707 05E8 (matched)'));
+    expect(values, contains('FE 80 1C B2 D1 EF 41 A6 (defaultKey)'));
+    expect(values, contains('FF FF FF FF FF FF'));
   });
 
   testWidgets('SHU compat requires the timed firmware-version warning', (
