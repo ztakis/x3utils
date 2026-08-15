@@ -2,11 +2,14 @@
 
 # x3utils
 
+### Web App
+
+- **[x3utils-web v2.0.0 BETA](https://x3utils-web.pages.dev/)** — runs in the browser, nothing to install. Experimental. Needs a WebUSB-capable browser (Chrome or Edge on desktop or Android); Firefox and Safari will not work.
+
 ### Downloads
 
 - **[GUI v1.3.0](https://github.com/ztakis/x3utils/releases/tag/gui-v1.3.0)** — desktop app for Windows, Linux and macOS. Recommended for most users.
 - **[CLI v1.8.1](https://github.com/ztakis/x3utils/releases/tag/v1.8.1)** — the scripts, for terminal users.
-- **[Web app](https://x3utils-web.pages.dev/)** — runs in the browser, nothing to install. Experimental. Needs a WebUSB-capable browser (Chrome or Edge on desktop or Android); Firefox and Safari will not work.
 
 <h2></h2>
 
