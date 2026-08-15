@@ -23,7 +23,7 @@
 <td><img width="388" height="840" alt="x3utils android" src="docs/media/android-c45.jpg" /></td>
 </tr></table>
 
-<img width="518" height="653" alt="image" src="https://github.com/user-attachments/assets/79a4be07-d7a0-4c44-9aa1-7484f07f5430" />
+<!-- <img width="518" height="653" alt="image" src="https://github.com/user-attachments/assets/79a4be07-d7a0-4c44-9aa1-7484f07f5430" /> -->
 
 ### Supported models: ZT3 Pro, Max G3, F3 / F3 Pro.
 
