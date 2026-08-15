@@ -18,8 +18,10 @@
 
 ### ST-LINK utilities for X3 / 3rd-generation scooters.
 
-<img width="718" height="840" alt="image" src="https://github.com/user-attachments/assets/0a8a94e9-04bd-4903-9615-b1933d6d3e52" />
-<br><br>
+<table><tr>
+<td><img width="718" height="840" alt="x3utils desktop" src="https://github.com/user-attachments/assets/0a8a94e9-04bd-4903-9615-b1933d6d3e52" /></td>
+<td><img width="388" height="840" alt="x3utils android" src="docs/media/android-c45.jpg" /></td>
+</tr></table>
 
 <img width="518" height="653" alt="image" src="https://github.com/user-attachments/assets/79a4be07-d7a0-4c44-9aa1-7484f07f5430" />
 
