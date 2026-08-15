@@ -1,0 +1,501 @@
+<title>x3utils — Flash Studio</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#0A0D13; --bg2:#0E1219; --panel:#141A25; --panel2:#1A2230; --elev:#212C3D;
+    --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.15);
+    --txt:#E8EDF4; --dim:#96A2B6; --mut:#5D6A7E;
+    --brand:#16E0C4; --brand2:#0FB9A6; --pop:#FF2E88;
+    --hold:#FFB224; --release:#FF7A2F; --ok:#38E08A; --danger:#FF4D5E;
+    --r-lg:20px; --r-md:14px; --r-sm:10px;
+    --fdisp:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+    --fmono:"Cascadia Code","SF Mono",ui-monospace,Consolas,monospace;
+    --shadow:0 24px 70px -20px rgba(0,0,0,.75);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; font-family:var(--fdisp); color:var(--txt);
+    background:
+      radial-gradient(900px 500px at 12% -8%, rgba(22,224,196,.10), transparent 60%),
+      radial-gradient(800px 520px at 108% 118%, rgba(255,46,136,.10), transparent 55%),
+      var(--bg);
+    display:flex; align-items:center; justify-content:center; padding:28px 18px;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .app{
+    width:100%; max-width:1060px; background:linear-gradient(180deg,var(--bg2),var(--bg));
+    border:1px solid var(--line); border-radius:var(--r-lg); overflow:hidden;
+    box-shadow:var(--shadow); position:relative;
+  }
+  .app::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+
+  /* titlebar */
+  .titlebar{display:flex;align-items:center;gap:14px;height:52px;padding:0 16px;
+    background:linear-gradient(180deg,rgba(255,255,255,.035),transparent);
+    border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:16px}
+  .logo{width:26px;height:26px;border-radius:8px;position:relative;
+    background:conic-gradient(from 210deg,var(--brand),var(--brand2),var(--pop),var(--brand));
+    box-shadow:0 0 0 1px rgba(255,255,255,.12),0 0 20px -4px var(--brand)}
+  .logo::after{content:"⚡";position:absolute;inset:0;display:grid;place-items:center;font-size:13px;color:#04120f}
+  .brand small{color:var(--mut);font-weight:600}
+  .verpill{margin-left:2px;font:600 11px/1 var(--fmono);color:var(--brand);
+    border:1px solid rgba(22,224,196,.35);background:rgba(22,224,196,.08);
+    padding:5px 8px;border-radius:999px;letter-spacing:.02em}
+  .tb-spacer{flex:1}
+  .tb-hint{color:var(--mut);font-size:12px;letter-spacing:.03em}
+  .winctl{display:flex;gap:9px;margin-left:6px}
+  .winctl i{width:12px;height:12px;border-radius:50%;display:block;opacity:.9}
+  .winctl .c1{background:#febc2e}.winctl .c2{background:#2fd06b}.winctl .c3{background:#ff5f57}
+
+  /* body grid */
+  .body{display:grid;grid-template-columns:264px 1fr;min-height:560px}
+  .rail{border-right:1px solid var(--line);padding:16px 14px;display:flex;flex-direction:column;gap:18px;
+    background:linear-gradient(180deg,rgba(255,255,255,.015),transparent)}
+  .rail.locked{opacity:.5;pointer-events:none;filter:saturate(.7)}
+
+  .r-label{font:700 11px/1 var(--fdisp);letter-spacing:.16em;color:var(--mut);text-transform:uppercase;margin:2px 2px 8px}
+
+  /* connection segmented */
+  .modes{display:flex;flex-direction:column;gap:7px}
+  .mode{display:flex;align-items:center;gap:11px;text-align:left;cursor:pointer;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);
+    padding:10px 12px;color:var(--txt);transition:.16s;font-family:inherit}
+  .mode:hover{border-color:var(--line2);background:var(--panel2)}
+  .mode .tag{width:26px;height:26px;flex:none;border-radius:8px;display:grid;place-items:center;
+    font:800 13px/1 var(--fdisp);color:var(--dim);background:rgba(255,255,255,.05);border:1px solid var(--line)}
+  .mode .mt{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .mode .mt b{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mode .mt span{font-size:11px;color:var(--dim)}
+  .mode[aria-selected="true"]{border-color:rgba(22,224,196,.55);background:rgba(22,224,196,.08);
+    box-shadow:0 0 0 1px rgba(22,224,196,.25),0 10px 30px -16px var(--brand)}
+  .mode[aria-selected="true"] .tag{color:#04120f;background:var(--brand);border-color:transparent}
+
+  .countdown{display:none;align-items:center;justify-content:space-between;gap:10px;
+    background:var(--panel);border:1px dashed var(--line2);border-radius:var(--r-md);padding:9px 12px}
+  .countdown.on{display:flex}
+  .countdown label{font-size:12px;color:var(--dim)}
+  .stepper{display:flex;align-items:center;gap:2px;background:rgba(0,0,0,.35);border-radius:999px;padding:3px}
+  .stepper button{width:24px;height:24px;border:0;border-radius:50%;background:transparent;color:var(--txt);
+    font-size:15px;cursor:pointer;line-height:1}
+  .stepper button:hover{background:rgba(255,255,255,.09)}
+  .stepper output{width:30px;text-align:center;font:700 14px/1 var(--fmono);font-variant-numeric:tabular-nums}
+
+  /* actions */
+  .agroup{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+  .act{display:flex;align-items:center;gap:10px;text-align:left;cursor:pointer;font-family:inherit;
+    background:transparent;border:1px solid transparent;border-radius:var(--r-md);padding:9px 11px;color:var(--txt);
+    transition:.15s;position:relative}
+  .act:hover{background:var(--panel);border-color:var(--line)}
+  .act .dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--mut)}
+  .act.read .dot{background:var(--ok)} .act.flash .dot{background:var(--brand)} .act.recover .dot{background:var(--danger)}
+  .act b{font-size:13px;font-weight:600}
+  .act[aria-selected="true"]{background:var(--panel2);border-color:var(--line2)}
+  .act[aria-selected="true"]::before{content:"";position:absolute;left:-14px;top:8px;bottom:8px;width:3px;
+    border-radius:0 3px 3px 0;background:var(--brand);box-shadow:0 0 12px var(--brand)}
+
+  /* main */
+  .main{display:flex;flex-direction:column;min-width:0}
+  .stagehead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+    padding:18px 22px 6px}
+  .stagehead h1{margin:0;font-size:21px;font-weight:800;letter-spacing:-.02em}
+  .stagehead p{margin:5px 0 0;color:var(--dim);font-size:13px;max-width:52ch;line-height:1.5}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:none;max-width:200px}
+  .chip{font:700 10px/1 var(--fdisp);letter-spacing:.06em;text-transform:uppercase;padding:6px 9px;border-radius:999px;
+    display:inline-flex;align-items:center;gap:5px;white-space:nowrap;border:1px solid}
+  .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+  .chip.ok{color:var(--ok);border-color:rgba(56,224,138,.3);background:rgba(56,224,138,.08)}
+  .chip.brand{color:var(--brand);border-color:rgba(22,224,196,.3);background:rgba(22,224,196,.08)}
+  .chip.warn{color:var(--hold);border-color:rgba(255,178,36,.3);background:rgba(255,178,36,.08)}
+  .chip.danger{color:var(--danger);border-color:rgba(255,77,94,.3);background:rgba(255,77,94,.08)}
+
+  /* the hero stage */
+  .stage{margin:8px 22px 0;flex:1;position:relative;border-radius:18px;border:1px solid var(--line);
+    background:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,.05) 1px, transparent 0) 0 0/22px 22px,
+      linear-gradient(180deg,var(--panel),var(--bg2));
+    display:flex;align-items:center;justify-content:center;overflow:hidden;transition:.3s}
+  .stage::before{content:"";position:absolute;inset:0;opacity:.5;transition:.3s;pointer-events:none;
+    background:radial-gradient(600px 300px at 50% 0%, var(--accentglow,transparent), transparent 70%)}
+  .stage-in{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;text-align:center;
+    padding:28px 24px;max-width:520px;width:100%}
+  .eyebrow{font:800 12px/1 var(--fdisp);letter-spacing:.28em;text-transform:uppercase;color:var(--accent,var(--dim));
+    margin-bottom:14px;transition:.2s}
+  .st-title{margin:0;font-size:30px;font-weight:800;letter-spacing:-.02em;text-wrap:balance;line-height:1.08}
+  .st-sub{margin:12px 0 0;color:var(--dim);font-size:14px;line-height:1.55;max-width:42ch;text-wrap:balance}
+  .visual{margin:24px 0 6px;min-height:150px;display:flex;align-items:center;justify-content:center;width:100%}
+
+  /* accents by state */
+  .stage[data-s="hold"],.stage[data-s="count"]{--accent:var(--hold);--accentglow:rgba(255,178,36,.14)}
+  .stage[data-s="release"]{--accent:var(--release);--accentglow:rgba(255,122,47,.16)}
+  .stage[data-s="connect"],.stage[data-s="run"]{--accent:var(--brand);--accentglow:rgba(22,224,196,.14)}
+  .stage[data-s="ok"]{--accent:var(--ok);--accentglow:rgba(56,224,138,.16)}
+  .stage[data-s="fail"]{--accent:var(--danger);--accentglow:rgba(255,77,94,.16)}
+  .stage[data-s="idle"]{--accent:var(--brand)}
+
+  /* ring */
+  .ring{position:relative;width:168px;height:168px}
+  .ring svg{transform:rotate(-90deg);width:100%;height:100%}
+  .ring circle{fill:none;stroke-width:9;stroke-linecap:round}
+  .ring .bg{stroke:rgba(255,255,255,.07)}
+  .ring .fg{stroke:var(--accent);transition:stroke-dashoffset .7s linear;filter:drop-shadow(0 0 8px var(--accent))}
+  .ring b{position:absolute;inset:0;display:grid;place-items:center;font:800 56px/1 var(--fmono);
+    font-variant-numeric:tabular-nums;color:var(--accent)}
+
+  /* pulsing pad (hold/release) */
+  .pad{display:flex;flex-direction:column;align-items:center;gap:16px}
+  .pad .wire{width:160px;height:76px;position:relative}
+  .pad .board{position:absolute;right:0;top:50%;transform:translateY(-50%);width:64px;height:64px;border-radius:12px;
+    background:var(--elev);border:1px solid var(--line2);display:grid;place-items:center}
+  .pad .contact{width:20px;height:20px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 0 0 var(--accent);animation:ping 1.4s ease-out infinite}
+  .pad .lead{position:absolute;left:0;top:50%;height:4px;width:96px;border-radius:4px;transform:translateY(-50%);
+    background:linear-gradient(90deg,var(--mut),var(--accent))}
+  @keyframes ping{0%{box-shadow:0 0 0 0 var(--accent)}70%{box-shadow:0 0 0 16px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+  /* spinner */
+  .spin{width:64px;height:64px;border-radius:50%;border:5px solid rgba(255,255,255,.1);
+    border-top-color:var(--accent);animation:rot 1s linear infinite}
+  @keyframes rot{to{transform:rotate(360deg)}}
+
+  /* progress + stages */
+  .prog{width:100%;max-width:420px;display:flex;flex-direction:column;gap:16px}
+  .bar{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+  .bar i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--brand2),var(--brand));
+    box-shadow:0 0 14px var(--brand);transition:width .5s ease}
+  .stages{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;text-align:left}
+  .stages li{display:flex;align-items:center;gap:11px;font-size:13px;color:var(--mut);transition:.2s}
+  .stages .mk{width:20px;height:20px;flex:none;border-radius:50%;border:2px solid rgba(255,255,255,.14);
+    display:grid;place-items:center;font:700 11px/1 var(--fmono)}
+  .stages li.active{color:var(--txt)} .stages li.active .mk{border-color:var(--brand);color:var(--brand)}
+  .stages li.done{color:var(--dim)} .stages li.done .mk{border-color:var(--ok);background:var(--ok);color:#04120f}
+  .stages li.fail .mk{border-color:var(--danger);background:var(--danger);color:#fff}
+
+  .result{width:112px;height:112px;border-radius:50%;display:grid;place-items:center;font-size:52px;
+    border:2px solid var(--accent);background:radial-gradient(circle,var(--accentglow),transparent 70%);
+    color:var(--accent);animation:pop .4s ease}
+  @keyframes pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+  .verdict{margin-top:14px;font:600 13px/1.4 var(--fmono);color:var(--dim)}
+
+  /* stage buttons */
+  .st-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:26px}
+  .btn{font-family:inherit;font-weight:700;font-size:14px;border-radius:999px;padding:12px 22px;cursor:pointer;
+    border:1px solid transparent;transition:.16s;display:inline-flex;align-items:center;gap:8px}
+  .btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  .btn-primary{color:#04120f;background:linear-gradient(180deg,var(--brand),var(--brand2));
+    box-shadow:0 10px 30px -10px var(--brand),inset 0 1px 0 rgba(255,255,255,.4)}
+  .btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  .btn-hold{color:#160f00;background:linear-gradient(180deg,#ffc44d,var(--hold));box-shadow:0 10px 30px -12px var(--hold)}
+  .btn-release{color:#1a0a00;background:linear-gradient(180deg,#ff9a5c,var(--release));box-shadow:0 10px 30px -12px var(--release)}
+  .btn-ghost{background:rgba(255,255,255,.05);border-color:var(--line2);color:var(--txt)}
+  .btn-ghost:hover{background:rgba(255,255,255,.1)}
+  .btn-danger{color:#fff;background:linear-gradient(180deg,#ff6472,var(--danger));box-shadow:0 10px 30px -12px var(--danger)}
+  .btn-retry{background:transparent;border-color:var(--danger);color:var(--danger)}
+  .btn-retry:hover{background:rgba(255,77,94,.1)}
+  .btn-sm{padding:10px 16px;font-size:13px}
+
+  /* statusbar */
+  .statusbar{display:flex;align-items:center;gap:0;height:40px;margin-top:12px;padding:0 20px;
+    border-top:1px solid var(--line);background:rgba(0,0,0,.25);font-size:12px;color:var(--dim);flex-wrap:wrap}
+  .stat{display:flex;align-items:center;gap:7px;padding:0 14px;position:relative}
+  .stat:not(:last-child)::after{content:"";position:absolute;right:0;top:11px;bottom:11px;width:1px;background:var(--line)}
+  .stat:first-child{padding-left:0}
+  .stat .k{color:var(--mut)}
+  .led{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .led.warn{background:var(--hold);box-shadow:0 0 8px var(--hold)}
+  .sb-right{margin-left:auto}
+  .link{background:none;border:0;color:var(--brand);font:inherit;font-size:12px;cursor:pointer;font-weight:600;
+    display:flex;align-items:center;gap:6px;padding:0}
+  .link:hover{text-decoration:underline}
+
+  /* console drawer */
+  .console{position:absolute;left:0;right:0;bottom:0;height:56%;transform:translateY(101%);transition:.32s cubic-bezier(.4,0,.2,1);
+    background:linear-gradient(180deg,#0c1017,#080b10);border-top:1px solid var(--line2);z-index:5;
+    display:flex;flex-direction:column;box-shadow:0 -30px 60px -20px rgba(0,0,0,.7)}
+  .console.open{transform:translateY(0)}
+  .console-bar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .console-bar b{font-size:13px;font-weight:700}
+  .console-bar .link{margin-left:auto}
+  .console pre{flex:1;overflow:auto;margin:0;padding:14px 16px;font:12px/1.65 var(--fmono);color:#c4d0df}
+  .console .ln{white-space:pre-wrap}
+  .c-cmd{color:var(--brand)} .c-ok{color:var(--ok)} .c-warn{color:var(--hold)} .c-err{color:var(--danger)} .c-dim{color:var(--mut)}
+
+  /* modal */
+  .scrim{position:absolute;inset:0;background:rgba(4,7,12,.7);backdrop-filter:blur(3px);z-index:10;
+    display:none;align-items:center;justify-content:center;padding:24px}
+  .scrim.open{display:flex}
+  .dialog{width:100%;max-width:400px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-lg);
+    padding:24px;box-shadow:var(--shadow);animation:pop .25s ease}
+  .dialog .ic{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;font-size:22px;margin-bottom:14px}
+  .dialog.hard .ic{background:rgba(255,77,94,.12);color:var(--danger)}
+  .dialog.soft .ic{background:rgba(22,224,196,.12);color:var(--brand)}
+  .dialog h3{margin:0 0 8px;font-size:18px;font-weight:800}
+  .dialog p{margin:0 0 20px;color:var(--dim);font-size:13px;line-height:1.55}
+  .dialog .row{display:flex;gap:10px;justify-content:flex-end}
+
+  @media (max-width:760px){
+    .body{grid-template-columns:1fr}
+    .rail{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}
+    .rail>div{flex:1;min-width:150px}
+    .chips{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001s!important;transition-duration:.05s!important}
+  }
+</style>
+
+<div class="app">
+  <header class="titlebar">
+    <div class="brand"><span class="logo"></span> x3utils <small>Flash Studio</small></div>
+    <span class="verpill">v0.4 · WPF</span>
+    <div class="tb-spacer"></div>
+    <span class="tb-hint">AT32F415 · X3 controller</span>
+    <div class="winctl"><i class="c1"></i><i class="c2"></i><i class="c3"></i></div>
+  </header>
+
+  <div class="body">
+    <!-- RAIL -->
+    <aside class="rail" id="rail">
+      <div>
+        <div class="r-label">Connection</div>
+        <div class="modes" id="modes">
+          <button class="mode" data-m="A" aria-selected="true"><span class="tag">A</span><span class="mt"><b>Default SWD</b><span>Blinker buttons</span></span></button>
+          <button class="mode" data-m="B"><span class="tag">B</span><span class="mt"><b>C45 · Clone</b><span>Guided hold / release</span></span></button>
+          <button class="mode" data-m="C"><span class="tag">C</span><span class="mt"><b>C45 · Genuine</b><span>Hardware nRST</span></span></button>
+        </div>
+        <div class="countdown" id="cd">
+          <label>Hold countdown</label>
+          <div class="stepper"><button id="cdDown">−</button><output id="cdVal">3</output><button id="cdUp">+</button></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="r-label">Read</div>
+        <div class="agroup" id="g-read"></div>
+        <div class="r-label">Flash</div>
+        <div class="agroup" id="g-flash"></div>
+        <div class="r-label">Recover</div>
+        <div class="agroup" id="g-recover"></div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <div class="main">
+      <div class="stagehead">
+        <div>
+          <h1 id="hTitle">Check connection</h1>
+          <p id="hSub">Probe the ST-LINK and the target. Reads nothing, writes nothing.</p>
+        </div>
+        <div class="chips" id="hChips"></div>
+      </div>
+
+      <section class="stage" id="stage" data-s="idle">
+        <div class="stage-in">
+          <div class="eyebrow" id="eyebrow">Ready</div>
+          <h2 class="st-title" id="stTitle">Check connection</h2>
+          <p class="st-sub" id="stSub">Pick a connection mode and an action, then hit start.</p>
+          <div class="visual" id="visual"></div>
+          <div class="st-actions" id="stActions"></div>
+        </div>
+      </section>
+
+      <div class="statusbar">
+        <div class="stat"><span class="led" id="ledOcd"></span><span class="k">OpenOCD</span> ready</div>
+        <div class="stat"><span class="k">Mode</span> <span id="sbMode">Default SWD</span></div>
+        <div class="stat"><span class="k">Firmware</span> <span id="sbFw">x3_v3_tuned.bin</span></div>
+        <div class="stat"><span class="k">Last connect</span> <span id="sbConn">—</span></div>
+        <div class="sb-right stat"><button class="link" id="openConsole">▤ Console</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- console -->
+  <div class="console" id="console">
+    <div class="console-bar"><b>OpenOCD console</b><span class="tb-hint">stdout · stderr</span>
+      <button class="link" id="clearC">Clear</button><button class="link" id="closeC">Close ▾</button></div>
+    <pre id="log"><span class="ln c-dim">// waiting for first action…</span></pre>
+  </div>
+
+  <!-- confirm modal -->
+  <div class="scrim" id="scrim">
+    <div class="dialog soft" id="dialog">
+      <div class="ic" id="dIc">⚡</div>
+      <h3 id="dTitle">Confirm</h3>
+      <p id="dBody">…</p>
+      <div class="row">
+        <button class="btn btn-ghost btn-sm" id="dCancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="dOk">Continue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=s=>document.querySelector(s);
+  const ACTIONS={
+    check:{group:'read',name:'Check connection',sub:'Probe the ST-LINK and the target. Reads nothing, writes nothing.',
+      chips:[['read-only','ok']],stages:['Connect','Probe flash'],cta:'Check connection',ctaCls:'btn-primary',
+      logs:['flash probe 0','1 flash bank found'],ok:'Target answered. You’re good to go.'},
+    dump:{group:'read',name:'Dump 128 KB',sub:'Read the whole flash to a timestamped backup you can restore later.',
+      chips:[['backup','brand'],['read-only','ok']],stages:['Connect','Probe','Read 128 KB','Verify'],cta:'Start dump',ctaCls:'btn-primary',
+      logs:['dump_image 0x08000000 0x20000','131072 bytes read','size verified'],ok:'Dumped & verified → backup/dump_2026-07-09.bin'},
+    rdp_check:{group:'read',name:'RDP check',sub:'Read the flash-access-protection state and report a plain verdict.',
+      chips:[['read-only','ok']],stages:['Connect','Read FAP','Verdict'],cta:'Check protection',ctaCls:'btn-primary',
+      logs:['read FAP byte','FAP = 0x00 (not 0xA5)','flash reads masked'],ok:'PROTECTED',verdict:'FAP active · flash is read-locked. Rescue can clear it (erases flash).'},
+    flash_backup:{group:'flash',name:'Flash + backup',sub:'Back up the chip first, then write and verify your firmware. The safe default.',
+      chips:[['backs up first','brand']],stages:['Backup','Connect','Erase','Write','Verify'],cta:'Start flash',ctaCls:'btn-primary',
+      confirm:{cls:'soft',ic:'⚡',t:'Flash with backup',b:'A full 128 KB backup runs first, then your firmware is written and verified. Keep the wires steady the whole time.'},
+      logs:['backup ok','flash erase_address 0x08000000 0x20000','wrote 131072 bytes','verified ✔'],ok:'Flashed & verified. Backup saved first.'},
+    flash_only:{group:'flash',name:'Flash only',sub:'Write and verify with no backup. Only if you already have one you trust.',
+      chips:[['no backup','warn']],stages:['Connect','Erase','Write','Verify'],cta:'Flash without backup',ctaCls:'btn-danger',
+      confirm:{cls:'hard',ic:'⚠',t:'Skip the backup?',b:'No backup will be taken. If this write goes wrong there is nothing to restore from. Only do this if you already have a good dump.'},
+      logs:['(no backup taken)','flash erase_address','wrote 131072 bytes','verified ✔'],ok:'Flashed & verified. No backup was taken.'},
+    flash_slot0:{group:'flash',name:'Flash slot 0',sub:'Write app slot 0 only and leave the identity block untouched. Won’t clone a serial.',
+      chips:[['identity-safe','ok']],stages:['Connect','Erase slot 0','Write slot 0','Verify'],cta:'Flash slot 0',ctaCls:'btn-primary',
+      confirm:{cls:'soft',ic:'🛡',t:'Flash slot 0 only',b:'Only the application slot 0 is erased and written. The bootloader and identity block stay as they are.'},
+      logs:['erase slot0 range','wrote slot0','identity block untouched','verified ✔'],ok:'Slot 0 flashed & verified. Identity intact.'},
+    rdp_rescue:{group:'recover',name:'RDP rescue',sub:'Rewrite the option bytes to clear read protection. This mass-erases the flash.',
+      chips:[['rewrites option bytes','danger'],['erases flash','danger']],stages:['Connect','Rewrite option bytes','Mass erase','Verify unlocked'],cta:'Run rescue',ctaCls:'btn-danger',
+      confirm:{cls:'hard',ic:'⚠',t:'Rescue will erase everything',b:'Clearing read protection triggers a full mass-erase — all firmware is wiped. Uses the deterministic option-byte rewrite, never the unlock command. Continue only on a chip you accept erasing.'},
+      logs:['option bytes rewrite (deterministic)','mass erase in progress','FAP = 0xA5','flash readable ✔'],ok:'Protection cleared. Flash is blank & readable.'},
+  };
+  const MODE={A:{name:'Default SWD',guided:false},B:{name:'C45 · Clone',guided:true},C:{name:'C45 · Genuine',guided:false}};
+
+  let mode='A', act='check', running=false, token=0, cont=null, cd=3;
+
+  // build rail
+  const groups={read:$('#g-read'),flash:$('#g-flash'),recover:$('#g-recover')};
+  Object.entries(ACTIONS).forEach(([id,a])=>{
+    const b=document.createElement('button');
+    b.className='act '+a.group; b.dataset.a=id; b.innerHTML='<span class="dot"></span><b>'+a.name+'</b>';
+    b.setAttribute('aria-selected', id===act);
+    b.onclick=()=>{ if(running) return; selectAction(id); };
+    groups[a.group].appendChild(b);
+  });
+
+  const chip=([t,c])=>`<span class="chip ${c}">${t}</span>`;
+  function selectAction(id){
+    act=id; const a=ACTIONS[id];
+    document.querySelectorAll('.act').forEach(x=>x.setAttribute('aria-selected',x.dataset.a===id));
+    $('#hTitle').textContent=a.name; $('#hSub').textContent=a.sub;
+    $('#hChips').innerHTML=a.chips.map(chip).join('');
+    setIdle();
+  }
+  function selectMode(m){
+    mode=m; document.querySelectorAll('.mode').forEach(x=>x.setAttribute('aria-selected',x.dataset.m===m));
+    $('#cd').classList.toggle('on',MODE[m].guided);
+    $('#sbMode').textContent=MODE[m].name;
+    setIdle();
+  }
+  $('#modes').onclick=e=>{const b=e.target.closest('.mode'); if(b&&!running) selectMode(b.dataset.m);};
+  $('#cdUp').onclick=()=>{cd=Math.min(10,cd+1);$('#cdVal').textContent=cd;};
+  $('#cdDown').onclick=()=>{cd=Math.max(0,cd-1);$('#cdVal').textContent=cd;};
+
+  // console
+  const logEl=$('#log');
+  function log(txt,cls){const s=document.createElement('span');s.className='ln '+(cls||'');s.textContent=txt+'\n';logEl.appendChild(s);logEl.parentElement.scrollTop=logEl.parentElement.scrollHeight;}
+  $('#openConsole').onclick=()=>$('#console').classList.add('open');
+  $('#closeC').onclick=()=>$('#console').classList.remove('open');
+  $('#clearC').onclick=()=>logEl.innerHTML='';
+
+  // stage helpers
+  const stage=$('#stage'),visual=$('#visual'),stActions=$('#stActions');
+  function setStage(s,eb,title,sub){stage.dataset.s=s;$('#eyebrow').textContent=eb;$('#stTitle').textContent=title;$('#stSub').textContent=sub;}
+  function buttons(html){stActions.innerHTML=html;}
+  function setRailLocked(v){$('#rail').classList.toggle('locked',v);}
+
+  function setIdle(){
+    running=false; token++; setRailLocked(false);
+    const a=ACTIONS[act];
+    setStage('idle','Ready',a.name,a.sub);
+    visual.innerHTML='';
+    buttons(`<button class="btn ${a.ctaCls}" id="start">${a.cta}</button>`);
+    $('#start').onclick=onStart;
+  }
+
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const waitContinue=max=>new Promise(res=>{let d=false;const f=()=>{if(d)return;d=true;cont=null;res()};cont=f;if(max)setTimeout(f,max);});
+
+  function onStart(){
+    const a=ACTIONS[act];
+    if(a.confirm){ openModal(a.confirm,()=>run()); } else run();
+  }
+
+  async function run(){
+    const a=ACTIONS[act]; token++; const my=token; running=true; setRailLocked(true);
+    $('#console').classList.remove('open');
+    log('\n> '+a.name+'  ['+MODE[mode].name+']','c-cmd');
+    $('#sbConn').textContent='connecting…';
+
+    if(MODE[mode].guided){
+      // HOLD
+      setStage('hold','Step 1 of 3','Hold C45 → GND','Touch the wire to the C45 pad and keep it steady. Then hit continue.');
+      visual.innerHTML=pad();
+      buttons(`<button class="btn btn-hold" id="cont">I’m holding — continue</button><button class="btn btn-ghost" id="cancel">Cancel</button>`);
+      wire(); log('hold a wire between C45 and GND…','c-warn');
+      await waitContinue(6000); if(my!==token)return;
+      // COUNTDOWN
+      setStage('count','Under reset','Connecting under reset','Keep holding. Do not lift the wire yet.');
+      let n=cd; visual.innerHTML=ring(n); buttons(`<button class="btn btn-ghost" id="cancel">Cancel</button>`); wireCancel();
+      for(;n>0;n--){setRing(n,cd);log('connecting in '+n+'…','c-dim');await sleep(720);if(my!==token)return;}
+      setRing(0,cd);
+      // RELEASE
+      setStage('release','Step 3 of 3','Release now','Lift the wire off the pad — right now.');
+      visual.innerHTML=pad(); wire();
+      buttons(`<button class="btn btn-release" id="cont">Released — continue</button><button class="btn btn-ghost" id="cancel">Cancel</button>`);
+      wire(); log('>>> remove the wire from GND','c-warn');
+      await waitContinue(4000); if(my!==token)return;
+    }
+    // CONNECT
+    setStage('connect','Linking','Connecting…','Re-examining the target over SWD.');
+    visual.innerHTML='<div class="spin"></div>'; buttons(`<button class="btn btn-ghost" id="cancel">Cancel</button>`); wireCancel();
+    log('init','c-dim'); await sleep(700); if(my!==token)return;
+    log('target halted','c-ok'); await sleep(300);
+    $('#sbConn').textContent='PASS';
+
+    // OPERATION
+    setStage('run',a.name,a.name+'…','Keep the ST-LINK and SWD wires steady until it finishes.');
+    visual.innerHTML=progress(a.stages);
+    const bar=visual.querySelector('.bar i'), lis=[...visual.querySelectorAll('.stages li')];
+    for(let i=0;i<a.stages.length;i++){
+      lis[i].className='active'; lis[i].querySelector('.mk').textContent='';
+      if(a.logs[i])log(a.logs[i], a.logs[i].includes('✔')||a.logs[i].includes('ok')?'c-ok':'c-dim');
+      await sleep(720+Math.random()*260); if(my!==token)return;
+      lis[i].className='done'; lis[i].querySelector('.mk').textContent='✓';
+      bar.style.width=Math.round((i+1)/a.stages.length*100)+'%';
+    }
+    // RESULT
+    log('== '+a.name+' OK ==','c-ok');
+    setStage('ok','Done',a.ok===a.ok&&a.verdict?a.ok:(a.name+' complete'),a.verdict?'':a.ok);
+    if(a.verdict){$('#stSub').textContent=a.ok+' — '+a.verdict;$('#stTitle').textContent=a.name+' complete';}
+    visual.innerHTML='<div class="result">✓</div>'+(a.verdict?`<div class="verdict">${a.ok}</div>`:'');
+    buttons(`<button class="btn btn-primary" id="done">Done</button><button class="btn btn-ghost btn-sm" id="showc">▤ Console</button>`);
+    $('#done').onclick=setIdle; $('#showc').onclick=()=>$('#console').classList.add('open');
+    running=false; setRailLocked(false);
+  }
+
+  // visuals
+  const pad=()=>`<div class="pad"><div class="wire"><div class="lead"></div><div class="board"><div class="contact"></div></div></div></div>`;
+  const ring=n=>`<div class="ring"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="0"/></svg><b>${n}</b></div>`;
+  function setRing(n,total){const c=stage.querySelector('.fg'),b=stage.querySelector('.ring b');if(!c)return;const L=326.7;const frac=total?n/total:0;c.style.strokeDashoffset=(L*(1-frac)).toFixed(1);b.textContent=n;}
+  const progress=st=>`<div class="prog"><div class="bar"><i></i></div><ul class="stages">${st.map(s=>`<li class="todo"><span class="mk"></span>${s}</li>`).join('')}</ul></div>`;
+
+  function wire(){const c=$('#cont'),x=$('#cancel');if(c)c.onclick=()=>cont&&cont();if(x)x.onclick=cancel;}
+  function wireCancel(){const x=$('#cancel');if(x)x.onclick=cancel;}
+  function cancel(){token++;log('-- cancelled --','c-warn');$('#sbConn').textContent='—';setIdle();}
+
+  // modal
+  let modalOk=null;
+  function openModal(c,onok){const d=$('#dialog');d.className='dialog '+c.cls;$('#dIc').textContent=c.ic;$('#dTitle').textContent=c.t;$('#dBody').textContent=c.b;
+    $('#dOk').className='btn btn-sm '+(c.cls==='hard'?'btn-danger':'btn-primary');$('#dOk').textContent=c.cls==='hard'?'I understand — continue':'Continue';
+    modalOk=onok;$('#scrim').classList.add('open');}
+  $('#dCancel').onclick=()=>$('#scrim').classList.remove('open');
+  $('#dOk').onclick=()=>{$('#scrim').classList.remove('open');modalOk&&modalOk();};
+
+  // init
+  selectAction('check'); selectMode('A');
+})();
+</script>

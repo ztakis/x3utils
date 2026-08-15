@@ -1,0 +1,11 @@
+
+=====================================
+  Experimental - for advanced users
+=====================================
+
+You need to use the launcher to choose a connection option,
+otherwise the scripts in this directory will use the last one chosen.
+
+flash_only.bat is exactly the same as flash.bat minus the forced backup.
+
+flash_compat.bat dumps, patches, and flashes back for SHU-compatible workflows.

@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>x3utils · Hero bolt animation study</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0d13;
+      --bg2: #0e1219;
+      --panel: #141a25;
+      --panel2: #1a2230;
+      --elev: #212c3d;
+      --line: rgba(255, 255, 255, .08);
+      --line2: rgba(255, 255, 255, .15);
+      --text: #e8edf4;
+      --dim: #96a2b6;
+      --muted: #5d6a7e;
+      --brand: #c4cdd8;
+      --brand2: #97a3b1;
+      --ok: #38e08a;
+      --focus: rgba(196, 205, 216, .42);
+      font-family: "Segoe UI", Inter, system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-width: 860px;
+      min-height: 100vh;
+      margin: 0;
+      overflow: hidden;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 48% -16%, rgba(196, 205, 216, .07), transparent 34%),
+        var(--bg);
+    }
+
+    button {
+      color: inherit;
+      font: inherit;
+    }
+
+    .app {
+      display: grid;
+      grid-template-rows: 56px minmax(0, 1fr);
+      height: 100vh;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(14, 18, 25, .88);
+      backdrop-filter: blur(16px);
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .app-mark {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid var(--line2);
+      border-radius: 9px;
+      color: #04120f;
+      background: var(--brand);
+      box-shadow: 0 0 22px rgba(196, 205, 216, .12);
+    }
+
+    .app-mark svg {
+      width: 17px;
+      height: 17px;
+      fill: currentColor;
+    }
+
+    .app-name {
+      font-size: 14px;
+      font-weight: 750;
+      letter-spacing: .02em;
+    }
+
+    .study-name {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .quiet-button {
+      min-height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--line2);
+      border-radius: 8px;
+      color: var(--dim);
+      background: rgba(255, 255, 255, .025);
+      cursor: pointer;
+      transition: border-color .16s ease, color .16s ease, background .16s ease;
+    }
+
+    .quiet-button:hover {
+      border-color: rgba(196, 205, 216, .32);
+      color: var(--text);
+      background: rgba(255, 255, 255, .05);
+    }
+
+    .quiet-button:focus-visible,
+    .option:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(500px, 1fr) 358px;
+      min-height: 0;
+      padding: 18px;
+      gap: 18px;
+    }
+
+    .preview-column {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-width: 0;
+      gap: 12px;
+    }
+
+    .action-header {
+      padding: 0 6px;
+    }
+
+    .action-kicker {
+      margin-bottom: 5px;
+      color: var(--muted);
+      font: 700 11px/1.2 Consolas, monospace;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .action-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .action-line h1 {
+      margin: 0;
+      font-size: 21px;
+      line-height: 1.2;
+      font-weight: 720;
+      letter-spacing: -.015em;
+    }
+
+    .chip {
+      padding: 4px 8px;
+      border: 1px solid rgba(56, 224, 138, .28);
+      border-radius: 999px;
+      color: var(--ok);
+      background: rgba(56, 224, 138, .07);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .action-header p {
+      margin: 7px 0 0;
+      color: var(--dim);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .hero {
+      position: relative;
+      display: grid;
+      min-height: 0;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background:
+        radial-gradient(540px 250px at 50% 0%, rgba(196, 205, 216, .055), transparent 72%),
+        linear-gradient(180deg, var(--panel), var(--bg2));
+    }
+
+    .hero::after {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(255, 255, 255, .025) .8px, transparent .8px);
+      background-size: 22px 22px;
+      content: "";
+      mask-image: linear-gradient(to bottom, black, transparent 58%);
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      width: min(600px, calc(100% - 48px));
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 28px 22px;
+      text-align: center;
+    }
+
+    .eyebrow {
+      color: var(--ok);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2.8px;
+      text-transform: uppercase;
+    }
+
+    .hero h2 {
+      margin: 14px 0 0;
+      font-size: 30px;
+      line-height: 1.08;
+      font-weight: 700;
+    }
+
+    .hero-message {
+      margin: 12px 0 0;
+      color: var(--dim);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .hero-visual {
+      display: grid;
+      width: 120px;
+      height: 120px;
+      margin: 20px 0 16px;
+      place-items: center;
+    }
+
+    .visual-card {
+      position: relative;
+      display: grid;
+      width: 84px;
+      height: 84px;
+      place-items: center;
+      overflow: visible;
+      border: 1px solid var(--line2);
+      border-radius: 20px;
+      background: rgba(196, 205, 216, .06);
+      box-shadow: 0 0 0 rgba(196, 205, 216, 0);
+    }
+
+    .bolt-shell {
+      position: relative;
+      display: grid;
+      width: 44px;
+      height: 52px;
+      place-items: center;
+      filter: drop-shadow(0 0 0 rgba(196, 205, 216, 0));
+      transform-origin: 50% 52%;
+    }
+
+    .bolt-art {
+      width: 42px;
+      height: 48px;
+      overflow: visible;
+      fill: var(--brand);
+      transform-origin: 50% 52%;
+    }
+
+    .sweep {
+      position: absolute;
+      z-index: 2;
+      top: -22px;
+      left: -24px;
+      width: 13px;
+      height: 90px;
+      opacity: 0;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .78), transparent);
+      filter: blur(2px);
+      pointer-events: none;
+      transform: translateX(-28px) rotate(18deg);
+    }
+
+    .orbit {
+      position: absolute;
+      inset: -10px;
+      display: none;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .spark {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 7px 2px rgba(196, 205, 216, .72);
+    }
+
+    .spark.one {
+      top: 1px;
+      left: 50%;
+    }
+
+    .spark.two {
+      right: 2px;
+      bottom: 13px;
+      width: 3px;
+      height: 3px;
+      opacity: .66;
+    }
+
+    .primary-button {
+      min-width: 154px;
+      min-height: 42px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 10px;
+      color: #10141a;
+      background: var(--brand);
+      box-shadow: 0 7px 22px rgba(196, 205, 216, .12);
+      font-weight: 750;
+    }
+
+    .selection-note {
+      margin-top: 13px;
+      color: var(--muted);
+      font: 11px/1.4 Consolas, monospace;
+    }
+
+    .selector {
+      display: grid;
+      min-height: 0;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(20, 26, 37, .72);
+    }
+
+    .selector-head {
+      padding: 16px 17px 13px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .selector-head h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 720;
+    }
+
+    .selector-head p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .options {
+      display: grid;
+      align-content: start;
+      padding: 10px;
+      gap: 8px;
+      overflow-y: auto;
+    }
+
+    .option {
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr) 18px;
+      min-height: 70px;
+      padding: 8px 10px 8px 7px;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      text-align: left;
+      background: rgba(255, 255, 255, .018);
+      cursor: pointer;
+      transition: border-color .16s ease, background .16s ease;
+    }
+
+    .option:hover {
+      border-color: var(--line2);
+      background: rgba(255, 255, 255, .035);
+    }
+
+    .option[aria-pressed="true"] {
+      border-color: rgba(196, 205, 216, .34);
+      background: rgba(196, 205, 216, .075);
+    }
+
+    .option-copy {
+      min-width: 0;
+    }
+
+    .option-title {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .option-desc {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.35;
+    }
+
+    .check {
+      display: grid;
+      width: 17px;
+      height: 17px;
+      place-items: center;
+      border: 1px solid var(--line2);
+      border-radius: 50%;
+      color: transparent;
+      font-size: 11px;
+    }
+
+    .option[aria-pressed="true"] .check {
+      border-color: var(--brand);
+      color: #10141a;
+      background: var(--brand);
+    }
+
+    .mini-visual {
+      display: grid;
+      width: 52px;
+      height: 52px;
+      place-items: center;
+    }
+
+    .mini-visual .visual-card {
+      width: 48px;
+      height: 48px;
+      border-radius: 13px;
+    }
+
+    .mini-visual .bolt-shell {
+      width: 27px;
+      height: 32px;
+    }
+
+    .mini-visual .bolt-art {
+      width: 25px;
+      height: 29px;
+    }
+
+    .mini-visual .sweep {
+      top: -16px;
+      left: -16px;
+      height: 62px;
+    }
+
+    .mini-visual .orbit {
+      inset: -7px;
+    }
+
+    .mini-visual .spark {
+      width: 3px;
+      height: 3px;
+    }
+
+    /* A · Soft charge: calm scale and glow, always alive but low-distraction. */
+    .motion-soft .bolt-shell {
+      animation: soft-charge 3000ms ease-in-out infinite;
+    }
+
+    .motion-soft .visual-card {
+      animation: soft-halo 3000ms ease-in-out infinite;
+    }
+
+    @keyframes soft-charge {
+      0%, 100% {
+        filter: drop-shadow(0 0 0 rgba(196, 205, 216, 0));
+        transform: scale(1);
+      }
+      48% {
+        filter: drop-shadow(0 0 9px rgba(196, 205, 216, .48));
+        transform: scale(1.08);
+      }
+      66% {
+        filter: drop-shadow(0 0 4px rgba(196, 205, 216, .22));
+        transform: scale(1.025);
+      }
+    }
+
+    @keyframes soft-halo {
+      0%, 100% { box-shadow: 0 0 0 rgba(196, 205, 216, 0); }
+      50% { box-shadow: 0 0 24px rgba(196, 205, 216, .12); }
+    }
+
+    /* B · Double strike: two quick electrical hits followed by a long rest. */
+    .motion-double .bolt-shell {
+      animation: double-strike 3200ms ease-out infinite;
+    }
+
+    .motion-double .visual-card {
+      animation: double-halo 3200ms ease-out infinite;
+    }
+
+    @keyframes double-strike {
+      0%, 7%, 14%, 100% {
+        filter: drop-shadow(0 0 0 rgba(196, 205, 216, 0));
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+      3%, 10% {
+        filter: drop-shadow(0 0 11px rgba(255, 255, 255, .72));
+        opacity: .74;
+        transform: translateY(-1px) scale(1.13);
+      }
+    }
+
+    @keyframes double-halo {
+      0%, 7%, 14%, 100% { box-shadow: 0 0 0 rgba(196, 205, 216, 0); }
+      3%, 10% { box-shadow: 0 0 25px rgba(196, 205, 216, .2); }
+    }
+
+    /* C · Hover current: smooth, slightly arcade-like vertical energy. */
+    .motion-hover .bolt-shell {
+      animation: hover-current 2400ms ease-in-out infinite;
+    }
+
+    @keyframes hover-current {
+      0%, 100% {
+        filter: drop-shadow(0 5px 5px rgba(196, 205, 216, .08));
+        transform: translateY(2px) rotate(-1.5deg);
+      }
+      50% {
+        filter: drop-shadow(0 9px 9px rgba(196, 205, 216, .3));
+        transform: translateY(-4px) rotate(1.5deg);
+      }
+    }
+
+    /* D · Energy sweep: still silhouette with a periodic diagonal charge pass. */
+    .motion-sweep .sweep {
+      animation: energy-sweep 2600ms cubic-bezier(.25, .7, .25, 1) infinite;
+    }
+
+    .motion-sweep .bolt-shell {
+      animation: sweep-glow 2600ms ease-in-out infinite;
+    }
+
+    @keyframes energy-sweep {
+      0%, 14% {
+        opacity: 0;
+        transform: translateX(-28px) rotate(18deg);
+      }
+      25% { opacity: .82; }
+      39% {
+        opacity: 0;
+        transform: translateX(76px) rotate(18deg);
+      }
+      100% {
+        opacity: 0;
+        transform: translateX(76px) rotate(18deg);
+      }
+    }
+
+    @keyframes sweep-glow {
+      0%, 13%, 45%, 100% { filter: drop-shadow(0 0 0 rgba(196, 205, 216, 0)); }
+      28% { filter: drop-shadow(0 0 8px rgba(196, 205, 216, .38)); }
+    }
+
+    /* E · Orbit sparks: bolt stays grounded while energy moves around it. */
+    .motion-orbit .orbit {
+      display: block;
+      animation: orbit-sparks 2500ms linear infinite;
+    }
+
+    .motion-orbit .bolt-shell {
+      animation: orbit-breathe 2500ms ease-in-out infinite;
+    }
+
+    @keyframes orbit-sparks {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes orbit-breathe {
+      0%, 100% { filter: drop-shadow(0 0 2px rgba(196, 205, 216, .12)); }
+      50% { filter: drop-shadow(0 0 7px rgba(196, 205, 216, .3)); }
+    }
+
+    /* F · Power snap: a mechanical wind-up, sharp strike, then full rest. */
+    .motion-snap .bolt-shell {
+      animation: power-snap 3400ms cubic-bezier(.25, .8, .3, 1) infinite;
+    }
+
+    .motion-snap .visual-card {
+      animation: snap-halo 3400ms ease-out infinite;
+    }
+
+    @keyframes power-snap {
+      0%, 8%, 22%, 100% {
+        filter: drop-shadow(0 0 0 rgba(196, 205, 216, 0));
+        transform: rotate(0) translate(0, 0) scale(1);
+      }
+      3% {
+        transform: rotate(-7deg) translate(-2px, 2px) scale(.94);
+      }
+      10% {
+        filter: drop-shadow(0 0 12px rgba(255, 255, 255, .66));
+        transform: rotate(2deg) translate(1px, -2px) scale(1.15);
+      }
+      16% {
+        filter: drop-shadow(0 0 4px rgba(196, 205, 216, .24));
+        transform: rotate(0) translate(0, 0) scale(1.02);
+      }
+    }
+
+    @keyframes snap-halo {
+      0%, 8%, 20%, 100% { box-shadow: 0 0 0 rgba(196, 205, 216, 0); }
+      10% { box-shadow: 0 0 27px rgba(196, 205, 216, .21); }
+    }
+
+    [data-paused="true"] *,
+    [data-paused="true"] *::before,
+    [data-paused="true"] *::after {
+      animation-play-state: paused !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <span class="app-mark" aria-hidden="true">
+          <svg viewBox="0 0 48 48"><path d="M28 2 10 27h13l-3 19 18-28H25L28 2Z"/></svg>
+        </span>
+        <span class="app-name">x3utils</span>
+        <span class="study-name">Hero bolt motion study</span>
+      </div>
+      <div class="top-actions">
+        <button class="quiet-button" id="restart" type="button">Restart selected</button>
+        <button class="quiet-button" id="pause" type="button" aria-pressed="false">Pause motion</button>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <div class="preview-column">
+        <header class="action-header">
+          <div class="action-kicker">connect · probe</div>
+          <div class="action-line">
+            <h1>Check connection</h1>
+            <span class="chip">read-only</span>
+          </div>
+          <p>Probe the ST-LINK and the target. Reads nothing, writes nothing.</p>
+        </header>
+
+        <article class="hero" aria-label="Full-size hero preview">
+          <div class="hero-content">
+            <div class="eyebrow">Read-only</div>
+            <h2>Ready to start</h2>
+            <p class="hero-message">Default SWD selected. Start when ready.</p>
+
+            <div class="hero-visual motion-soft" id="main-visual">
+              <div class="visual-card">
+                <div class="bolt-shell">
+                  <svg class="bolt-art" viewBox="0 0 48 48" aria-hidden="true">
+                    <path d="M28 2 10 27h13l-3 19 18-28H25L28 2Z"/>
+                  </svg>
+                  <span class="sweep"></span>
+                </div>
+                <span class="orbit" aria-hidden="true">
+                  <i class="spark one"></i>
+                  <i class="spark two"></i>
+                </span>
+              </div>
+            </div>
+
+            <button class="primary-button" type="button">Check connection</button>
+            <div class="selection-note" id="selection-note">A · Soft charge · 3 s loop</div>
+          </div>
+        </article>
+      </div>
+
+      <aside class="selector" aria-label="Animation choices">
+        <header class="selector-head">
+          <h2>Choose a motion</h2>
+          <p>All options keep the 84 × 84 hero card fixed. Select one to see it at production scale.</p>
+        </header>
+
+        <div class="options">
+          <button class="option" type="button" data-motion="static" data-note="0 · Static baseline · no motion" aria-pressed="false">
+            <span class="mini-visual motion-static">
+              <span class="visual-card">
+                <span class="bolt-shell">
+                  <svg class="bolt-art" viewBox="0 0 48 48"><path d="M28 2 10 27h13l-3 19 18-28H25L28 2Z"/></svg>
+                  <span class="sweep"></span>
+                </span>
+                <span class="orbit"><i class="spark one"></i><i class="spark two"></i></span>
+              </span>
+            </span>
+            <span class="option-copy">
+              <span class="option-title">0 · Static baseline</span>
+              <span class="option-desc">The current Flutter behavior.</span>
+            </span>
+            <span class="check">✓</span>
+          </button>
+
+          <button class="option" type="button" data-motion="soft" data-note="A · Soft charge · 3 s loop" aria-pressed="true">
+            <span class="mini-visual motion-soft">
+              <span class="visual-card">
+                <span class="bolt-shell">
+                  <svg class="bolt-art" viewBox="0 0 48 48"><path d="M28 2 10 27h13l-3 19 18-28H25L28 2Z"/></svg>
+                  <span class="sweep"></span>
+                </span>
+                <span class="orbit"><i class="spark one"></i><i class="spark two"></i></span>
+              </span>
+            </span>
+            <span class="option-copy">
+              <span class="option-title">A · Soft charge</span>
+              <span class="option-desc">Scale and glow; calm and legible.</span>
+            </span>
+            <span class="check">✓</span>
+          </button>
+
+          <button class="option" type="button" data-motion="double" data-note="B · Double strike · 3.2 s cycle" aria-pressed="false">
+            <span class="mini-visual motion-double">
+              <span class="visual-card">
+                <span class="bolt-shell">
+                  <svg class="bolt-art" viewBox="0 0 48 48"><path d="M28 2 10 27h13l-3 19 18-28H25L28 2Z"/></svg>
+                  <span class="sweep"></span>
+                </span>
+                <span class="orbit"><i class="spark one"></i><i class="spark two"></i></span>
+              </span>
+            </span>
+            <span class="option-copy">
+              <span class="option-title">B · Double strike</span>
+              <span class="option-desc">Two quick flashes, then a long rest.</span>
+            </span>
+            <span class="check">✓</span>
+          </button>
+
+          <button class="option" type="button" data-motion="hover" data-note="C · Hover current · 2.4 s loop" aria-pressed="false">
+            <span class="mini-visual motion-hover">
+              <span class="visual-card">
+                <span class="bolt-shell">
+                  <svg class="bolt-art" viewBox="0 0 48 48"><path d="M28 2 10 27h13l-3 19 18-28H25L28 2Z"/></svg>
+                  <span class="sweep"></span>
+                </span>
+                <span class="orbit"><i class="spark one"></i><i class="spark two"></i></span>
+              </span>
+            </span>
+            <span class="option-copy">
+              <span class="option-title">C · Hover current</span>
+              <span class="option-desc">Slow lift with a slight arcade tilt.</span>
+            </span>
+            <span class="check">✓</span>
+          </button>
+
+          <button class="option" type="button" data-motion="sweep" data-note="D · Energy sweep · 2.6 s cycle" aria-pressed="false">
+            <span class="mini-visual motion-sweep">
+              <span class="visual-card">
+                <span class="bolt-shell">
+                  <svg class="bolt-art" viewBox="0 0 48 48"><path d="M28 2 10 27h13l-3 19 18-28H25L28 2Z"/></svg>
+                  <span class="sweep"></span>
+                </span>
+                <span class="orbit"><i class="spark one"></i><i class="spark two"></i></span>
+              </span>
+            </span>
+            <span class="option-copy">
+              <span class="option-title">D · Energy sweep</span>
+              <span class="option-desc">Stable bolt with a diagonal charge pass.</span>
+            </span>
+            <span class="check">✓</span>
+          </button>
+
+          <button class="option" type="button" data-motion="orbit" data-note="E · Orbit sparks · 2.5 s loop" aria-pressed="false">
+            <span class="mini-visual motion-orbit">
+              <span class="visual-card">
+                <span class="bolt-shell">
+                  <svg class="bolt-art" viewBox="0 0 48 48"><path d="M28 2 10 27h13l-3 19 18-28H25L28 2Z"/></svg>
+                  <span class="sweep"></span>
+                </span>
+                <span class="orbit"><i class="spark one"></i><i class="spark two"></i></span>
+              </span>
+            </span>
+            <span class="option-copy">
+              <span class="option-title">E · Orbit sparks</span>
+              <span class="option-desc">The icon stays still; energy circles it.</span>
+            </span>
+            <span class="check">✓</span>
+          </button>
+
+          <button class="option" type="button" data-motion="snap" data-note="F · Power snap · 3.4 s cycle" aria-pressed="false">
+            <span class="mini-visual motion-snap">
+              <span class="visual-card">
+                <span class="bolt-shell">
+                  <svg class="bolt-art" viewBox="0 0 48 48"><path d="M28 2 10 27h13l-3 19 18-28H25L28 2Z"/></svg>
+                  <span class="sweep"></span>
+                </span>
+                <span class="orbit"><i class="spark one"></i><i class="spark two"></i></span>
+              </span>
+            </span>
+            <span class="option-copy">
+              <span class="option-title">F · Power snap</span>
+              <span class="option-desc">Mechanical wind-up and one sharp hit.</span>
+            </span>
+            <span class="check">✓</span>
+          </button>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const root = document.documentElement;
+    const mainVisual = document.querySelector("#main-visual");
+    const selectionNote = document.querySelector("#selection-note");
+    const pauseButton = document.querySelector("#pause");
+    const restartButton = document.querySelector("#restart");
+    const options = [...document.querySelectorAll(".option")];
+
+    function selectMotion(button) {
+      const motion = button.dataset.motion;
+      options.forEach((option) => {
+        option.setAttribute("aria-pressed", String(option === button));
+      });
+
+      mainVisual.className = `hero-visual motion-${motion}`;
+      selectionNote.textContent = button.dataset.note;
+    }
+
+    options.forEach((option) => {
+      option.addEventListener("click", () => selectMotion(option));
+    });
+
+    pauseButton.addEventListener("click", () => {
+      const paused = root.dataset.paused === "true";
+      root.dataset.paused = String(!paused);
+      pauseButton.textContent = paused ? "Pause motion" : "Resume motion";
+      pauseButton.setAttribute("aria-pressed", String(!paused));
+    });
+
+    restartButton.addEventListener("click", () => {
+      const currentClass = mainVisual.className;
+      mainVisual.className = "hero-visual";
+      void mainVisual.offsetWidth;
+      mainVisual.className = currentClass;
+    });
+  </script>
+</body>
+</html>

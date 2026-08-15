@@ -1,0 +1,17 @@
+=====================================
+  Experimental - for advanced users
+=====================================
+
+You need to use the launcher to choose a connection option,
+otherwise the scripts in this directory will use the last one chosen.
+
+flash_only.sh is exactly the same as flash.sh minus the forced backup.
+
+flash_compat.sh dumps, patches, and flashes back for SHU-compatible workflows.
+
+rdp/rdp_check.sh and rdp/rescue_unlock.sh support -l/--launcher in modes A-D.
+Without -l they use the standalone guided rescue connection.
+
+Mode D uses fresh xPack OpenOCD processes. The check requires complete FAP and
+main-flash evidence; rescue requires readback and a completion marker after the
+explicit UNLOCK confirmation.

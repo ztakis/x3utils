@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>x3utils — Flash Only slot-0 scope mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0d13;
+      --bg2: #0e1219;
+      --panel: #141a25;
+      --panel2: #1a2230;
+      --elev: #212c3d;
+      --line: rgba(255, 255, 255, .08);
+      --line2: rgba(255, 255, 255, .15);
+      --txt: #e8edf4;
+      --dim: #96a2b6;
+      --mut: #5d6a7e;
+      --brand: #c4cdd8;
+      --brand2: #97a3b1;
+      --hold: #ffb224;
+      --ok: #38e08a;
+      --danger: #ff4d5e;
+      --sans: "Segoe UI", system-ui, sans-serif;
+      --mono: Consolas, "Cascadia Code", monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 900px;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 22px;
+      color: var(--txt);
+      font-family: var(--sans);
+      background: var(--bg);
+    }
+
+    button { font: inherit; }
+
+    .app {
+      width: min(1180px, calc(100vw - 44px));
+      height: min(760px, calc(100vh - 44px));
+      min-height: 650px;
+      display: grid;
+      grid-template-rows: 52px 1fr;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: linear-gradient(180deg, var(--bg2), var(--bg));
+      box-shadow: 0 28px 80px -26px #000;
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.035), transparent);
+    }
+
+    .logo {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: #0a0d13;
+      background: var(--brand);
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .brand { font-size: 16px; font-weight: 800; }
+    .version {
+      padding: 4px 8px;
+      border: 1px solid rgba(196,205,216,.35);
+      border-radius: 999px;
+      color: var(--brand);
+      background: rgba(196,205,216,.08);
+      font: 600 11px/1 var(--mono);
+    }
+    .title-spacer { flex: 1; }
+    .mock-label { color: var(--mut); font-size: 12px; }
+
+    .body { display: grid; grid-template-columns: 264px 1fr; min-height: 0; }
+
+    .rail {
+      padding: 16px 14px;
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.015), transparent);
+    }
+
+    .rail-label {
+      margin: 5px 2px 9px;
+      color: var(--mut);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .action {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 5px;
+      padding: 10px 11px;
+      border: 1px solid transparent;
+      border-radius: 14px;
+      color: var(--txt);
+      background: transparent;
+      text-align: left;
+    }
+
+    .action .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); }
+    .action.selected { border-color: var(--line2); background: var(--panel2); }
+    .action.selected .dot { background: var(--hold); }
+
+    .main { min-width: 0; display: grid; grid-template-rows: auto 1fr auto; }
+
+    .stage-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 24px 4px;
+    }
+
+    .stage-head h1 { margin: 0; font-size: 21px; }
+    .stage-head p { margin: 5px 0 0; color: var(--dim); font-size: 13px; }
+
+    .chips { display: flex; gap: 6px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 9px;
+      border: 1px solid rgba(255,178,36,.3);
+      border-radius: 999px;
+      color: var(--hold);
+      background: rgba(255,178,36,.08);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    .stage {
+      position: relative;
+      min-height: 0;
+      margin: 8px 24px 0;
+      display: grid;
+      place-items: center;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background:
+        radial-gradient(560px 280px at 50% 0%, rgba(196,205,216,.08), transparent 70%),
+        linear-gradient(180deg, var(--panel), var(--bg2));
+    }
+
+    .hero {
+      width: 100%;
+      max-width: 520px;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .eyebrow { color: var(--brand); font-size: 12px; font-weight: 800; letter-spacing: .28em; }
+    .hero h2 { margin: 14px 0 0; font-size: 30px; line-height: 1.08; }
+    .hero-sub { max-width: 440px; min-height: 43px; margin: 12px 0 0; color: var(--dim); font-size: 14px; line-height: 1.5; }
+
+    .visual {
+      width: 84px;
+      height: 84px;
+      margin: 20px 0;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line2);
+      border-radius: 20px;
+      color: var(--brand);
+      background: rgba(196,205,216,.06);
+      font-size: 38px;
+    }
+
+    .firmware-bar {
+      width: 100%;
+      max-width: 460px;
+      padding: 12px 14px;
+      border: 1px solid var(--line2);
+      border-radius: 12px;
+      background: var(--panel);
+    }
+
+    .file-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 30px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+    }
+
+    .file-icon { color: var(--mut); font-size: 17px; }
+    .file-name {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--mut);
+      font: 13px/1.3 var(--mono);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .firmware-bar.has-file { border-color: rgba(196,205,216,.4); }
+    .firmware-bar.has-file .file-icon { color: var(--brand); }
+    .firmware-bar.has-file .file-name { color: var(--txt); }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding-top: 10px;
+    }
+
+    .segments {
+      flex: 0 0 224px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line2);
+      border-radius: 999px;
+      background: rgba(0,0,0,.18);
+    }
+
+    .segment {
+      min-width: 0;
+      height: 36px;
+      padding: 0 13px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      color: var(--dim);
+      background: transparent;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .segment.active {
+      border-color: rgba(196,205,216,.55);
+      color: var(--txt);
+      background: var(--elev);
+      box-shadow: inset 0 1px rgba(255,255,255,.05);
+    }
+
+    .pickers { display: flex; gap: 8px; }
+    .pill {
+      height: 36px;
+      min-width: 94px;
+      padding: 0 15px;
+      border: 1px solid var(--line2);
+      border-radius: 999px;
+      color: var(--txt);
+      background: var(--elev);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .pill:hover:not(:disabled), .segment:hover:not(.active) { border-color: rgba(196,205,216,.45); }
+    .pill:disabled { color: var(--mut); background: rgba(33,44,61,.35); opacity: .5; cursor: not-allowed; }
+
+    .hint {
+      width: 100%;
+      min-height: 18px;
+      margin-top: 8px;
+      color: var(--mut);
+      font-size: 11px;
+      text-align: right;
+    }
+
+    .cta {
+      margin-top: 22px;
+      min-width: 190px;
+      height: 46px;
+      padding: 0 24px;
+      border: 1px solid var(--line2);
+      border-radius: 999px;
+      color: #0a0d13;
+      background: var(--brand);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .cta:disabled { color: var(--mut); background: var(--elev); opacity: .5; cursor: not-allowed; }
+
+    .status {
+      margin: 10px 24px 13px;
+      padding: 9px 12px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--mut);
+      background: var(--panel);
+      font: 12px/1 var(--mono);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 1020px) {
+      .controls-row { align-items: stretch; flex-direction: column; }
+      .segments { width: 100%; flex-basis: auto; }
+      .pickers { justify-content: flex-end; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="titlebar">
+      <span class="logo">⚡</span>
+      <span class="brand">x3utils</span>
+      <span class="version">v1.2.0 BETA</span>
+      <span class="title-spacer"></span>
+      <span class="mock-label">layout mockup · no hardware actions</span>
+    </header>
+
+    <section class="body">
+      <aside class="rail">
+        <div class="rail-label">Standard</div>
+        <button class="action"><span class="dot"></span>Dump flash</button>
+        <button class="action"><span class="dot"></span>Backup + Flash</button>
+
+        <div class="rail-label" style="margin-top:20px">Advanced</div>
+        <button class="action selected"><span class="dot"></span>Flash Only</button>
+        <button class="action"><span class="dot"></span>Flash slot 0</button>
+        <button class="action"><span class="dot"></span>Check protection</button>
+      </aside>
+
+      <section class="main">
+        <header class="stage-head">
+          <div>
+            <h1>Flash Only</h1>
+            <p>Write and verify with no backup.</p>
+          </div>
+          <div class="chips">
+            <span class="chip">no backup</span>
+            <span class="chip">no target guard</span>
+          </div>
+        </header>
+
+        <section class="stage">
+          <div class="hero">
+            <div class="eyebrow">READY</div>
+            <h2 id="hero-title">Choose a full image</h2>
+            <p class="hero-sub" id="hero-sub">Writes the complete 128 KB image. This can replace bootloader and identity data.</p>
+            <div class="visual">⚡</div>
+
+            <div class="firmware-bar" id="firmware-bar">
+              <div class="file-row">
+                <span class="file-icon">▣</span>
+                <span class="file-name" id="file-name">No firmware chosen</span>
+              </div>
+
+              <div class="controls-row">
+                <div class="segments" role="group" aria-label="Flash scope">
+                  <button class="segment active" id="scope-full" aria-pressed="true">Full image</button>
+                  <button class="segment" id="scope-slot" aria-pressed="false">Slot 0 only</button>
+                </div>
+                <div class="pickers">
+                  <button class="pill" id="choose-bin">Choose .bin</button>
+                  <button class="pill" id="choose-zip" disabled>Choose .zip</button>
+                </div>
+              </div>
+              <div class="hint" id="hint">ZIP packages contain slot-0 firmware; select “Slot 0 only” to use one.</div>
+            </div>
+
+            <button class="cta" id="flash-cta" disabled>Flash without backup</button>
+          </div>
+        </section>
+
+        <div class="status" id="status">Flash scope: full image · no firmware selected</div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const fullButton = document.querySelector('#scope-full');
+    const slotButton = document.querySelector('#scope-slot');
+    const zipButton = document.querySelector('#choose-zip');
+    const binButton = document.querySelector('#choose-bin');
+    const fileName = document.querySelector('#file-name');
+    const firmwareBar = document.querySelector('#firmware-bar');
+    const hint = document.querySelector('#hint');
+    const title = document.querySelector('#hero-title');
+    const sub = document.querySelector('#hero-sub');
+    const status = document.querySelector('#status');
+    const cta = document.querySelector('#flash-cta');
+    let scope = 'full';
+
+    function clearFirmware() {
+      fileName.textContent = 'No firmware chosen';
+      firmwareBar.classList.remove('has-file');
+      cta.disabled = true;
+    }
+
+    function setScope(next) {
+      scope = next;
+      const slot = scope === 'slot';
+      fullButton.classList.toggle('active', !slot);
+      fullButton.setAttribute('aria-pressed', String(!slot));
+      slotButton.classList.toggle('active', slot);
+      slotButton.setAttribute('aria-pressed', String(slot));
+      zipButton.disabled = !slot;
+      title.textContent = slot ? 'Choose slot-0 firmware' : 'Choose a full image';
+      sub.textContent = slot
+        ? 'Writes application slot 0 only. Bootloader and identity data remain untouched.'
+        : 'Writes the complete 128 KB image. This can replace bootloader and identity data.';
+      hint.textContent = slot
+        ? 'Choose a slot-sized .bin or import and decrypt a supported ZIP package.'
+        : 'ZIP packages contain slot-0 firmware; select “Slot 0 only” to use one.';
+      clearFirmware();
+      status.textContent = `Flash scope: ${slot ? 'slot 0 only' : 'full image'} · firmware cleared after scope change`;
+    }
+
+    function choose(kind) {
+      const slot = scope === 'slot';
+      fileName.textContent = kind === 'zip'
+        ? 'GT3_VCU_1.7.0.zip → gt3_vcu_v1.7.0.bin'
+        : slot ? 'gt3_vcu_v1.7.0.bin' : 'zt3_vcu_rescue.bin';
+      firmwareBar.classList.add('has-file');
+      cta.disabled = false;
+      status.textContent = `Flash scope: ${slot ? 'slot 0 only' : 'full image'} · ${kind} firmware selected`;
+    }
+
+    fullButton.addEventListener('click', () => setScope('full'));
+    slotButton.addEventListener('click', () => setScope('slot'));
+    binButton.addEventListener('click', () => choose('bin'));
+    zipButton.addEventListener('click', () => choose('zip'));
+    cta.addEventListener('click', () => {
+      status.textContent = 'Mockup only — no flash command was started.';
+    });
+  </script>
+</body>
+</html>
