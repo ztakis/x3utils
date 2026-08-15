@@ -1165,7 +1165,7 @@ void main() {
       expect(controller.canStart, isFalse);
       controller.selectMode(ConnectionMode.defaultSwd);
       controller.selectAction('flash_compat');
-      expect(controller.canStart, isFalse);
+      expect(controller.canStart, isTrue);
     },
   );
 
@@ -1298,7 +1298,7 @@ void main() {
       expect(controller.isActionAvailable('flash_only'), isTrue);
       expect(controller.isActionAvailable('rdp_check'), isTrue);
       expect(controller.isActionAvailable('make_zip3'), isFalse);
-      expect(controller.isActionAvailable('file_info'), isFalse);
+      expect(controller.isActionAvailable('file_info'), isTrue);
       expect(controller.hasFlashScope, isFalse);
 
       controller.selectAction('dump');

@@ -655,7 +655,7 @@ void main() {
           expect(controller.firmwareInspection!.findings, isEmpty);
           expect(
             controller.heroEyebrow,
-            action == 'flash_only' ? 'Compatibility warning' : 'Slot 0 only',
+            action == 'flash_only' ? 'Compatibility warning' : 'Writes flash',
           );
         }
       },

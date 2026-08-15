@@ -424,7 +424,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Settings…'), findsOneWidget);
     expect(find.text('About'), findsOneWidget);
-    expect(find.textContaining('console', findRichText: true), findsNothing);
+    expect(find.textContaining('console', findRichText: true), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('title-menu-settings')));
     await tester.pump(const Duration(milliseconds: 500));

@@ -50,5 +50,8 @@ app.*.map.json
 /native/linux/special/rdp/config.sh
 /native/macos/special/rdp/config.sh
 
+# Cloudflare Wrangler
+.wrangler/
+
 # Local release artifacts
 /dist/
