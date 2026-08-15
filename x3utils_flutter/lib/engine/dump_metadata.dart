@@ -73,7 +73,7 @@ class DumpMetadata {
     return <String, Object?>{
       'schema': schemaVersion,
       'ts': _timestampFromPath(backupPath),
-      'backup': p.basename(backupPath),
+      'backup': _basename(backupPath),
       'type': type,
       'model': model,
       'modelSource': model == null ? null : _firmwareBanner,
@@ -150,7 +150,7 @@ class DumpMetadata {
   ) {
     final metadata = readJson(sidecarPath);
     final model = _knownMcuModel(declaredModel);
-    if (metadata['backup'] != p.basename(dumpPath)) {
+    if (metadata['backup'] != _basename(dumpPath)) {
       throw FormatException('Backup info does not belong to this backup file.');
     }
     if (metadata['type'] != 'MCU' || metadata['model'] != null) {
@@ -422,6 +422,13 @@ class DumpMetadata {
       bytes.every((byte) => byte == 0x00) ||
       bytes.every((byte) => byte == 0xFF);
 
+  /// [p.basename] uses the host separator, so a Windows path inspected on
+  /// Linux/macOS keeps the backslash prefix. Split on both separators.
+  static String _basename(String path) {
+    final i = path.lastIndexOf(RegExp(r'[/\\]'));
+    return i < 0 ? path : path.substring(i + 1);
+  }
+
   static bool _isPrintableAscii(List<int> bytes) =>
       bytes.every((byte) => byte >= 0x20 && byte <= 0x7E);
 
@@ -431,7 +438,7 @@ class DumpMetadata {
   static String _timestampFromPath(String path) {
     final match = RegExp(
       r'(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})',
-    ).firstMatch(p.basename(path));
+    ).firstMatch(_basename(path));
     if (match == null) return DateTime.now().toIso8601String().split('.').first;
     return '${match.group(1)}T${match.group(2)}:${match.group(3)}:${match.group(4)}';
   }
