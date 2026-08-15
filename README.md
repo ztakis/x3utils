@@ -8,6 +8,9 @@
 
 ### Downloads
 
+
+- **[GUI v2.0.0-BETA](https://github.com/ztakis/x3utils/releases/tag/gui-v2.0.0-beta)** — pre-release desktop & phone apps
+<br><br>
 - **[GUI v1.3.0](https://github.com/ztakis/x3utils/releases/tag/gui-v1.3.0)** — desktop app for Windows, Linux and macOS. Recommended for most users.
 - **[CLI v1.8.1](https://github.com/ztakis/x3utils/releases/tag/v1.8.1)** — the scripts, for terminal users.
 
