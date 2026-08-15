@@ -1519,7 +1519,7 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
                 builder: (context, constraints) {
                   final compact = constraints.maxHeight < 500;
                   final roomyCompact = compact && constraints.maxHeight >= 450;
-                  final verticalPadding = compact ? 0.0 : 20.0;
+                  final verticalPadding = compact ? 10.0 : 20.0;
                   final sectionGap = compact
                       ? (roomyCompact ? 18.0 : 6.0)
                       : 24.0;
@@ -1530,106 +1530,161 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
                       ? (roomyCompact ? 12.0 : 4.0)
                       : 24.0;
                   final titleGap = compact ? (roomyCompact ? 8.0 : 4.0) : 8.0;
-                  return SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(vertical: verticalPadding),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: math.max(
-                          0,
-                          constraints.maxHeight - verticalPadding * 2,
-                        ),
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    margin: EdgeInsets.only(
+                      top: compact ? 16.0 : 20.0,
+                      bottom: verticalPadding,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: AppColors.brand.withValues(alpha: 0.55),
                       ),
-                      child: Center(
-                        child: SizedBox(
-                          width: constraints.maxWidth,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (c.stage != StageState.idle) ...[
-                                Text(
-                                  c.heroEyebrow.toUpperCase(),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1.8,
-                                    color: accent,
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [AppColors.panel, AppColors.bg2],
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: 300,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            decoration: BoxDecoration(
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(18),
+                              ),
+                              gradient: RadialGradient(
+                                center: Alignment.topCenter,
+                                radius: 1.1,
+                                colors: [
+                                  accent.withValues(
+                                    alpha: c.stage == StageState.idle
+                                        ? 0.05
+                                        : 0.16,
                                   ),
-                                ),
-                                SizedBox(height: compact ? 6 : 8),
-                              ],
-                              Text(
-                                c.stage == StageState.idle
-                                    ? c.action.name
-                                    : c.heroTitle,
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: compact ? 25 : 27,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.txt,
-                                ),
+                                  Colors.transparent,
+                                ],
                               ),
-                              SizedBox(height: titleGap),
-                              Text(
-                                c.stage == StageState.idle
-                                    ? c.actionId == 'flash_backup'
-                                          ? 'Back up, write and verify the selected scope.'
-                                          : c.action.sub
-                                    : c.heroMessage,
-                                textAlign: TextAlign.center,
-                                maxLines:
-                                    compact &&
-                                        c.stage == StageState.idle &&
-                                        c.actionId == 'flash_backup'
-                                    ? 1
-                                    : compact
-                                    ? 2
-                                    : null,
-                                overflow: compact
-                                    ? TextOverflow.ellipsis
-                                    : TextOverflow.clip,
-                                style: TextStyle(
-                                  fontSize: compact ? 13 : 14,
-                                  height: compact ? 1.35 : 1.4,
-                                  color: c.stage == StageState.fail
-                                      ? AppColors.danger
-                                      : AppColors.dim,
-                                ),
-                              ),
-                              SizedBox(height: visualGap),
-                              Center(
-                                child: _Visual(
-                                  c: c,
-                                  accent: accent,
-                                  pulse: _pulse,
-                                ),
-                              ),
-                              if (c.stage == StageState.idle &&
-                                  c.action.needsFirmware) ...[
-                                SizedBox(height: controlGap),
-                                _FirmwareBar(
-                                  key: const ValueKey('android-firmware-bar'),
-                                  c: c,
-                                  onPick: widget.onPickFirmware,
-                                  onPickZip: widget.onPickZip,
-                                  phone: true,
-                                ),
-                              ],
-                              SizedBox(height: sectionGap),
-                              Center(
-                                child: _StageButtons(
-                                  c: c,
-                                  onStart: widget.onStart,
-                                  stackGuidedOnPhone: true,
-                                  phone: true,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
+                        SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 20,
+                          ),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: math.max(
+                                0,
+                                constraints.maxHeight -
+                                    verticalPadding * 2 -
+                                    40,
+                              ),
+                            ),
+                            child: Center(
+                              child: SizedBox(
+                                width: constraints.maxWidth,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (c.stage != StageState.idle) ...[
+                                      Text(
+                                        c.heroEyebrow.toUpperCase(),
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 1.8,
+                                          color: accent,
+                                        ),
+                                      ),
+                                      SizedBox(height: compact ? 6 : 8),
+                                    ],
+                                    Text(
+                                      c.stage == StageState.idle
+                                          ? c.action.name
+                                          : c.heroTitle,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: compact ? 25 : 27,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.txt,
+                                      ),
+                                    ),
+                                    SizedBox(height: titleGap),
+                                    Text(
+                                      c.stage == StageState.idle
+                                          ? c.actionId == 'flash_backup'
+                                                ? 'Back up, write and verify the selected scope.'
+                                                : c.action.sub
+                                          : c.heroMessage,
+                                      textAlign: TextAlign.center,
+                                      maxLines:
+                                          compact &&
+                                              c.stage == StageState.idle &&
+                                              c.actionId == 'flash_backup'
+                                          ? 1
+                                          : compact
+                                          ? 2
+                                          : null,
+                                      overflow: compact
+                                          ? TextOverflow.ellipsis
+                                          : TextOverflow.clip,
+                                      style: TextStyle(
+                                        fontSize: compact ? 13 : 14,
+                                        height: compact ? 1.35 : 1.4,
+                                        color: c.stage == StageState.fail
+                                            ? AppColors.danger
+                                            : AppColors.dim,
+                                      ),
+                                    ),
+                                    SizedBox(height: visualGap),
+                                    Center(
+                                      child: _Visual(
+                                        c: c,
+                                        accent: accent,
+                                        pulse: _pulse,
+                                      ),
+                                    ),
+                                    if (c.stage == StageState.idle &&
+                                        c.action.needsFirmware) ...[
+                                      SizedBox(height: controlGap),
+                                      _FirmwareBar(
+                                        key: const ValueKey(
+                                          'android-firmware-bar',
+                                        ),
+                                        c: c,
+                                        onPick: widget.onPickFirmware,
+                                        onPickZip: widget.onPickZip,
+                                        phone: true,
+                                      ),
+                                    ],
+                                    SizedBox(height: sectionGap),
+                                    Center(
+                                      child: _StageButtons(
+                                        c: c,
+                                        onStart: widget.onStart,
+                                        stackGuidedOnPhone: true,
+                                        phone: true,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 },
