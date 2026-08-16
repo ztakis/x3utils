@@ -1613,7 +1613,7 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
                                           ? c.action.name
                                           : c.heroTitle,
                                       textAlign: TextAlign.center,
-                                      maxLines: 1,
+                                      maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: compact ? 25 : 27,
