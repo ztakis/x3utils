@@ -211,6 +211,13 @@ class _AndroidConsolePageState extends State<AndroidConsolePage> {
                       ),
                     ),
             ),
+            // Browser only, on purpose. In the APK the top arrow and the swipe
+            // are both reliable; in Chrome the swipe back starts at the left
+            // edge, which is where Android's system back gesture and Chrome's
+            // overscroll-to-history both live, so it is the one control that
+            // can be taken away by the browser. This pill is the thumb-reachable
+            // replacement. Un-gate it if it earns a place in the APK too.
+            if (c.browserMode) _BackPill(c: c),
           ],
         ),
       ),
@@ -237,6 +244,40 @@ class _AndroidConsolePageState extends State<AndroidConsolePage> {
     }
     return const Color(0xFFC4D0DF);
   }
+}
+
+/// Thumb-reachable "back to the app" control for the browser console.
+///
+/// Full-width target at the bottom of the screen, where the top-left arrow is
+/// the hardest reach on a phone and the swipe is contested by the browser.
+class _BackPill extends StatelessWidget {
+  const _BackPill({required this.c});
+
+  final AppController c;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+    child: SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          if (c.consoleOpen) c.toggleConsole();
+        },
+        icon: const Icon(Icons.arrow_back_rounded, size: 18),
+        label: const Text('Back'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.txt,
+          side: const BorderSide(color: AppColors.line2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+      ),
+    ),
+  );
 }
 
 class _ConsoleAction extends StatelessWidget {

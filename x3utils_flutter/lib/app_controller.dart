@@ -87,6 +87,7 @@ class CompatIdentity {
 class AppController extends ChangeNotifier {
   AppController({
     HardwareBackend? backend,
+    bool? phoneMode,
     @visibleForTesting OpenOcdRunner? runner,
     @visibleForTesting bool? browserMode,
     @visibleForTesting bool? androidMode,
@@ -98,6 +99,11 @@ class AppController extends ChangeNotifier {
        ),
        _browserMode = browserMode ?? kIsWeb,
        _androidMode = androidMode ?? (!kIsWeb && Platform.isAndroid),
+       // Defaults to androidMode, so the APK and both desktop builds are
+       // unaffected by the existence of this flag. Only lib/main_mobile.dart
+       // passes it explicitly.
+       _phoneMode =
+           phoneMode ?? androidMode ?? (!kIsWeb && Platform.isAndroid),
        _backupDownloader = backupDownloader ?? downloadBackupBytes,
        _androidBackupPublisher =
            androidBackupPublisher ?? publishAndroidBackup {
@@ -182,12 +188,31 @@ class AppController extends ChangeNotifier {
   SharedPreferences? _prefs;
   final bool _browserMode;
   final bool _androidMode;
+  final bool _phoneMode;
   final BackupDownloader _backupDownloader;
   final AndroidBackupPublisher _androidBackupPublisher;
   DesktopBackendRouter? _desktopBackendRouter;
 
   bool get browserMode => _browserMode;
+
+  /// The Android PLATFORM: USB-host transport, scoped storage, the permission
+  /// wording. False in a browser even when the phone layout is in use.
   bool get androidMode => _androidMode;
+
+  /// The phone TIER: the compact layout and the reduced action set, shared by
+  /// the Android APK and the mobile web build at /m/. Deliberately separate
+  /// from [androidMode] — the two coincide in the APK and diverge in Chrome.
+  bool get phoneMode => _phoneMode;
+
+  /// Transport shown beside the ST-Link in the phone connection rows.
+  String get probeTransportLabel =>
+      _browserMode ? 'ST-LINK · WebUSB' : 'ST-LINK · USB OTG';
+
+  /// Where a backup lands, for the phone action rows. Android publishes through
+  /// scoped storage to a known folder; a browser hands the file to Chrome and
+  /// cannot know where it ends up.
+  String get backupDestinationLabel =>
+      _browserMode ? 'Browser download' : androidBackupDirectoryLabel;
   String get backendName =>
       _backend?.name ??
       (_browserMode
@@ -308,10 +333,10 @@ class AppController extends ChangeNotifier {
     countdownSeconds = defaultCountdown;
     autoRetrySeconds = defaultAutoRetry;
     final ai = _prefs!.getInt('accent') ?? 1; // default: Silver
-    final accentCount = _androidMode ? 4 : kAccents.length;
+    final accentCount = _phoneMode ? 4 : kAccents.length;
     final validAccent = ai >= 0 && ai < accentCount;
-    accentNotifier.value = validAccent ? ai : (_androidMode ? 1 : 0);
-    if (_androidMode && !validAccent) {
+    accentNotifier.value = validAccent ? ai : (_phoneMode ? 1 : 0);
+    if (_phoneMode && !validAccent) {
       await _prefs!.setInt('accent', accentNotifier.value);
     }
     logToFile =
@@ -330,8 +355,8 @@ class AppController extends ChangeNotifier {
   int get accentIndex => accentNotifier.value;
 
   void setAccent(int i) {
-    final accentCount = _androidMode ? 4 : kAccents.length;
-    final idx = (i >= 0 && i < accentCount) ? i : (_androidMode ? 1 : 0);
+    final accentCount = _phoneMode ? 4 : kAccents.length;
+    final idx = (i >= 0 && i < accentCount) ? i : (_phoneMode ? 1 : 0);
     accentNotifier.value = idx; // drives the app-wide recolor
     _prefs?.setInt('accent', idx);
   }
@@ -747,10 +772,11 @@ class AppController extends ChangeNotifier {
   bool get _backendSupportsCurrentAction => isActionAvailable(actionId);
 
   bool isActionAvailable(String id) {
-    // Android deliberately exposes only the workflows selected for its direct
-    // ST-Link transport. Keep every other desktop/advanced action fail-closed
-    // even when the backend has lower-level capability for it.
-    if (_androidMode &&
+    // The phone tier deliberately exposes only the workflows selected for a
+    // direct ST-Link transport. Keep every other desktop/advanced action
+    // fail-closed even when the backend has lower-level capability for it.
+    // Tier, not platform: the mobile web build gets the same reduced set.
+    if (_phoneMode &&
         !const {
           'check',
           'dump',
@@ -805,7 +831,7 @@ class AppController extends ChangeNotifier {
   }
 
   List<ConnectionMode> get availableModes {
-    if (_androidMode) {
+    if (_phoneMode) {
       final modes = _backend?.capabilities.connectionModes;
       return [
         ConnectionMode.defaultSwd,

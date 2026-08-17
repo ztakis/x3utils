@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'android_console.dart'; // swipe-to-console (Android)
 import 'app_controller.dart';
-import 'engine/android_backup_store.dart';
 import 'engine/dump_metadata.dart';
 import 'engine/file_info.dart';
 import 'engine/info_row.dart';
@@ -209,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     fg: AppColors.txt,
                     border: AppColors.line2,
                     small: true,
-                    phone: c.androidMode,
+                    phone: c.phoneMode,
                   ),
                   const SizedBox(width: 10),
                   _PillButton(
@@ -218,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     gradient: [AppColors.brand, AppColors.brand2],
                     fg: const Color(0xFF04120F),
                     small: true,
-                    phone: c.androidMode,
+                    phone: c.phoneMode,
                   ),
                 ],
               ),
@@ -300,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     fg: AppColors.txt,
                     border: AppColors.line2,
                     small: true,
-                    phone: c.androidMode,
+                    phone: c.phoneMode,
                   ),
                   const SizedBox(width: 10),
                   _PillButton(
@@ -309,7 +308,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     gradient: const [Color(0xFFFF6472), AppColors.danger],
                     fg: Colors.white,
                     small: true,
-                    phone: c.androidMode,
+                    phone: c.phoneMode,
                   ),
                 ],
               ),
@@ -503,7 +502,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     fg: AppColors.txt,
                     border: AppColors.line2,
                     small: true,
-                    phone: c.androidMode,
+                    phone: c.phoneMode,
                   ),
                   const SizedBox(width: 10),
                   _PillButton(
@@ -514,7 +513,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         : [AppColors.brand, AppColors.brand2],
                     fg: hard ? Colors.white : const Color(0xFF04120F),
                     small: true,
-                    phone: c.androidMode,
+                    phone: c.phoneMode,
                   ),
                 ],
               ),
@@ -719,7 +718,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         fg: AppColors.txt,
                         border: AppColors.line2,
                         small: true,
-                        phone: c.androidMode,
+                        phone: c.phoneMode,
                       ),
                       const SizedBox(width: 10),
                       _PillButton(
@@ -728,7 +727,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         gradient: const [Color(0xFFFFC247), AppColors.hold],
                         fg: const Color(0xFF211600),
                         small: true,
-                        phone: c.androidMode,
+                        phone: c.phoneMode,
                       ),
                     ],
                   ),
@@ -836,7 +835,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(height: 14),
                           ],
-                          if (!c.androidMode) ...[
+                          if (!c.phoneMode) ...[
                             _SettingRow(
                               label: 'Default connection',
                               child: _ModeDropdown(
@@ -853,7 +852,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 _StepBtn(
                                   icon: Icons.remove,
-                                  large: c.androidMode,
+                                  large: c.phoneMode,
                                   onTap: () {
                                     c.setDefaultCountdown(
                                       c.defaultCountdown - 1,
@@ -876,7 +875,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 _StepBtn(
                                   icon: Icons.add,
-                                  large: c.androidMode,
+                                  large: c.phoneMode,
                                   onTap: () {
                                     c.setDefaultCountdown(
                                       c.defaultCountdown + 1,
@@ -895,7 +894,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 _StepBtn(
                                   icon: Icons.remove,
-                                  large: c.androidMode,
+                                  large: c.phoneMode,
                                   onTap: () {
                                     c.setDefaultAutoRetry(
                                       c.defaultAutoRetry - 1,
@@ -920,7 +919,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 _StepBtn(
                                   icon: Icons.add,
-                                  large: c.androidMode,
+                                  large: c.phoneMode,
                                   onTap: () {
                                     c.setDefaultAutoRetry(
                                       c.defaultAutoRetry + 1,
@@ -992,7 +991,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       gradient: [AppColors.brand, AppColors.brand2],
                       fg: const Color(0xFF04120F),
                       small: true,
-                      phone: c.androidMode,
+                      phone: c.phoneMode,
                     ),
                   ),
                 ],
@@ -1019,7 +1018,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ListenableBuilder(
             listenable: c,
             builder: (context, _) {
-              if (c.androidMode) {
+              if (c.phoneMode) {
                 return AndroidConsolePager(
                   c: c,
                   checkPage: SafeArea(
@@ -1222,7 +1221,7 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
               iconColor: ConnectionMode.defaultSwd.color,
               badgeIcon: true,
               title: ConnectionMode.defaultSwd.title,
-              subtitle: 'ST-LINK · USB OTG',
+              subtitle: c.probeTransportLabel,
               selected: c.mode == ConnectionMode.defaultSwd,
               enabled: true,
               onTap: () {
@@ -1285,7 +1284,7 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
       title: action.name,
       subtitle: enabled
           ? id == 'dump'
-                ? androidBackupDirectoryLabel
+                ? c.backupDestinationLabel
                 : id == 'flash_backup'
                 ? 'Full image or Slot 0 · backs up first'
                 : action.script
@@ -1508,7 +1507,7 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
               iconColor: c.mode.color,
               badgeIcon: true,
               title: c.mode.title,
-              subtitle: 'ST-LINK · USB OTG',
+              subtitle: c.probeTransportLabel,
               open: _connectionOpen,
               onTap: _toggleConnection,
               opensDown: true,
@@ -1709,7 +1708,7 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
               iconSize: 9,
               title: c.action.name,
               subtitle: c.actionId == 'dump'
-                  ? androidBackupDirectoryLabel
+                  ? c.backupDestinationLabel
                   : c.actionId == 'flash_backup'
                   ? 'Full image or Slot 0 · backs up first'
                   : c.action.script,
@@ -1985,11 +1984,11 @@ class _TitleMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
-      icon: c.androidMode
+      icon: c.phoneMode
           ? null
           : const Icon(Icons.menu_rounded, size: 18, color: AppColors.dim),
       tooltip: 'Menu',
-      padding: c.androidMode ? EdgeInsets.zero : const EdgeInsets.all(8),
+      padding: c.phoneMode ? EdgeInsets.zero : const EdgeInsets.all(8),
       color: AppColors.panel2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
@@ -2027,7 +2026,7 @@ class _TitleMenu extends StatelessWidget {
         const PopupMenuDivider(),
         _mi('about', Icons.info_outline_rounded, 'About'),
       ],
-      child: c.androidMode
+      child: c.phoneMode
           ? const SizedBox.expand(
               child: Icon(Icons.menu_rounded, size: 28, color: AppColors.dim),
             )
@@ -2341,7 +2340,7 @@ class _CountdownStepper extends StatelessWidget {
           ),
           _StepBtn(
             icon: Icons.remove,
-            large: c.androidMode,
+            large: c.phoneMode,
             onTap: () => c.setCountdown(c.countdownSeconds - 1),
           ),
           SizedBox(
@@ -2359,7 +2358,7 @@ class _CountdownStepper extends StatelessWidget {
           ),
           _StepBtn(
             icon: Icons.add,
-            large: c.androidMode,
+            large: c.phoneMode,
             onTap: () => c.setCountdown(c.countdownSeconds + 1),
           ),
         ],
@@ -5227,7 +5226,7 @@ class _FlashScopeControl extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       key: const ValueKey('firmware-scope'),
-      height: c.androidMode ? 48 : 42,
+      height: c.phoneMode ? 48 : 42,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: const Color(0x30000000),
@@ -5717,14 +5716,14 @@ class _AccentPicker extends StatelessWidget {
   final VoidCallback onChanged;
   @override
   Widget build(BuildContext context) {
-    final itemCount = c.androidMode
+    final itemCount = c.phoneMode
         ? math.min(4, kAccents.length)
         : kAccents.length;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         for (var i = 0; i < itemCount; i++) ...[
-          if (i > 0) SizedBox(width: c.androidMode ? 6 : 10),
+          if (i > 0) SizedBox(width: c.phoneMode ? 6 : 10),
           Tooltip(
             message: kAccents[i].name,
             child: GestureDetector(
@@ -5734,12 +5733,12 @@ class _AccentPicker extends StatelessWidget {
               },
               child: SizedBox(
                 key: ValueKey('accent-choice-$i'),
-                width: c.androidMode ? 40 : 26,
-                height: c.androidMode ? 40 : 26,
+                width: c.phoneMode ? 40 : 26,
+                height: c.phoneMode ? 40 : 26,
                 child: Center(
                   child: Container(
-                    width: c.androidMode ? 32 : 26,
-                    height: c.androidMode ? 32 : 26,
+                    width: c.phoneMode ? 32 : 26,
+                    height: c.phoneMode ? 32 : 26,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(
