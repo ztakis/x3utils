@@ -4,9 +4,11 @@
 
 ### Web App
 
-- **[x3utils-mobile-chrome v2.0.0 BETA](https://x3utils-web.pages.dev/m/)** — For phones that support WebUSB
-<br><br>
-- **[x3utils-web v2.0.0 BETA](https://x3utils-web.pages.dev/)** — runs in the browser, nothing to install. Experimental. Needs a WebUSB-capable browser (Chrome or Edge on desktop or Android); Firefox and Safari will not work.
+Nothing to install. Needs Chrome or Edge — Firefox and Safari have no WebUSB, and **no iPhone or iPad browser will work**.
+
+- **[x3utils-web v2.0.0 BETA](https://x3utils-web.pages.dev/)** — desktop browsers. Experimental.
+- **[x3utils-mobile v2.0.0 BETA](https://x3utils-web.pages.dev/m/)** — Android phones, Chrome. A subset of the desktop tools, same layout as the Android app.
+
 
 ### Downloads
 
