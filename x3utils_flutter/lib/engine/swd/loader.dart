@@ -31,6 +31,8 @@ const _cfsr = 0xe000ed28;
 const _hfsr = 0xe000ed2c;
 const _icsr = 0xe000ed04;
 const _crmCtrlsts = 0x40021024;
+const _dbgmcuCr = 0xe0042004;
+const _wdtBase = 0x40003000;
 
 class LoaderHaltTimeout extends SwdException {
   LoaderHaltTimeout(super.message, {required this.forcedHalt});
@@ -48,6 +50,18 @@ Future<int?> _tryRead(Future<int> Function() read) async {
 
 String _diagnostic(String name, int? value) =>
     '$name=${value == null ? "unavailable" : hex(value)}';
+
+String decodeAt32ResetFlags(int value) {
+  final causes = <String>[
+    if (value & (1 << 31) != 0) 'low-power',
+    if (value & (1 << 30) != 0) 'window-watchdog',
+    if (value & (1 << 29) != 0) 'watchdog',
+    if (value & (1 << 28) != 0) 'software',
+    if (value & (1 << 27) != 0) 'power-on/reset',
+    if (value & (1 << 26) != 0) 'nRST',
+  ];
+  return causes.isEmpty ? 'none' : causes.join('|');
+}
 
 Uint8List _loaderToBytes(List<int> code) {
   final bytes = Uint8List(((code.length * 2 + 3) >> 2) << 2);
@@ -68,6 +82,8 @@ Future<void> runLoader(
   required int count,
   required int flashRegBase,
   int timeoutMs = 10000,
+  String? context,
+  int? baselineResetFlags,
 }) async {
   await probe.writeMem32(loaderAddr, _loaderToBytes(code));
   await probe.writeReg(regR0, srcAddr);
@@ -92,27 +108,86 @@ Future<void> runLoader(
       await core.waitHalted(500);
       forcedHalt = true;
     } catch (_) {}
-    final pc = await _tryRead(() => probe.readReg(regPc));
-    final xpsr = await _tryRead(() => probe.readReg(regXpsr));
-    final remaining = await _tryRead(() => probe.readReg(regR2));
-    final dfsr = await _tryRead(() => probe.readDebugReg(_dfsr));
-    final cfsr = await _tryRead(() => probe.readDebugReg(_cfsr));
-    final hfsr = await _tryRead(() => probe.readDebugReg(_hfsr));
-    final icsr = await _tryRead(() => probe.readDebugReg(_icsr));
-    final crmCtrlsts = await _tryRead(() => probe.readDebugReg(_crmCtrlsts));
-    final flashSts = await _tryRead(
-      () => probe.readDebugReg(flashRegBase + 0x0c),
-    );
+    // Once the core has been stopped, collect a broad snapshot. Do not add
+    // diagnostic traffic while the loader may still be running: on a marginal
+    // target that traffic could itself change timing or obscure the failure.
+    final r0 = forcedHalt ? await _tryRead(() => probe.readReg(regR0)) : null;
+    final r1 = forcedHalt ? await _tryRead(() => probe.readReg(regR1)) : null;
+    final r2 = forcedHalt ? await _tryRead(() => probe.readReg(regR2)) : null;
+    final r3 = forcedHalt ? await _tryRead(() => probe.readReg(regR3)) : null;
+    final sp = forcedHalt ? await _tryRead(() => probe.readReg(regSp)) : null;
+    final lr = forcedHalt ? await _tryRead(() => probe.readReg(regLr)) : null;
+    final pc = forcedHalt ? await _tryRead(() => probe.readReg(regPc)) : null;
+    final xpsr = forcedHalt
+        ? await _tryRead(() => probe.readReg(regXpsr))
+        : null;
+    final dfsr = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_dfsr))
+        : null;
+    final cfsr = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_cfsr))
+        : null;
+    final hfsr = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_hfsr))
+        : null;
+    final icsr = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_icsr))
+        : null;
+    final crmCtrlsts = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_crmCtrlsts))
+        : null;
+    final dbgmcuCr = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_dbgmcuCr))
+        : null;
+    final wdtDiv = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_wdtBase + 0x04))
+        : null;
+    final wdtRld = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_wdtBase + 0x08))
+        : null;
+    final wdtSts = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_wdtBase + 0x0c))
+        : null;
+    final wdtWin = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(_wdtBase + 0x10))
+        : null;
+    final flashSts = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(flashRegBase + 0x0c))
+        : null;
+    final flashCtrl = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(flashRegBase + 0x10))
+        : null;
+    final flashAddr = forcedHalt
+        ? await _tryRead(() => probe.readDebugReg(flashRegBase + 0x14))
+        : null;
+    final resetCause = crmCtrlsts == null
+        ? 'unavailable'
+        : decodeAt32ResetFlags(crmCtrlsts);
+    final newResetCause = crmCtrlsts == null || baselineResetFlags == null
+        ? 'unavailable'
+        : decodeAt32ResetFlags(crmCtrlsts & ~baselineResetFlags);
     throw LoaderHaltTimeout(
-      'flash loader did not halt within $timeoutMs ms; '
+      'flash loader${context == null ? "" : " ($context)"} did not halt '
+      'within $timeoutMs ms; dst=${hex(dstAddr)}, count=$count, '
       '${_diagnostic("DHCSR-before-halt", runningDhcsr)}, '
       'forced-halt=${forcedHalt ? "yes" : "no"}, '
+      '${_diagnostic("r0", r0)}, ${_diagnostic("r1", r1)}, '
+      '${_diagnostic("r2", r2)}, ${_diagnostic("r3", r3)}, '
+      '${_diagnostic("SP", sp)}, ${_diagnostic("LR", lr)}, '
       '${_diagnostic("PC", pc)}, ${_diagnostic("xPSR", xpsr)}, '
-      '${_diagnostic("r2", remaining)}, ${_diagnostic("DFSR", dfsr)}, '
+      '${_diagnostic("DFSR", dfsr)}, '
       '${_diagnostic("CFSR", cfsr)}, ${_diagnostic("HFSR", hfsr)}, '
       '${_diagnostic("ICSR", icsr)}, '
-      '${_diagnostic("CRM_CTRLSTS", crmCtrlsts)}, '
-      '${_diagnostic("FLASH_STS", flashSts)}',
+      '${_diagnostic("CRM_CTRLSTS", crmCtrlsts)} '
+      '(reset=$resetCause, new-since-baseline=$newResetCause), '
+      '${_diagnostic("DBGMCU_CR", dbgmcuCr)}, '
+      '${_diagnostic("WDT_DIV", wdtDiv)}, '
+      '${_diagnostic("WDT_RLD", wdtRld)}, '
+      '${_diagnostic("WDT_STS", wdtSts)}, '
+      '${_diagnostic("WDT_WIN", wdtWin)}, '
+      '${_diagnostic("FLASH_STS", flashSts)}, '
+      '${_diagnostic("FLASH_CTRL", flashCtrl)}, '
+      '${_diagnostic("FLASH_ADDR", flashAddr)}',
       forcedHalt: forcedHalt,
     );
   }

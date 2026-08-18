@@ -39,8 +39,11 @@ const _stsPrgmerr = 1 << 2;
 const _stsEpperr = 1 << 4;
 
 const _crmCtrl = 0x40021000;
+const _crmCtrlsts = 0x40021024;
 const _crmHicken = 1 << 0;
 const _crmHickstbl = 1 << 1;
+const _dbgmcuCr = 0xe0042004;
+const _wdtBase = 0x40003000;
 
 class At32Flash implements FlashDriver {
   At32Flash(
@@ -51,6 +54,7 @@ class At32Flash implements FlashDriver {
     this.useLoader = false,
     this.onLog,
     this.loaderTimeoutMs = 10000,
+    this.loaderDiagnostics = false,
   }) : assert(_sramBytes > 0);
 
   final DebugProbe _probe;
@@ -60,8 +64,10 @@ class At32Flash implements FlashDriver {
   final bool useLoader;
   final void Function(String line)? onLog;
   final int loaderTimeoutMs;
+  final bool loaderDiagnostics;
   bool _programPathPrepared = false;
   bool _usePreparedLoader = false;
+  int? _loaderBaselineResetFlags;
 
   static const _loaderAddr = 0x20000000;
   static const _bufferAddr = 0x20000100;
@@ -95,6 +101,45 @@ class At32Flash implements FlashDriver {
       count: 0,
       flashRegBase: _atBase,
       timeoutMs: loaderTimeoutMs,
+      context: 'preflight',
+      baselineResetFlags: _loaderBaselineResetFlags,
+    );
+  }
+
+  Future<int?> _tryDiagnosticRead(int address) async {
+    try {
+      return await _probe.readDebugReg(address);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _diagnostic(String name, int? value) =>
+      '$name=${value == null ? "unavailable" : hex(value)}';
+
+  Future<void> _captureLoaderBaseline() async {
+    final crmCtrlsts = await _tryDiagnosticRead(_crmCtrlsts);
+    final dbgmcuCr = await _tryDiagnosticRead(_dbgmcuCr);
+    final wdtDiv = await _tryDiagnosticRead(_wdtBase + 0x04);
+    final wdtRld = await _tryDiagnosticRead(_wdtBase + 0x08);
+    final wdtSts = await _tryDiagnosticRead(_wdtBase + 0x0c);
+    final wdtWin = await _tryDiagnosticRead(_wdtBase + 0x10);
+    final flashSts = await _tryDiagnosticRead(_atSts);
+    final flashCtrl = await _tryDiagnosticRead(_atCtrl);
+    final flashAddr = await _tryDiagnosticRead(_atAddr);
+    _loaderBaselineResetFlags = crmCtrlsts;
+    onLog?.call(
+      '[flash:loader] baseline '
+      '${_diagnostic("CRM_CTRLSTS", crmCtrlsts)} '
+      '(reset=${crmCtrlsts == null ? "unavailable" : decodeAt32ResetFlags(crmCtrlsts)}), '
+      '${_diagnostic("DBGMCU_CR", dbgmcuCr)}, '
+      '${_diagnostic("WDT_DIV", wdtDiv)}, '
+      '${_diagnostic("WDT_RLD", wdtRld)}, '
+      '${_diagnostic("WDT_STS", wdtSts)}, '
+      '${_diagnostic("WDT_WIN", wdtWin)}, '
+      '${_diagnostic("FLASH_STS", flashSts)}, '
+      '${_diagnostic("FLASH_CTRL", flashCtrl)}, '
+      '${_diagnostic("FLASH_ADDR", flashAddr)}',
     );
   }
 
@@ -102,10 +147,12 @@ class At32Flash implements FlashDriver {
   Future<void> prepareProgram() async {
     _programPathPrepared = false;
     _usePreparedLoader = false;
+    _loaderBaselineResetFlags = null;
     if (!useLoader) {
       _programPathPrepared = true;
       return;
     }
+    if (loaderDiagnostics) await _captureLoaderBaseline();
     try {
       await preflightProgram();
       _usePreparedLoader = true;
@@ -344,14 +391,28 @@ class At32Flash implements FlashDriver {
     ProgressFn? progress,
   ) async {
     final bufferSize = loaderBufferSize;
+    final totalStopwatch = Stopwatch()..start();
     await _initFlash();
     try {
       await _waitBusy(5);
       await _probe.writeDebugReg(_atSts, _stsPrgmerr | _stsEpperr);
       final total = padded.length;
+      final chunks = (total + bufferSize - 1) ~/ bufferSize;
       var done = 0;
+      var chunkIndex = 0;
       while (done < total) {
+        chunkIndex++;
         final chunkLen = total - done < bufferSize ? total - done : bufferSize;
+        final destination = address + done;
+        final chunkStopwatch = Stopwatch()..start();
+        if (loaderDiagnostics) {
+          onLog?.call(
+            '[flash:loader] chunk $chunkIndex/$chunks start '
+            'dst=${hex(destination)}, bytes=$chunkLen, '
+            'words=${chunkLen >> 2}, '
+            'elapsed=${totalStopwatch.elapsedMilliseconds} ms',
+          );
+        }
         await _probe.writeMem32(
           _bufferAddr,
           Uint8List.sublistView(padded, done, done + chunkLen),
@@ -364,19 +425,29 @@ class At32Flash implements FlashDriver {
             wordLoader,
             loaderAddr: _loaderAddr,
             srcAddr: _bufferAddr,
-            dstAddr: address + done,
+            dstAddr: destination,
             count: chunkLen >> 2,
             flashRegBase: _atBase,
             timeoutMs: loaderTimeoutMs,
+            context: 'chunk $chunkIndex/$chunks',
+            baselineResetFlags: _loaderBaselineResetFlags,
           );
           _checkErr(
             await _probe.readDebugReg(_atSts),
-            'program at ${hex(address + done)}',
+            'program at ${hex(destination)}',
           );
         } finally {
           await _probe.writeDebugReg(_atCtrl, 0);
         }
         done += chunkLen;
+        if (loaderDiagnostics) {
+          onLog?.call(
+            '[flash:loader] chunk $chunkIndex/$chunks complete '
+            'dst=${hex(destination)}, bytes=$chunkLen, '
+            'chunk=${chunkStopwatch.elapsedMilliseconds} ms, '
+            'elapsed=${totalStopwatch.elapsedMilliseconds} ms',
+          );
+        }
         progress?.call(done, total);
         await sleep(0);
       }

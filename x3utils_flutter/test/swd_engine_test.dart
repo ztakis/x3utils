@@ -473,6 +473,65 @@ void main() {
     );
   });
 
+  test('AT32 reset flags are decoded for loader diagnostics', () {
+    expect(decodeAt32ResetFlags(0), 'none');
+    expect(
+      decodeAt32ResetFlags((1 << 29) | (1 << 28) | (1 << 26)),
+      'watchdog|software|nRST',
+    );
+  });
+
+  test(
+    'loader timeout captures the halted core and peripheral state',
+    () async {
+      final probe = _LoaderPreflightTimeoutProbe()
+        ..registers[0x40021024] = 1 << 29
+        ..registers[0xe0042004] = 0x307
+        ..registers[0x40003004] = 6
+        ..registers[0x40003008] = 0x4e1
+        ..registers[0x4000300c] = 0
+        ..registers[0x40003010] = 0xfff
+        ..registers[0x4002200c] = 0x20
+        ..registers[0x40022014] = 0x08001000;
+
+      await expectLater(
+        runLoader(
+          probe,
+          CortexM(probe),
+          wordLoader,
+          loaderAddr: 0x20000000,
+          srcAddr: 0x20000100,
+          dstAddr: 0x08001000,
+          count: 64,
+          flashRegBase: 0x40022000,
+          timeoutMs: 1,
+          context: 'chunk 2/16',
+          baselineResetFlags: 0,
+        ),
+        throwsA(
+          isA<LoaderHaltTimeout>().having(
+            (error) => error.message,
+            'message',
+            allOf([
+              contains('chunk 2/16'),
+              contains('dst=0x08001000, count=64'),
+              contains('forced-halt=yes'),
+              contains('r0='),
+              contains('SP='),
+              contains('LR='),
+              contains('PC='),
+              contains('reset=watchdog'),
+              contains('new-since-baseline=watchdog'),
+              contains('DBGMCU_CR=0x00000307'),
+              contains('WDT_RLD=0x000004E1'),
+              contains('FLASH_ADDR=0x08001000'),
+            ]),
+          ),
+        ),
+      );
+    },
+  );
+
   test('non-zero loader remainder is a programming failure', () async {
     final probe = _RecordingProbe(remaining: 7);
 
@@ -524,6 +583,44 @@ void main() {
         .toList();
     expect(ctrlWrites, contains(1));
     expect(ctrlWrites.last & (1 << 7), 1 << 7);
+  });
+
+  test('opt-in loader diagnostics log baseline and every chunk', () async {
+    final probe = _RecordingProbe()
+      ..registers[0x40021024] = (1 << 29) | (1 << 27)
+      ..registers[0xe0042004] = 0x307
+      ..registers[0x40003004] = 6
+      ..registers[0x40003008] = 0x4e1;
+    final lines = <String>[];
+    final driver = At32Flash(
+      probe,
+      CortexM(probe),
+      1024,
+      32 * 1024,
+      useLoader: true,
+      loaderDiagnostics: true,
+      onLog: lines.add,
+    );
+
+    await driver.program(0x08000000, Uint8List(0x3000));
+
+    expect(
+      lines.first,
+      allOf(
+        startsWith('[flash:loader] baseline'),
+        contains('reset=watchdog|power-on/reset'),
+        contains('WDT_RLD=0x000004E1'),
+      ),
+    );
+    expect(
+      lines,
+      containsAllInOrder([
+        contains('chunk 1/2 start dst=0x08000000, bytes=8192'),
+        contains('chunk 1/2 complete dst=0x08000000, bytes=8192'),
+        contains('chunk 2/2 start dst=0x08002000, bytes=4096'),
+        contains('chunk 2/2 complete dst=0x08002000, bytes=4096'),
+      ]),
+    );
   });
 
   test(

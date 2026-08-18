@@ -47,6 +47,7 @@ const regR1 = 1;
 const regR2 = 2;
 const regR3 = 3;
 const regSp = 13;
+const regLr = 14;
 const regPc = 15;
 const regXpsr = 16;
 

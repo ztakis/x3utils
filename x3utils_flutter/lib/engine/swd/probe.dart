@@ -41,13 +41,18 @@ const _fallbackLength = 0x20000;
 const _dbgmcuCr = 0xe0042004;
 
 class Probe {
-  Probe({this.useAt32Loader = false}) : _providedProbe = null;
+  Probe({this.useAt32Loader = false, this.loaderDiagnostics = false})
+    : _providedProbe = null;
 
-  Probe.withDebugProbe(DebugProbe debugProbe, {this.useAt32Loader = false})
-    : _providedProbe = debugProbe;
+  Probe.withDebugProbe(
+    DebugProbe debugProbe, {
+    this.useAt32Loader = false,
+    this.loaderDiagnostics = false,
+  }) : _providedProbe = debugProbe;
 
   final DebugProbe? _providedProbe;
   final bool useAt32Loader;
+  final bool loaderDiagnostics;
 
   UsbTransport? _usb;
   DebugProbe? _probe;
@@ -376,6 +381,7 @@ class Probe {
         target.sramBytes,
         useLoader: useAt32Loader,
         onLog: _emit,
+        loaderDiagnostics: loaderDiagnostics,
       );
       _emit(
         '[flash] AT32 programming path: '

@@ -4,7 +4,8 @@ export 'at32_flash.dart'
     show At32Flash, FlashDriver, ProgressFn, ProtectionRewriteStage;
 export 'cortexm.dart' show CortexM, dhcsr;
 export 'debug_probe.dart' show DebugProbe, ProbeVersion;
-export 'loader.dart' show LoaderHaltTimeout, runLoader, wordLoader;
+export 'loader.dart'
+    show LoaderHaltTimeout, decodeAt32ResetFlags, runLoader, wordLoader;
 export 'probe.dart'
     show
         ConnectMode,
