@@ -54,13 +54,18 @@ abstract interface class SwdartSession {
 }
 
 class SwdartProbeSession implements SwdartSession {
-  SwdartProbeSession({swd.Probe? probe})
-    : _probe = probe ?? swd.Probe(useAt32Loader: true);
+  SwdartProbeSession({swd.Probe? probe, bool loaderDiagnostics = false})
+    : _probe =
+          probe ??
+          swd.Probe(useAt32Loader: true, loaderDiagnostics: loaderDiagnostics);
 
   final swd.Probe _probe;
 
   /// The x3utils WebUSB path opts into the hardware-tested AT32 SRAM loader.
   bool get usesAt32Loader => _probe.useAt32Loader;
+
+  /// Opt-in verbose SRAM-loader diagnostics (baseline + per-chunk logs).
+  bool get usesLoaderDiagnostics => _probe.loaderDiagnostics;
 
   @override
   void onLog(void Function(String line) sink) => _probe.onLog(sink);
@@ -124,8 +129,10 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
     this.enableGenuineNrst = false,
     this.enablePowerRace = false,
     this.capabilityOverride,
-  }) : _sessionFactory = sessionFactory ?? SwdartProbeSession.new,
-       _deviceStatus = _toHardwareDeviceStatus(initialStlinkStatus) {
+  }) : _deviceStatus = _toHardwareDeviceStatus(initialStlinkStatus) {
+    _sessionFactory =
+        sessionFactory ??
+        () => SwdartProbeSession(loaderDiagnostics: loaderDiagnostics);
     watchStlinkSelection((status) {
       _deviceStatus = _toHardwareDeviceStatus(status);
       _deviceDisconnected =
@@ -135,11 +142,15 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
     });
   }
 
-  final SwdartSessionFactory _sessionFactory;
+  late final SwdartSessionFactory _sessionFactory;
   final bool enableCloneC45;
   final bool enableGenuineNrst;
   final bool enablePowerRace;
   final HardwareCapabilities? capabilityOverride;
+
+  /// Opt-in verbose SRAM-loader diagnostics for sessions this backend creates.
+  /// Read at session creation, so a settings change applies to the next run.
+  bool loaderDiagnostics = false;
   SwdartSession? _activeSession;
   bool _cancelled = false;
   bool _deviceDisconnected = false;

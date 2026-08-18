@@ -243,6 +243,14 @@ void main() {
     );
   });
 
+  test('loader diagnostics stay off unless the session opts in', () {
+    expect(SwdartProbeSession().usesLoaderDiagnostics, isFalse);
+    expect(
+      SwdartProbeSession(loaderDiagnostics: true).usesLoaderDiagnostics,
+      isTrue,
+    );
+  });
+
   test(
     'Check accepts a known AT32F415 and forwards only session logs',
     () async {

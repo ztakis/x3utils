@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:x3utils_flutter/app_controller.dart';
 import 'package:x3utils_flutter/engine/desktop_backend_router.dart';
 import 'package:x3utils_flutter/engine/hardware_backend.dart';
+import 'package:x3utils_flutter/engine/swdart_backend.dart';
 import 'package:x3utils_flutter/main.dart';
 import 'package:x3utils_flutter/models.dart';
 
@@ -319,5 +320,48 @@ void main() {
       prefs.getString('desktopHardwareBackend'),
       DesktopBackendSelection.swdart.name,
     );
+  });
+
+  test(
+    'Advanced logging toggle persists and reaches the swdart backend',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final swdart = SwdartBackend();
+      final controller = AppController(
+        backend: DesktopBackendRouter(
+          openOcd: _RecordingBackend('OpenOCD', _fullCapabilities),
+          swdart: swdart,
+        ),
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.loaderDiagnosticsAvailable, isTrue);
+      expect(controller.loaderDiagnostics, isFalse);
+      expect(swdart.loaderDiagnostics, isFalse);
+
+      controller.setLoaderDiagnostics(true);
+      expect(swdart.loaderDiagnostics, isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('loaderDiagnostics'), isTrue);
+    },
+  );
+
+  test('saved Advanced logging preference is applied at startup', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'loaderDiagnostics': true,
+    });
+    final swdart = SwdartBackend();
+    final controller = AppController(
+      backend: DesktopBackendRouter(
+        openOcd: _RecordingBackend('OpenOCD', _fullCapabilities),
+        swdart: swdart,
+      ),
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.loaderDiagnostics, isTrue);
+    expect(swdart.loaderDiagnostics, isTrue);
   });
 }

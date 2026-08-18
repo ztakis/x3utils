@@ -835,6 +835,38 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(height: 14),
                           ],
+                          if (c.loaderDiagnosticsAvailable) ...[
+                            _SettingRow(
+                              label: 'Advanced logging',
+                              child: Transform.scale(
+                                scale: 0.8,
+                                alignment: Alignment.centerRight,
+                                child: Switch(
+                                  key: const ValueKey(
+                                    'loader-diagnostics-switch',
+                                  ),
+                                  value: c.loaderDiagnostics,
+                                  activeThumbColor: AppColors.brand,
+                                  onChanged: (value) {
+                                    c.setLoaderDiagnostics(value);
+                                    setLocal(() {});
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'swdart engine only. Logs a register baseline '
+                              'before flashing and every programming chunk, '
+                              'so an intermittent loader failure leaves full '
+                              'evidence. Logs get longer.',
+                              style: TextStyle(
+                                color: AppColors.mut,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
                           if (!c.phoneMode) ...[
                             _SettingRow(
                               label: 'Default connection',

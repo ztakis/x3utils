@@ -102,8 +102,7 @@ class AppController extends ChangeNotifier {
        // Defaults to androidMode, so the APK and both desktop builds are
        // unaffected by the existence of this flag. Only lib/main_mobile.dart
        // passes it explicitly.
-       _phoneMode =
-           phoneMode ?? androidMode ?? (!kIsWeb && Platform.isAndroid),
+       _phoneMode = phoneMode ?? androidMode ?? (!kIsWeb && Platform.isAndroid),
        _backupDownloader = backupDownloader ?? downloadBackupBytes,
        _androidBackupPublisher =
            androidBackupPublisher ?? publishAndroidBackup {
@@ -343,6 +342,8 @@ class AppController extends ChangeNotifier {
         !_browserMode &&
         !_androidMode &&
         (_prefs!.getBool('logToFile') ?? false);
+    loaderDiagnostics = _prefs!.getBool('loaderDiagnostics') ?? false;
+    _applyLoaderDiagnostics();
     notifyListeners();
   }
 
@@ -350,6 +351,33 @@ class AppController extends ChangeNotifier {
     logToFile = !logToFile;
     _prefs?.setBool('logToFile', logToFile);
     notifyListeners();
+  }
+
+  // ── Advanced logging (persisted) ──────────────────────────────────────────
+  // Opt-in swdart SRAM-loader diagnostics: register baseline before flashing
+  // plus per-chunk programming logs. Exists to make the intermittent loader
+  // failure self-documenting on the first real recurrence.
+  bool loaderDiagnostics = false;
+
+  /// The toggle only means something where a swdart engine can run: always on
+  /// Web/Android, and on desktop through the backend selector.
+  bool get loaderDiagnosticsAvailable =>
+      _backend is SwdartBackend ||
+      _desktopBackendRouter?.swdart is SwdartBackend;
+
+  void setLoaderDiagnostics(bool value) {
+    loaderDiagnostics = value;
+    _prefs?.setBool('loaderDiagnostics', value);
+    _applyLoaderDiagnostics();
+    notifyListeners();
+  }
+
+  void _applyLoaderDiagnostics() {
+    final backend = _backend;
+    final swdart = backend is SwdartBackend
+        ? backend
+        : _desktopBackendRouter?.swdart;
+    if (swdart is SwdartBackend) swdart.loaderDiagnostics = loaderDiagnostics;
   }
 
   int get accentIndex => accentNotifier.value;
