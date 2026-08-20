@@ -45,6 +45,7 @@ const _crmHickstbl = 1 << 1;
 const _dbgmcuCr = 0xe0042004;
 const _vtor = 0xe000ed08;
 const _wdtBase = 0x40003000;
+const _wdtReload = 0xaaaa;
 
 class At32Flash implements FlashDriver {
   At32Flash(
@@ -96,6 +97,7 @@ class At32Flash implements FlashDriver {
     if (!await _core.isHalted()) {
       throw SwdException('core must be halted to preflight the flash loader');
     }
+    await _reloadWatchdog('preflight');
     await runLoader(
       _probe,
       _core,
@@ -111,6 +113,15 @@ class At32Flash implements FlashDriver {
       context: 'preflight',
       baselineResetFlags: _loaderBaselineResetFlags,
     );
+  }
+
+  Future<void> _reloadWatchdog(String context) async {
+    // DBGMCU_CR freezes WDT only while the core is halted. Give every
+    // target-side loader run a full watchdog period before resuming it.
+    await _probe.writeDebugReg(_wdtBase, _wdtReload);
+    if (loaderDiagnostics) {
+      onLog?.call('[flash:loader] watchdog reloaded before $context');
+    }
   }
 
   Future<int?> _tryDiagnosticRead(int address) async {
@@ -428,6 +439,7 @@ class At32Flash implements FlashDriver {
         );
         await _probe.writeDebugReg(_atCtrl, _ctrlFprgm);
         try {
+          await _reloadWatchdog('chunk $chunkIndex/$chunks');
           await runLoader(
             _probe,
             _core,

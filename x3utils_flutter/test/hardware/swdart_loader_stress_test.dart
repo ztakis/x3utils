@@ -1,7 +1,8 @@
 // Destructive diagnostic test for an explicitly sacrificial AT32F415CBT7.
 // It captures the board's full flash before the first erase, then performs
 // fresh-session erase/program/verify cycles followed by independent full-flash
-// readbacks. It stops on the first failure and never retries after erase.
+// readbacks while the target remains halted. It stops on the first failure,
+// never retries after erase, and leaves the target halted for a power cycle.
 //
 // Use the guarded launcher from the package root:
 //   dart run tool/swdart_loader_stress.dart \
@@ -122,9 +123,9 @@ Future<void> _programCycle(
       golden,
       onStage: (stage) => transcript.log('[cycle $cycle] stage=$stage'),
     );
-    await probe.resetRun();
   } finally {
-    // Cleanup only: never reconnect, retry, or attempt recovery here.
+    // Keep the target halted so application-owned flash cannot change before
+    // the fresh-session readback. Never retry or attempt recovery here.
     await probe.disconnect();
   }
 }
@@ -143,14 +144,41 @@ Future<Uint8List> _readbackCycle(int cycle, _Transcript transcript) async {
   }
 }
 
-int? _firstDifference(Uint8List expected, Uint8List actual) {
+class _DifferenceSummary {
+  const _DifferenceSummary({
+    required this.count,
+    required this.first,
+    required this.last,
+  });
+
+  final int count;
+  final int first;
+  final int last;
+}
+
+_DifferenceSummary? _differences(Uint8List expected, Uint8List actual) {
   final common = expected.length < actual.length
       ? expected.length
       : actual.length;
+  var count = 0;
+  int? first;
+  int? last;
   for (var i = 0; i < common; i++) {
-    if (expected[i] != actual[i]) return i;
+    if (expected[i] != actual[i]) {
+      first ??= i;
+      last = i;
+      count++;
+    }
   }
-  return expected.length == actual.length ? null : common;
+  if (expected.length != actual.length) {
+    first ??= common;
+    last =
+        (expected.length > actual.length ? expected.length : actual.length) - 1;
+    count += (expected.length - actual.length).abs();
+  }
+  return first == null
+      ? null
+      : _DifferenceSummary(count: count, first: first, last: last!);
 }
 
 Future<void> _writeSummary(File file, Map<String, Object?> summary) =>
@@ -186,6 +214,10 @@ Future<void> _runStress() async {
   transcript.log('== swdart SRAM-loader destructive stress test ==');
   transcript.log('output=${output.absolute.path}');
   transcript.log('requested cycles=$_cycles; stop on first failure');
+  transcript.log(
+    'target remains halted between program and readback; power-cycle it after '
+    'the test',
+  );
 
   Object? failure;
   StackTrace? failureStack;
@@ -214,18 +246,36 @@ Future<void> _runStress() async {
       cycleResult['programMs'] = programWatch.elapsedMilliseconds;
       await transcript.flush();
 
-      transcript.log('== cycle $cycle/$_cycles: fresh readback ==');
+      transcript.log('== cycle $cycle/$_cycles: fresh halted readback ==');
       final readWatch = Stopwatch()..start();
       final readback = await _readbackCycle(cycle, transcript);
       readWatch.stop();
       final readbackHash = _hash(readback);
-      final firstDifference = _firstDifference(golden, readback);
+      final differences = _differences(golden, readback);
       cycleResult['readbackMs'] = readWatch.elapsedMilliseconds;
       cycleResult['readbackSha256'] = readbackHash;
-      if (firstDifference != null) {
+      if (differences != null) {
+        final failedReadbackFile = File(
+          '${output.path}${Platform.pathSeparator}'
+          'cycle_${cycle.toString().padLeft(3, '0')}_failed_readback.bin',
+        );
+        await failedReadbackFile.writeAsBytes(readback, flush: true);
+        cycleResult['result'] = 'fail';
+        cycleResult['differenceCount'] = differences.count;
+        cycleResult['firstDifferenceOffset'] = differences.first;
+        cycleResult['lastDifferenceOffset'] = differences.last;
+        cycleResult['failedReadbackFile'] = failedReadbackFile.absolute.path;
+        transcript.log(
+          'cycle $cycle mismatch evidence saved to '
+          '${failedReadbackFile.absolute.path}; differences=${differences.count}, '
+          'first=0x${differences.first.toRadixString(16)}, '
+          'last=0x${differences.last.toRadixString(16)}',
+        );
         throw SwdException(
           'cycle $cycle independent readback differs at '
-          '0x${firstDifference.toRadixString(16)}; '
+          '0x${differences.first.toRadixString(16)} '
+          '(${differences.count} differing bytes, last at '
+          '0x${differences.last.toRadixString(16)}); '
           'expected sha256=$goldenHash, actual sha256=$readbackHash',
         );
       }
@@ -241,6 +291,7 @@ Future<void> _runStress() async {
 
     summary['result'] = 'pass';
     transcript.log('PASS: completed all $_cycles cycles');
+    transcript.log('Target is halted; power-cycle it before normal use.');
   } catch (error, stackTrace) {
     failure = error;
     failureStack = stackTrace;

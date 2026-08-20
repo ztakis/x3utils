@@ -337,6 +337,22 @@ class _VtorRejectingProbe extends _RecordingProbe {
   }
 }
 
+class _SecondWatchdogReloadFailingProbe extends _RecordingProbe {
+  int reloads = 0;
+
+  @override
+  Future<void> writeDebugReg(int address, int value) async {
+    if (address == 0x40003000 && value == 0xaaaa) {
+      reloads++;
+      if (reloads == 2) {
+        debugWrites.add((address, value));
+        throw SwdException('watchdog reload failed');
+      }
+    }
+    await super.writeDebugReg(address, value);
+  }
+}
+
 class _ProtectionProbe extends _RecordingProbe {
   _ProtectionProbe({
     this.failOptionWrite = false,
@@ -763,6 +779,20 @@ void main() {
       [0, 0x100],
       reason: 'count-zero preflight must precede the real loader run',
     );
+    expect(
+      probe.debugWrites.where(
+        (write) =>
+            (write.$1 == 0x40003000 && write.$2 == 0xaaaa) ||
+            (write.$1 == dhcsr && write.$2 == 0xa05f0009),
+      ),
+      [
+        (0x40003000, 0xaaaa),
+        (dhcsr, 0xa05f0009),
+        (0x40003000, 0xaaaa),
+        (dhcsr, 0xa05f0009),
+      ],
+      reason: 'preflight and every chunk must reload WDT before core resume',
+    );
     final ctrlWrites = probe.debugWrites
         .where((write) => write.$1 == 0x40022010)
         .map((write) => write.$2)
@@ -770,6 +800,47 @@ void main() {
     expect(ctrlWrites, contains(1));
     expect(ctrlWrites.last & (1 << 7), 1 << 7);
   });
+
+  test(
+    'failed chunk watchdog reload aborts without resuming or fallback',
+    () async {
+      final probe = _SecondWatchdogReloadFailingProbe();
+      final driver = At32Flash(
+        probe,
+        CortexM(probe),
+        1024,
+        32 * 1024,
+        useLoader: true,
+      );
+
+      await expectLater(
+        driver.program(0x08001000, Uint8List(0x400)),
+        throwsA(
+          isA<SwdException>().having(
+            (error) => error.message,
+            'message',
+            'watchdog reload failed',
+          ),
+        ),
+      );
+
+      expect(probe.reloads, 2);
+      expect(
+        probe.debugWrites.where(
+          (write) => write.$1 == dhcsr && write.$2 == 0xa05f0009,
+        ),
+        hasLength(1),
+        reason: 'only the successful preflight may resume the target',
+      );
+      expect(
+        probe.memoryWrites.where(
+          (write) => write.$1 >= 0x08000000 && write.$1 < 0x08020000,
+        ),
+        isEmpty,
+        reason: 'a failed loader reload must not select direct writes',
+      );
+    },
+  );
 
   test('opt-in loader diagnostics log baseline and every chunk', () async {
     final probe = _RecordingProbe()
@@ -881,6 +952,11 @@ void main() {
 
     expect(probe.memoryWrites.single.$1, 0x08000000);
     expect(probe.regWrites, isEmpty);
+    expect(
+      probe.debugWrites.where((write) => write.$1 == 0x40003000),
+      isEmpty,
+      reason: 'the direct path must not alter watchdog state',
+    );
   });
 
   test('exact AT32F415CBT7 ID remains the only tested write target', () async {
