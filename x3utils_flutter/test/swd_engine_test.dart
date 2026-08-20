@@ -304,6 +304,22 @@ class _LoaderPreflightTimeoutProbe extends _RecordingProbe {
   }
 }
 
+/// Reports `S_RESET_ST` on one poll while the injected routine is running, then
+/// goes back to a plain not-halted status. This is what a target that restarts
+/// mid-chunk looks like: the bit clears on read, so exactly one poll sees it.
+class _LoaderResetDuringRunProbe extends _LoaderPreflightTimeoutProbe {
+  bool _reportedReset = false;
+
+  @override
+  Future<int> readDebugReg(int address) async {
+    if (address == dhcsr && _loaderRunning && !_reportedReset) {
+      _reportedReset = true;
+      return 1 << 25;
+    }
+    return super.readDebugReg(address);
+  }
+}
+
 class _ProtectionProbe extends _RecordingProbe {
   _ProtectionProbe({
     this.failOptionWrite = false,
@@ -522,6 +538,7 @@ void main() {
               contains('PC='),
               contains('reset=watchdog'),
               contains('new-since-baseline=watchdog'),
+              contains('core-reset-seen=no'),
               contains('DBGMCU_CR=0x00000307'),
               contains('WDT_RLD=0x000004E1'),
               contains('FLASH_ADDR=0x08001000'),
@@ -531,6 +548,56 @@ void main() {
       );
     },
   );
+
+  test(
+    'a reset during the loader run is latched, not lost to the poll',
+    () async {
+      final probe = _LoaderResetDuringRunProbe();
+      final core = CortexM(probe);
+
+      await expectLater(
+        runLoader(
+          probe,
+          core,
+          wordLoader,
+          loaderAddr: 0x20000000,
+          srcAddr: 0x20000100,
+          dstAddr: 0x08001000,
+          count: 64,
+          flashRegBase: 0x40022000,
+          timeoutMs: 1,
+          context: 'chunk 9/16',
+        ),
+        throwsA(
+          isA<LoaderHaltTimeout>().having(
+            (error) => error.message,
+            'message',
+            contains('core-reset-seen=yes'),
+          ),
+        ),
+      );
+      expect(
+        core.sawCoreResetSinceResume,
+        isTrue,
+        reason: 'S_RESET_ST clears on read, so only the latch preserves it',
+      );
+    },
+  );
+
+  test('the reset latch clears at each masked resume', () async {
+    final probe = _RecordingProbe();
+    final core = CortexM(probe)..sawCoreResetSinceResume = true;
+
+    await core.resumeMasked();
+
+    expect(
+      core.sawCoreResetSinceResume,
+      isFalse,
+      reason:
+          'a stale bit from an earlier reset must not read as a restart '
+          'during this run',
+    );
+  });
 
   test('non-zero loader remainder is a programming failure', () async {
     final probe = _RecordingProbe(remaining: 7);

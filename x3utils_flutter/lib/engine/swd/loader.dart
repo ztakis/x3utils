@@ -171,6 +171,9 @@ Future<void> runLoader(
       'within $timeoutMs ms; dst=${hex(dstAddr)}, count=$count, '
       '${_diagnostic("DHCSR-before-halt", runningDhcsr)}, '
       'forced-halt=${forcedHalt ? "yes" : "no"}, '
+      // Latched across the whole run: DHCSR.S_RESET_ST clears on read, so the
+      // poll loop above would otherwise have discarded it.
+      'core-reset-seen=${core.sawCoreResetSinceResume ? "yes" : "no"}, '
       '${_diagnostic("r0", r0)}, ${_diagnostic("r1", r1)}, '
       '${_diagnostic("r2", r2)}, ${_diagnostic("r3", r3)}, '
       '${_diagnostic("SP", sp)}, ${_diagnostic("LR", lr)}, '
