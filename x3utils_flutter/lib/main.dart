@@ -835,6 +835,38 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(height: 14),
                           ],
+                          if (c.desktopSwdartLoaderSelectorAvailable) ...[
+                            _SettingRow(
+                              label: 'SRAM loader',
+                              child: Transform.scale(
+                                scale: 0.8,
+                                alignment: Alignment.centerRight,
+                                child: Switch(
+                                  key: const ValueKey(
+                                    'desktop-swdart-loader-switch',
+                                  ),
+                                  value: c.useSwdartLoaderDesktop,
+                                  activeThumbColor: AppColors.brand,
+                                  onChanged: (value) {
+                                    c.setUseSwdartLoaderDesktop(value);
+                                    setLocal(() {});
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Experimental swdart programming accelerator. '
+                              'Turn OFF to use slower direct 32-bit word '
+                              'writes for desktop A/B testing. The choice '
+                              'applies to the next hardware session.',
+                              style: TextStyle(
+                                color: AppColors.mut,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
                           if (c.loaderDiagnosticsAvailable) ...[
                             _SettingRow(
                               label: 'Advanced logging',
@@ -856,10 +888,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(height: 4),
                             const Text(
-                              'swdart engine only. Logs a register baseline '
-                              'before flashing and every programming chunk, '
-                              'so an intermittent loader failure leaves full '
-                              'evidence. Logs get longer.',
+                              'swdart SRAM-loader only. When the loader is '
+                              'enabled, logs a register baseline before '
+                              'flashing and every programming chunk, so an '
+                              'intermittent failure leaves full evidence. '
+                              'Logs get longer.',
                               style: TextStyle(
                                 color: AppColors.mut,
                                 fontSize: 12,

@@ -236,6 +236,7 @@ HardwareCallbacks _callbacks({void Function(String line)? onLine}) =>
 void main() {
   test('default x3utils probe session enables the AT32 SRAM loader', () {
     expect(SwdartProbeSession().usesAt32Loader, isTrue);
+    expect(SwdartProbeSession(useAt32Loader: false).usesAt32Loader, isFalse);
     expect(
       SwdartProbeSession(probe: swd.Probe()).usesAt32Loader,
       isFalse,

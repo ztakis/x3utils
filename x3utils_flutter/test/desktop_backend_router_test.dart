@@ -287,9 +287,9 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     final controller = AppController(
-      backend: _router(
-        _RecordingBackend('OpenOCD', _fullCapabilities),
-        _RecordingBackend('swdart', _currentSwdartCapabilities),
+      backend: DesktopBackendRouter(
+        openOcd: _RecordingBackend('OpenOCD', _fullCapabilities),
+        swdart: SwdartBackend(),
       ),
     );
     addTearDown(controller.dispose);
@@ -320,6 +320,38 @@ void main() {
       prefs.getString('desktopHardwareBackend'),
       DesktopBackendSelection.swdart.name,
     );
+
+    final loaderSwitch = find.byKey(
+      const ValueKey('desktop-swdart-loader-switch'),
+    );
+    expect(loaderSwitch, findsOneWidget);
+    expect(controller.useSwdartLoaderDesktop, isTrue);
+    await tester.tap(loaderSwitch);
+    await tester.pump();
+    expect(controller.useSwdartLoaderDesktop, isFalse);
+    expect(prefs.getBool('desktopSwdartLoader'), isFalse);
+    expect(controller.engineDescription, contains('direct word writes'));
+  });
+
+  test('saved desktop direct-write preference is applied at startup', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'desktopHardwareBackend': DesktopBackendSelection.swdart.name,
+      'desktopSwdartLoader': false,
+    });
+    final swdart = SwdartBackend();
+    final controller = AppController(
+      backend: DesktopBackendRouter(
+        openOcd: _RecordingBackend('OpenOCD', _fullCapabilities),
+        swdart: swdart,
+      ),
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.desktopSwdartLoaderSelectorAvailable, isTrue);
+    expect(controller.useSwdartLoaderDesktop, isFalse);
+    expect(swdart.useAt32Loader, isFalse);
+    expect(controller.engineDescription, contains('direct word writes'));
   });
 
   test(

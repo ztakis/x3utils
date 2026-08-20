@@ -234,13 +234,30 @@ class AppController extends ChangeNotifier {
   bool get useSwdartDesktop =>
       _desktopBackendRouter?.selection == DesktopBackendSelection.swdart;
 
+  SwdartBackend? get _desktopSwdartBackend {
+    final swdart = _desktopBackendRouter?.swdart;
+    return swdart is SwdartBackend ? swdart : null;
+  }
+
+  bool get desktopSwdartLoaderSelectorAvailable =>
+      desktopBackendSelectorAvailable &&
+      useSwdartDesktop &&
+      _desktopSwdartBackend != null;
+
+  bool get useSwdartLoaderDesktop =>
+      _desktopSwdartBackend?.useAt32Loader ?? true;
+
   String get engineDescription {
     if (_browserMode) return 'Engine: swdart · WebUSB · AT32F415';
     if (_androidMode) {
       return 'Engine: swdart · Android USB-host · AT32F415';
     }
     if (useSwdartDesktop) {
-      return 'Engine: swdart experimental · native libusb · AT32F415';
+      final programming = useSwdartLoaderDesktop
+          ? 'SRAM loader'
+          : 'direct word writes';
+      return 'Engine: swdart experimental · native libusb · AT32F415 · '
+          '$programming';
     }
     return 'Engine: bundled OpenOCD (frozen) · AT32F415';
   }
@@ -262,6 +279,10 @@ class AppController extends ChangeNotifier {
             ? DesktopBackendSelection.swdart
             : DesktopBackendSelection.openOcd,
       );
+      final swdart = _desktopSwdartBackend;
+      if (swdart != null) {
+        swdart.useAt32Loader = _prefs!.getBool('desktopSwdartLoader') ?? true;
+      }
       _syncBackendStatus();
     }
     // The old `backupFolder` key (v1.2.1 and earlier) is never read again. The
@@ -378,6 +399,18 @@ class AppController extends ChangeNotifier {
         ? backend
         : _desktopBackendRouter?.swdart;
     if (swdart is SwdartBackend) swdart.loaderDiagnostics = loaderDiagnostics;
+  }
+
+  // ── Desktop swdart programming path (persisted) ─────────────────────────
+  // This A/B control is intentionally desktop-only. Web and Android retain
+  // their existing SRAM-loader behavior while the direct path is evaluated.
+  void setUseSwdartLoaderDesktop(bool value) {
+    if (running) return;
+    final swdart = _desktopSwdartBackend;
+    if (swdart == null) return;
+    swdart.useAt32Loader = value;
+    _prefs?.setBool('desktopSwdartLoader', value);
+    notifyListeners();
   }
 
   int get accentIndex => accentNotifier.value;

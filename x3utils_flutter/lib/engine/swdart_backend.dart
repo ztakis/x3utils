@@ -54,10 +54,16 @@ abstract interface class SwdartSession {
 }
 
 class SwdartProbeSession implements SwdartSession {
-  SwdartProbeSession({swd.Probe? probe, bool loaderDiagnostics = false})
-    : _probe =
-          probe ??
-          swd.Probe(useAt32Loader: true, loaderDiagnostics: loaderDiagnostics);
+  SwdartProbeSession({
+    swd.Probe? probe,
+    bool useAt32Loader = true,
+    bool loaderDiagnostics = false,
+  }) : _probe =
+           probe ??
+           swd.Probe(
+             useAt32Loader: useAt32Loader,
+             loaderDiagnostics: loaderDiagnostics,
+           );
 
   final swd.Probe _probe;
 
@@ -132,7 +138,10 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
   }) : _deviceStatus = _toHardwareDeviceStatus(initialStlinkStatus) {
     _sessionFactory =
         sessionFactory ??
-        () => SwdartProbeSession(loaderDiagnostics: loaderDiagnostics);
+        () => SwdartProbeSession(
+          useAt32Loader: useAt32Loader,
+          loaderDiagnostics: loaderDiagnostics,
+        );
     watchStlinkSelection((status) {
       _deviceStatus = _toHardwareDeviceStatus(status);
       _deviceDisconnected =
@@ -151,6 +160,11 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
   /// Opt-in verbose SRAM-loader diagnostics for sessions this backend creates.
   /// Read at session creation, so a settings change applies to the next run.
   bool loaderDiagnostics = false;
+
+  /// Selects the programming implementation for sessions this backend creates.
+  /// Desktop exposes this as an experimental A/B setting; Web and Android keep
+  /// the default loader path unless their constructors explicitly opt out.
+  bool useAt32Loader = true;
   SwdartSession? _activeSession;
   bool _cancelled = false;
   bool _deviceDisconnected = false;
