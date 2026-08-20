@@ -43,6 +43,7 @@ const _crmCtrlsts = 0x40021024;
 const _crmHicken = 1 << 0;
 const _crmHickstbl = 1 << 1;
 const _dbgmcuCr = 0xe0042004;
+const _vtor = 0xe000ed08;
 const _wdtBase = 0x40003000;
 
 class At32Flash implements FlashDriver {
@@ -69,14 +70,18 @@ class At32Flash implements FlashDriver {
   bool _usePreparedLoader = false;
   int? _loaderBaselineResetFlags;
 
-  static const _loaderAddr = 0x20000000;
-  static const _bufferAddr = 0x20000100;
+  static const _sramBase = 0x20000000;
+  static const _vectorTableAddr = _sramBase;
+  static const _loaderAddr = _sramBase + loaderVectorTableBytes;
+  static const _bufferAddr = _sramBase + 0x800;
+  static const _loaderStackTop = _bufferAddr;
 
   @override
   int get programAlign => 4;
 
   int get loaderBufferSize {
-    final usable = ((_sramBytes - 0x400) >> 2) << 2;
+    final reserved = _bufferAddr - _sramBase;
+    final usable = ((_sramBytes - reserved) >> 2) << 2;
     final size = usable < 0x2000 ? usable : 0x2000;
     if (size < 0x400) {
       throw SwdException(
@@ -95,7 +100,9 @@ class At32Flash implements FlashDriver {
       _probe,
       _core,
       wordLoader,
+      vectorTableAddr: _vectorTableAddr,
       loaderAddr: _loaderAddr,
+      stackTop: _loaderStackTop,
       srcAddr: _bufferAddr,
       dstAddr: 0x08000000,
       count: 0,
@@ -118,6 +125,7 @@ class At32Flash implements FlashDriver {
       '$name=${value == null ? "unavailable" : hex(value)}';
 
   Future<void> _captureLoaderBaseline() async {
+    final vtor = await _tryDiagnosticRead(_vtor);
     final crmCtrlsts = await _tryDiagnosticRead(_crmCtrlsts);
     final dbgmcuCr = await _tryDiagnosticRead(_dbgmcuCr);
     final wdtDiv = await _tryDiagnosticRead(_wdtBase + 0x04);
@@ -130,6 +138,7 @@ class At32Flash implements FlashDriver {
     _loaderBaselineResetFlags = crmCtrlsts;
     onLog?.call(
       '[flash:loader] baseline '
+      '${_diagnostic("VTOR", vtor)}, '
       '${_diagnostic("CRM_CTRLSTS", crmCtrlsts)} '
       '(reset=${crmCtrlsts == null ? "unavailable" : decodeAt32ResetFlags(crmCtrlsts)}), '
       '${_diagnostic("DBGMCU_CR", dbgmcuCr)}, '
@@ -423,7 +432,9 @@ class At32Flash implements FlashDriver {
             _probe,
             _core,
             wordLoader,
+            vectorTableAddr: _vectorTableAddr,
             loaderAddr: _loaderAddr,
+            stackTop: _loaderStackTop,
             srcAddr: _bufferAddr,
             dstAddr: destination,
             count: chunkLen >> 2,

@@ -7,12 +7,15 @@ import 'package:x3utils_flutter/engine/swd/probe.dart'
 import 'package:x3utils_flutter/engine/swd/swd.dart';
 
 const _demcr = 0xe000edfc;
+const _vtor = 0xe000ed08;
+const _loaderVectorTableBytes = 0x400;
 
 class _RecordingProbe implements DebugProbe {
-  _RecordingProbe({this.remaining = 0, this.fpu = false});
+  _RecordingProbe({this.remaining = 0, this.fpu = false, this.haltedXpsr = 0});
 
   final int remaining;
   final bool fpu;
+  final int haltedXpsr;
   final registers = <int, int>{0xe000edf0: 1 << 17, 0x40022010: 1 << 9};
   final debugWrites = <(int, int)>[];
   final memoryWrites = <(int, List<int>)>[];
@@ -52,8 +55,11 @@ class _RecordingProbe implements DebugProbe {
   Future<void> driveNrst(int state) async => nrstStates.add(state);
 
   @override
-  Future<int> readReg(int index) async =>
-      index == 2 ? (_count == 0 ? 0 : remaining) : 0;
+  Future<int> readReg(int index) async {
+    if (index == 2) return _count == 0 ? 0 : remaining;
+    if (index == 16) return haltedXpsr;
+    return 0;
+  }
 
   @override
   Future<void> writeReg(int index, int value) async {
@@ -296,7 +302,7 @@ class _LoaderPreflightTimeoutProbe extends _RecordingProbe {
 
   @override
   Future<void> writeMem32(int address, Uint8List data) async {
-    if (address == 0x20000000) flashEvents.add('preflight');
+    if (address == 0x20000400) flashEvents.add('preflight');
     if (address >= 0x08000000 && address < 0x08020000) {
       flashEvents.add('direct-write');
     }
@@ -317,6 +323,17 @@ class _LoaderResetDuringRunProbe extends _LoaderPreflightTimeoutProbe {
       return 1 << 25;
     }
     return super.readDebugReg(address);
+  }
+}
+
+class _VtorRejectingProbe extends _RecordingProbe {
+  @override
+  Future<void> writeDebugReg(int address, int value) async {
+    if (address == _vtor) {
+      debugWrites.add((address, value));
+      return;
+    }
+    await super.writeDebugReg(address, value);
   }
 }
 
@@ -463,22 +480,41 @@ void main() {
       probe,
       CortexM(probe),
       wordLoader,
-      loaderAddr: 0x20000000,
-      srcAddr: 0x20000100,
+      vectorTableAddr: 0x20000000,
+      loaderAddr: 0x20000400,
+      stackTop: 0x20000800,
+      srcAddr: 0x20000800,
       dstAddr: 0x08001000,
       count: 64,
       flashRegBase: 0x40022000,
     );
 
-    expect(probe.memoryWrites.single.$1, 0x20000000);
-    expect(probe.memoryWrites.single.$2, hasLength(36));
+    expect(probe.memoryWrites, hasLength(2));
+    final vectors = probe.memoryWrites.first;
+    expect(vectors.$1, 0x20000000);
+    expect(vectors.$2, hasLength(_loaderVectorTableBytes));
+    final vectorWords = ByteData.sublistView(Uint8List.fromList(vectors.$2));
+    expect(vectorWords.getUint32(0, Endian.little), 0x20000800);
+    expect(vectorWords.getUint32(4, Endian.little), 0x20000425);
+    expect(
+      vectorWords.getUint32(_loaderVectorTableBytes - 4, Endian.little),
+      0x20000425,
+    );
+    expect(probe.memoryWrites.last.$1, 0x20000400);
+    expect(probe.memoryWrites.last.$2, hasLength(44));
+    expect(
+      probe.memoryWrites.last.$2.sublist(36),
+      [0xff, 0x22, 0x02, 0xbe, 0xfe, 0xe7, 0, 0],
+      reason: 'all vectors must land on movs r2,#0xff; bkpt #2; b .',
+    );
     expect(
       probe.regWrites,
       containsAllInOrder([
-        (0, 0x20000100),
+        (0, 0x20000800),
         (1, 0x08001000),
         (2, 64),
         (3, 0x40022000),
+        (13, 0x20000800),
       ]),
     );
     expect(
@@ -486,6 +522,79 @@ void main() {
           .where((write) => write.$1 == dhcsr)
           .map((write) => write.$2),
       containsAllInOrder([0xa05f000b, 0xa05f0009]),
+    );
+    expect(
+      probe.debugWrites
+          .where((write) => write.$1 == _vtor)
+          .map((write) => write.$2),
+      [0x20000000, 0],
+    );
+    expect(probe.registers[_vtor], 0);
+  });
+
+  test('SRAM loader exception trap fails closed and restores VTOR', () async {
+    final probe = _RecordingProbe(remaining: 0xff, haltedXpsr: 3)
+      ..registers[_vtor] = 0x08001000;
+
+    await expectLater(
+      runLoader(
+        probe,
+        CortexM(probe),
+        wordLoader,
+        vectorTableAddr: 0x20000000,
+        loaderAddr: 0x20000400,
+        stackTop: 0x20000800,
+        srcAddr: 0x20000800,
+        dstAddr: 0x08001000,
+        count: 64,
+        flashRegBase: 0x40022000,
+      ),
+      throwsA(
+        isA<SwdException>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains('trapped exception 3'),
+            contains('programming aborted'),
+          ),
+        ),
+      ),
+    );
+
+    expect(probe.registers[_vtor], 0x08001000);
+  });
+
+  test('SRAM loader refuses to run when VTOR does not latch', () async {
+    final probe = _VtorRejectingProbe();
+
+    await expectLater(
+      runLoader(
+        probe,
+        CortexM(probe),
+        wordLoader,
+        vectorTableAddr: 0x20000000,
+        loaderAddr: 0x20000400,
+        stackTop: 0x20000800,
+        srcAddr: 0x20000800,
+        dstAddr: 0x08001000,
+        count: 64,
+        flashRegBase: 0x40022000,
+      ),
+      throwsA(
+        isA<SwdException>().having(
+          (error) => error.message,
+          'message',
+          contains('VTOR did not latch'),
+        ),
+      ),
+    );
+
+    expect(
+      probe.debugWrites.where(
+        (write) => write.$1 == dhcsr && write.$2 == 0xa05f0009,
+      ),
+      isEmpty,
+      reason: 'the core must not resume without the SRAM vectors installed',
     );
   });
 
@@ -501,6 +610,7 @@ void main() {
     'loader timeout captures the halted core and peripheral state',
     () async {
       final probe = _LoaderPreflightTimeoutProbe()
+        ..registers[_vtor] = 0x08001000
         ..registers[0x40021024] = 1 << 29
         ..registers[0xe0042004] = 0x307
         ..registers[0x40003004] = 6
@@ -515,8 +625,10 @@ void main() {
           probe,
           CortexM(probe),
           wordLoader,
-          loaderAddr: 0x20000000,
-          srcAddr: 0x20000100,
+          vectorTableAddr: 0x20000000,
+          loaderAddr: 0x20000400,
+          stackTop: 0x20000800,
+          srcAddr: 0x20000800,
           dstAddr: 0x08001000,
           count: 64,
           flashRegBase: 0x40022000,
@@ -539,6 +651,8 @@ void main() {
               contains('reset=watchdog'),
               contains('new-since-baseline=watchdog'),
               contains('core-reset-seen=no'),
+              contains('VTOR-before=0x08001000'),
+              contains('VTOR-at-timeout=0x20000000'),
               contains('DBGMCU_CR=0x00000307'),
               contains('WDT_RLD=0x000004E1'),
               contains('FLASH_ADDR=0x08001000'),
@@ -546,6 +660,7 @@ void main() {
           ),
         ),
       );
+      expect(probe.registers[_vtor], 0x08001000);
     },
   );
 
@@ -560,8 +675,10 @@ void main() {
           probe,
           core,
           wordLoader,
-          loaderAddr: 0x20000000,
-          srcAddr: 0x20000100,
+          vectorTableAddr: 0x20000000,
+          loaderAddr: 0x20000400,
+          stackTop: 0x20000800,
+          srcAddr: 0x20000800,
           dstAddr: 0x08001000,
           count: 64,
           flashRegBase: 0x40022000,
@@ -607,8 +724,10 @@ void main() {
         probe,
         CortexM(probe),
         wordLoader,
-        loaderAddr: 0x20000000,
-        srcAddr: 0x20000100,
+        vectorTableAddr: 0x20000000,
+        loaderAddr: 0x20000400,
+        stackTop: 0x20000800,
+        srcAddr: 0x20000800,
         dstAddr: 0x08001000,
         count: 64,
         flashRegBase: 0x40022000,
@@ -636,7 +755,7 @@ void main() {
     await driver.program(0x08001000, Uint8List(0x400));
 
     expect(
-      probe.memoryWrites.where((write) => write.$1 == 0x20000100).single.$2,
+      probe.memoryWrites.where((write) => write.$1 == 0x20000800).single.$2,
       hasLength(0x400),
     );
     expect(
@@ -675,6 +794,7 @@ void main() {
       lines.first,
       allOf(
         startsWith('[flash:loader] baseline'),
+        contains('VTOR=0x00000000'),
         contains('reset=watchdog|power-on/reset'),
         contains('WDT_RLD=0x000004E1'),
       ),
