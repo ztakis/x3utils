@@ -273,11 +273,15 @@ class AppController extends ChangeNotifier {
     _prefs = await SharedPreferences.getInstance();
     final router = _desktopBackendRouter;
     if (router != null) {
+      // swdart is the shipping default from 2.1.0. The test is written against
+      // openOcd, not swdart, so an operator who explicitly chose OpenOCD keeps
+      // it: only that choice writes the openOcd key. An unset key is a fresh
+      // install and gets swdart. OpenOCD stays bundled and selectable.
       final saved = _prefs!.getString('desktopHardwareBackend');
       router.select(
-        saved == DesktopBackendSelection.swdart.name
-            ? DesktopBackendSelection.swdart
-            : DesktopBackendSelection.openOcd,
+        saved == DesktopBackendSelection.openOcd.name
+            ? DesktopBackendSelection.openOcd
+            : DesktopBackendSelection.swdart,
       );
       final swdart = _desktopSwdartBackend;
       if (swdart != null) {
@@ -363,7 +367,11 @@ class AppController extends ChangeNotifier {
         !_browserMode &&
         !_androidMode &&
         (_prefs!.getBool('logToFile') ?? false);
-    loaderDiagnostics = _prefs!.getBool('loaderDiagnostics') ?? false;
+    // ON by default from 2.1.0, on every output. The loader failure that took
+    // weeks to find was intermittent, so a field recurrence must arrive with
+    // its register baseline and per-chunk log already in the transcript. An
+    // operator who turns it off writes false and keeps it off.
+    loaderDiagnostics = _prefs!.getBool('loaderDiagnostics') ?? true;
     _applyLoaderDiagnostics();
     notifyListeners();
   }

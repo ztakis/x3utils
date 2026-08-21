@@ -224,11 +224,13 @@ void main() {
               .dy,
         ),
       );
+      // 830, not the old 824: the outer bottom padding went 20 -> 14 when the
+      // phone header was tightened to give the hero card its space back.
       expect(
         tester
             .getBottomLeft(find.byKey(const ValueKey('android-check-action')))
             .dy,
-        closeTo(824, 1),
+        closeTo(830, 1),
       );
       expect(tester.takeException(), isNull);
     },
@@ -885,11 +887,14 @@ void main() {
     controller.selectAction('flash_backup');
     await tester.pump();
 
+    // Both lines were deliberately removed from the phone hero to give the CTA
+    // its space back: the idle sub-line on every firmware screen, and the ZIP3
+    // hint inside the firmware bar. Desktop keeps its own longer wording.
     expect(
       find.text('Back up, write and verify the selected scope.'),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.text('ZIP3/ZIP3.2: select Slot 0.'), findsOneWidget);
+    expect(find.text('ZIP3/ZIP3.2: select Slot 0.'), findsNothing);
     final start = find.text('Start flash');
     final startButton = find
         .ancestor(of: start, matching: find.byType(InkWell))

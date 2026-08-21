@@ -803,103 +803,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (c.desktopBackendSelectorAvailable) ...[
-                            _SettingRow(
-                              label: 'swdart backend',
-                              child: Transform.scale(
-                                scale: 0.8,
-                                alignment: Alignment.centerRight,
-                                child: Switch(
-                                  key: const ValueKey(
-                                    'desktop-swdart-backend-switch',
-                                  ),
-                                  value: c.useSwdartDesktop,
-                                  activeThumbColor: AppColors.brand,
-                                  onChanged: (value) {
-                                    c.setUseSwdartDesktop(value);
-                                    setLocal(() {});
-                                  },
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Experimental global backend. When ON, every '
-                              'hardware action is sent only to swdart; there '
-                              'is no automatic OpenOCD fallback. Operations '
-                              'not implemented yet fail before hardware.',
-                              style: TextStyle(
-                                color: AppColors.mut,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                          ],
-                          if (c.desktopSwdartLoaderSelectorAvailable) ...[
-                            _SettingRow(
-                              label: 'SRAM loader',
-                              child: Transform.scale(
-                                scale: 0.8,
-                                alignment: Alignment.centerRight,
-                                child: Switch(
-                                  key: const ValueKey(
-                                    'desktop-swdart-loader-switch',
-                                  ),
-                                  value: c.useSwdartLoaderDesktop,
-                                  activeThumbColor: AppColors.brand,
-                                  onChanged: (value) {
-                                    c.setUseSwdartLoaderDesktop(value);
-                                    setLocal(() {});
-                                  },
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Experimental swdart programming accelerator. '
-                              'Turn OFF to use slower direct 32-bit word '
-                              'writes for desktop A/B testing. The choice '
-                              'applies to the next hardware session.',
-                              style: TextStyle(
-                                color: AppColors.mut,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                          ],
-                          if (c.loaderDiagnosticsAvailable) ...[
-                            _SettingRow(
-                              label: 'Advanced logging',
-                              child: Transform.scale(
-                                scale: 0.8,
-                                alignment: Alignment.centerRight,
-                                child: Switch(
-                                  key: const ValueKey(
-                                    'loader-diagnostics-switch',
-                                  ),
-                                  value: c.loaderDiagnostics,
-                                  activeThumbColor: AppColors.brand,
-                                  onChanged: (value) {
-                                    c.setLoaderDiagnostics(value);
-                                    setLocal(() {});
-                                  },
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'swdart SRAM-loader only. When the loader is '
-                              'enabled, logs a register baseline before '
-                              'flashing and every programming chunk, so an '
-                              'intermittent failure leaves full evidence. '
-                              'Logs get longer.',
-                              style: TextStyle(
-                                color: AppColors.mut,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                          ],
                           if (!c.phoneMode) ...[
                             _SettingRow(
                               label: 'Default connection',
@@ -1026,23 +929,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             )
                           else
                             _BackupSettingsSection(c: c),
-                          const Divider(color: AppColors.line, height: 28),
-                          Text(
-                            'x3utils  ·  v$kAppVersionLabel',
-                            style: const TextStyle(
-                              color: AppColors.dim,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            c.engineDescription,
-                            style: const TextStyle(
-                              color: AppColors.mut,
-                              fontSize: 12,
-                            ),
-                          ),
+                          ..._advancedSettings(setLocal),
                         ],
                       ),
                     ),
@@ -1067,6 +954,97 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  /// The experimental extras, at the end of Settings. They used to sit above
+  /// the everyday settings, and the version/engine lines used to close the
+  /// dialog; the version and the live engine line now live in About instead.
+  ///
+  /// Desktop carries the backend and loader switches as well, so it collapses
+  /// them behind a caret. Web and Android can only ever reach the one logging
+  /// switch, and a caret around a single row hides it for nothing.
+  List<Widget> _advancedSettings(StateSetter setLocal) {
+    final rows = <Widget>[
+      if (c.desktopBackendSelectorAvailable)
+        _advancedSwitch(
+          label: 'swdart backend',
+          switchKey: const ValueKey('desktop-swdart-backend-switch'),
+          value: c.useSwdartDesktop,
+          onChanged: (value) {
+            c.setUseSwdartDesktop(value);
+            setLocal(() {});
+          },
+          description:
+              'Experimental global backend. When ON, every hardware action '
+              'is sent only to swdart; there is no automatic OpenOCD '
+              'fallback. Operations not implemented yet fail before hardware.',
+        ),
+      if (c.desktopSwdartLoaderSelectorAvailable)
+        _advancedSwitch(
+          label: 'SRAM loader',
+          switchKey: const ValueKey('desktop-swdart-loader-switch'),
+          value: c.useSwdartLoaderDesktop,
+          onChanged: (value) {
+            c.setUseSwdartLoaderDesktop(value);
+            setLocal(() {});
+          },
+          description:
+              'Experimental swdart programming accelerator. Turn OFF to use '
+              'slower direct 32-bit word writes for desktop A/B testing. The '
+              'choice applies to the next hardware session.',
+        ),
+      if (c.loaderDiagnosticsAvailable)
+        _advancedSwitch(
+          label: 'Advanced logging',
+          switchKey: const ValueKey('loader-diagnostics-switch'),
+          value: c.loaderDiagnostics,
+          onChanged: (value) {
+            c.setLoaderDiagnostics(value);
+            setLocal(() {});
+          },
+          description:
+              'swdart SRAM-loader only. When the loader is enabled, logs a '
+              'register baseline before flashing and every programming chunk, '
+              'so an intermittent failure leaves full evidence. Logs get '
+              'longer.',
+        ),
+    ];
+    if (rows.isEmpty) return const <Widget>[];
+    return [
+      const Divider(color: AppColors.line, height: 28),
+      if (rows.length == 1) rows.single else _AdvancedGroup(children: rows),
+    ];
+  }
+
+  Widget _advancedSwitch({
+    required String label,
+    required Key switchKey,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    required String description,
+  }) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _SettingRow(
+        label: label,
+        child: Transform.scale(
+          scale: 0.8,
+          alignment: Alignment.centerRight,
+          child: Switch(
+            key: switchKey,
+            value: value,
+            activeThumbColor: AppColors.brand,
+            onChanged: onChanged,
+          ),
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        description,
+        style: const TextStyle(color: AppColors.mut, fontSize: 12),
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1511,7 +1489,9 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
       key: const ValueKey('android-check-page'),
       color: AppColors.bg,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        // Tight on purpose. The hero card below is Expanded, so every pixel
+        // saved in this header lands in the card, where the CTA needs it.
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1555,7 +1535,7 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 10),
             const Text(
               'CONNECTION',
               style: TextStyle(
@@ -1597,7 +1577,7 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
                   return AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     margin: EdgeInsets.only(
-                      top: compact ? 16.0 : 20.0,
+                      top: compact ? 12.0 : 14.0,
                       bottom: verticalPadding,
                     ),
                     decoration: BoxDecoration(
@@ -1685,33 +1665,35 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
                                         color: AppColors.txt,
                                       ),
                                     ),
-                                    SizedBox(height: titleGap),
-                                    Text(
-                                      c.stage == StageState.idle
-                                          ? c.actionId == 'flash_backup'
-                                                ? 'Back up, write and verify the selected scope.'
-                                                : c.action.sub
-                                          : c.heroMessage,
-                                      textAlign: TextAlign.center,
-                                      maxLines:
-                                          compact &&
-                                              c.stage == StageState.idle &&
-                                              c.actionId == 'flash_backup'
-                                          ? 1
-                                          : compact
-                                          ? 2
-                                          : null,
-                                      overflow: compact
-                                          ? TextOverflow.ellipsis
-                                          : TextOverflow.clip,
-                                      style: TextStyle(
-                                        fontSize: compact ? 13 : 14,
-                                        height: compact ? 1.35 : 1.4,
-                                        color: c.stage == StageState.fail
-                                            ? AppColors.danger
-                                            : AppColors.dim,
+                                    // The idle sub-line is dropped on the two
+                                    // firmware screens. The title already
+                                    // names the action, the pinned Actions
+                                    // card repeats the same subtitle, and the
+                                    // firmware bar makes these the only phone
+                                    // screens where the CTA runs out of card.
+                                    // Every running/guided state keeps its
+                                    // message: that one is live evidence.
+                                    if (c.stage != StageState.idle ||
+                                        !c.action.needsFirmware) ...[
+                                      SizedBox(height: titleGap),
+                                      Text(
+                                        c.stage == StageState.idle
+                                            ? c.action.sub
+                                            : c.heroMessage,
+                                        textAlign: TextAlign.center,
+                                        maxLines: compact ? 2 : null,
+                                        overflow: compact
+                                            ? TextOverflow.ellipsis
+                                            : TextOverflow.clip,
+                                        style: TextStyle(
+                                          fontSize: compact ? 13 : 14,
+                                          height: compact ? 1.35 : 1.4,
+                                          color: c.stage == StageState.fail
+                                              ? AppColors.danger
+                                              : AppColors.dim,
+                                        ),
                                       ),
-                                    ),
+                                    ],
                                     SizedBox(height: visualGap),
                                     Center(
                                       child: _Visual(
@@ -2070,11 +2052,12 @@ class _TitleMenu extends StatelessWidget {
               context: context,
               applicationName: 'x3utils',
               applicationVersion: 'v$kAppVersionLabel',
-              applicationLegalese: c.browserMode
-                  ? 'ST-LINK utilities for X3 scooters · AT32F415 · WebUSB'
-                  : c.androidMode
-                  ? 'ST-LINK utilities for X3 scooters · AT32F415 · Android USB-host'
-                  : 'ST-LINK utilities for X3 scooters · AT32F415 · bundled OpenOCD',
+              // The live engine line, moved here from the foot of Settings.
+              // The old hand-written variants named a fixed transport, so the
+              // desktop one claimed OpenOCD even with the swdart backend ON.
+              // engineDescription reports what is actually selected.
+              applicationLegalese:
+                  'ST-LINK utilities for X3 scooters\n${c.engineDescription}',
             );
         }
       },
@@ -5181,14 +5164,15 @@ class _FirmwareBar extends StatelessWidget {
       );
     }
 
-    final hint = has
+    // The phone drops this line. It is the last block the hero card can give
+    // back to the CTA, and the scope control directly above already carries
+    // the same choice. A height-gated version was tried and reverted: the
+    // threshold landed between gesture and 3-button navigation, so the line
+    // appeared or vanished with a system setting. Desktop keeps the wording.
+    final hint = has || phone
         ? null
         : slot0
-        ? phone
-              ? 'ZIP3/ZIP3.2 accepted.'
-              : 'Choose a slot-sized .bin or import a VCU/MCU zip3 or zip3.2 package.'
-        : phone
-        ? 'ZIP3/ZIP3.2: select Slot 0.'
+        ? 'Choose a slot-sized .bin or import a VCU/MCU zip3 or zip3.2 package.'
         : 'zip3 and zip3.2 packages contain slot firmware — select Slot 0 only.';
     return Container(
       constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
@@ -5771,6 +5755,63 @@ class _SettingRow extends StatelessWidget {
         ),
       ),
       child,
+    ],
+  );
+}
+
+/// Collapsed "Advanced" group at the end of Settings. It starts closed on
+/// purpose: these switches are bench instruments, not everyday settings. The
+/// caller owns the rows, so the group only owns the open/closed state.
+class _AdvancedGroup extends StatefulWidget {
+  const _AdvancedGroup({required this.children});
+  final List<Widget> children;
+  @override
+  State<_AdvancedGroup> createState() => _AdvancedGroupState();
+}
+
+class _AdvancedGroupState extends State<_AdvancedGroup> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      InkWell(
+        key: const ValueKey('settings-advanced-caret'),
+        onTap: () => setState(() => _open = !_open),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              AnimatedRotation(
+                turns: _open ? 0.25 : 0,
+                duration: const Duration(milliseconds: 150),
+                child: const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: AppColors.dim,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                'Advanced',
+                style: TextStyle(
+                  color: AppColors.txt,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (_open)
+        for (int i = 0; i < widget.children.length; i++) ...[
+          SizedBox(height: i == 0 ? 10 : 14),
+          widget.children[i],
+        ],
     ],
   );
 }

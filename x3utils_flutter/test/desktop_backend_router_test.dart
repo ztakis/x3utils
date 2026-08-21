@@ -301,21 +301,45 @@ void main() {
     await tester.tap(find.byTooltip('Settings'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.takeException(), isNull);
+
+    // The experimental switches live behind the collapsed Advanced caret at
+    // the end of Settings, so the group must be opened before they exist.
     final backendSwitch = find.byKey(
       const ValueKey('desktop-swdart-backend-switch'),
     );
+    final caret = find.byKey(const ValueKey('settings-advanced-caret'));
+    expect(caret, findsOneWidget);
+    expect(backendSwitch, findsNothing);
+    await tester.ensureVisible(caret);
+    await tester.tap(caret);
+    await tester.pump(const Duration(milliseconds: 300));
     expect(backendSwitch, findsOneWidget);
     expect(
       find.textContaining('no automatic OpenOCD fallback'),
       findsOneWidget,
     );
 
+    // Shipping default from 2.1.0: a fresh install is already on swdart, so
+    // the switch starts ON and the first tap turns it OFF.
+    expect(controller.useSwdartDesktop, isTrue);
+    expect(controller.backendName, 'swdart');
+
+    final prefs = await SharedPreferences.getInstance();
+    await tester.ensureVisible(backendSwitch);
     await tester.tap(backendSwitch);
     await tester.pump();
     expect(tester.takeException(), isNull);
+    expect(controller.useSwdartDesktop, isFalse);
+    expect(controller.backendName, 'OpenOCD');
+    expect(
+      prefs.getString('desktopHardwareBackend'),
+      DesktopBackendSelection.openOcd.name,
+    );
+
+    await tester.ensureVisible(backendSwitch);
+    await tester.tap(backendSwitch);
+    await tester.pump();
     expect(controller.useSwdartDesktop, isTrue);
-    expect(controller.backendName, 'swdart');
-    final prefs = await SharedPreferences.getInstance();
     expect(
       prefs.getString('desktopHardwareBackend'),
       DesktopBackendSelection.swdart.name,
@@ -326,6 +350,7 @@ void main() {
     );
     expect(loaderSwitch, findsOneWidget);
     expect(controller.useSwdartLoaderDesktop, isTrue);
+    await tester.ensureVisible(loaderSwitch);
     await tester.tap(loaderSwitch);
     await tester.pump();
     expect(controller.useSwdartLoaderDesktop, isFalse);
@@ -369,19 +394,27 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(controller.loaderDiagnosticsAvailable, isTrue);
-      expect(controller.loaderDiagnostics, isFalse);
+      // ON by default from 2.1.0: an intermittent field failure must arrive
+      // with its register baseline and per-chunk log already recorded.
+      expect(controller.loaderDiagnostics, isTrue);
+      expect(swdart.loaderDiagnostics, isTrue);
+
+      controller.setLoaderDiagnostics(false);
       expect(swdart.loaderDiagnostics, isFalse);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('loaderDiagnostics'), isFalse);
 
       controller.setLoaderDiagnostics(true);
       expect(swdart.loaderDiagnostics, isTrue);
-      final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('loaderDiagnostics'), isTrue);
     },
   );
 
   test('saved Advanced logging preference is applied at startup', () async {
+    // false, not true: true is now the default, so only a saved false proves
+    // that the stored preference beats the default.
     SharedPreferences.setMockInitialValues(<String, Object>{
-      'loaderDiagnostics': true,
+      'loaderDiagnostics': false,
     });
     final swdart = SwdartBackend();
     final controller = AppController(
@@ -393,7 +426,40 @@ void main() {
     addTearDown(controller.dispose);
     await Future<void>.delayed(Duration.zero);
 
+    expect(controller.loaderDiagnostics, isFalse);
+    expect(swdart.loaderDiagnostics, isFalse);
+  });
+
+  test('fresh desktop install ships on swdart', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final controller = AppController(
+      backend: DesktopBackendRouter(
+        openOcd: _RecordingBackend('OpenOCD', _fullCapabilities),
+        swdart: SwdartBackend(),
+      ),
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.useSwdartDesktop, isTrue);
+    expect(controller.useSwdartLoaderDesktop, isTrue);
     expect(controller.loaderDiagnostics, isTrue);
-    expect(swdart.loaderDiagnostics, isTrue);
+  });
+
+  test('an explicit OpenOCD choice survives the new default', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'desktopHardwareBackend': DesktopBackendSelection.openOcd.name,
+    });
+    final controller = AppController(
+      backend: DesktopBackendRouter(
+        openOcd: _RecordingBackend('OpenOCD', _fullCapabilities),
+        swdart: SwdartBackend(),
+      ),
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.useSwdartDesktop, isFalse);
+    expect(controller.backendName, 'OpenOCD');
   });
 }
