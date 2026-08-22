@@ -976,7 +976,7 @@ class _HomeScreenState extends State<HomeScreen> {
           description:
               'Experimental global backend. When ON, every hardware action '
               'is sent only to swdart; there is no automatic OpenOCD '
-              'fallback. Operations not implemented yet fail before hardware.',
+              'fallback.',
         ),
       if (c.desktopSwdartLoaderSelectorAvailable)
         _advancedSwitch(
@@ -988,9 +988,9 @@ class _HomeScreenState extends State<HomeScreen> {
             setLocal(() {});
           },
           description:
-              'Experimental swdart programming accelerator. Turn OFF to use '
-              'slower direct 32-bit word writes for desktop A/B testing. The '
-              'choice applies to the next hardware session.',
+              'Experimental swdart accelerator. Turn OFF to use slower direct '
+              '32-bit word writes. The choice applies to the next hardware '
+              'session.',
         ),
       if (c.loaderDiagnosticsAvailable)
         _advancedSwitch(
@@ -1002,10 +1002,9 @@ class _HomeScreenState extends State<HomeScreen> {
             setLocal(() {});
           },
           description:
-              'swdart SRAM-loader only. When the loader is enabled, logs a '
-              'register baseline before flashing and every programming chunk, '
-              'so an intermittent failure leaves full evidence. Logs get '
-              'longer.',
+              'swdart SRAM-loader only. Logs a register baseline before '
+              'flashing and every programming chunk, so an intermittent '
+              'failure leaves full evidence.',
         ),
     ];
     if (rows.isEmpty) return const <Widget>[];

@@ -114,7 +114,7 @@ const kAppVersion = '2.1.0';
 // Release channel shown after the version (e.g. "v1.2.0 BETA"); '' for stable.
 // Kept OUT of kAppVersion so VERSION / pubspec / kAppVersion stay byte-equal —
 // package_macos.sh asserts that three-way match.
-const kAppStage = 'BETA';
+const kAppStage = '';
 // What the UI renders after the leading "v".
 final kAppVersionLabel = kAppStage.isEmpty
     ? kAppVersion

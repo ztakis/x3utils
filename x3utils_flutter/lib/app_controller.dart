@@ -363,15 +363,22 @@ class AppController extends ChangeNotifier {
     if (_phoneMode && !validAccent) {
       await _prefs!.setInt('accent', accentNotifier.value);
     }
+    // ON by default from 2.1.0 on desktop: a run the operator wants help with
+    // should already have its transcript on disk. Turning it off writes false
+    // and keeps it off. Web/Android have nowhere to write and stay off.
     logToFile =
         !_browserMode &&
         !_androidMode &&
-        (_prefs!.getBool('logToFile') ?? false);
-    // ON by default from 2.1.0, on every output. The loader failure that took
-    // weeks to find was intermittent, so a field recurrence must arrive with
-    // its register baseline and per-chunk log already in the transcript. An
-    // operator who turns it off writes false and keeps it off.
-    loaderDiagnostics = _prefs!.getBool('loaderDiagnostics') ?? true;
+        (_prefs!.getBool('logToFile') ?? true);
+    // ON by default from 2.1.0 on DESKTOP. The loader failure that took weeks
+    // to find was intermittent, so a field recurrence must arrive with its
+    // register baseline and per-chunk log already in the transcript — which
+    // works because desktop also writes that transcript to a file. Web/Android
+    // default OFF: the console is their only transcript, so a per-chunk
+    // baseline buries the run instead of documenting it. The switch stays
+    // available on all three, and turning it off writes false and keeps it off.
+    loaderDiagnostics =
+        _prefs!.getBool('loaderDiagnostics') ?? (!_browserMode && !_androidMode);
     _applyLoaderDiagnostics();
     notifyListeners();
   }
@@ -1694,7 +1701,7 @@ class AppController extends ChangeNotifier {
   bool consolePinned = false;
   double consoleHeight = 300;
   bool advancedOpen = false;
-  bool logToFile = false; // opt-in: save each run's console to a log file
+  bool logToFile = false; // save each run's console to a log file; see _load
   final List<String> _runLog = <String>[];
   bool _capturing = false;
 
