@@ -1562,7 +1562,18 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final compact = constraints.maxHeight < 500;
-                  final roomyCompact = compact && constraints.maxHeight >= 450;
+                  // The tightest rung exists for ONE case: the two idle
+                  // firmware screens, where the firmware bar leaves the CTA no
+                  // room. Every other phone screen holds far less content and
+                  // ends up with a large void in the card, so squeezing its
+                  // gaps to 4-6 px only made elements touch each other while
+                  // the space sat unused. Key the rung to the CONTENT, not to
+                  // the viewport.
+                  final needsTightGaps =
+                      c.stage == StageState.idle && c.action.needsFirmware;
+                  final roomyCompact =
+                      compact &&
+                      (!needsTightGaps || constraints.maxHeight >= 450);
                   final verticalPadding = compact ? 10.0 : 20.0;
                   final sectionGap = compact
                       ? (roomyCompact ? 18.0 : 6.0)
