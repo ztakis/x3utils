@@ -5,18 +5,15 @@
 
 ### Latest Downloads
 
-- **[GUI v2.0.0-BETA](https://github.com/ztakis/x3utils/releases/tag/gui-v2.0.0-beta)** — pre-release desktop & phone apps
-<br><br>
-- **[GUI v1.3.0](https://github.com/ztakis/x3utils/releases/tag/gui-v1.3.0)** — desktop app for Windows, Linux and macOS. Recommended for most users.
-- **[CLI v1.8.1](https://github.com/ztakis/x3utils/releases/tag/v1.8.1)** — the scripts, for terminal users.
+- **[GUI v2.1.0](https://github.com/ztakis/x3utils/releases/tag/gui-v2.1.0)** — desktop app for Windows, Linux and macOS, plus an arm64 Android APK for sideloading.
+- **[CLI v1.8.1](https://github.com/ztakis/x3utils/releases/tag/v1.8.1)** — terminal scripts for Windows, Linux and macOS.
 
 ### Web App
 
-Needs Chrome or Edge — Firefox and Safari have no WebUSB, and ***no iPhone or iPad browser will work***.
+- **[x3utils-web v2.1.0](https://x3utils-web.pages.dev/)** — Chrome and Edge desktop browsers.
+- **[x3utils-phone v2.1.0](https://x3utils-web.pages.dev/m/)** — Android phones using Chrome; a subset of the desktop tools with the Android layout.
 
-- **[x3utils-web v2.0.0 BETA](https://x3utils-web.pages.dev/)** — desktop browsers. Experimental.
-- **[x3utils-mobile v2.0.0 BETA](https://x3utils-web.pages.dev/m/)** — Android phones, Chrome. A subset of the desktop tools, same layout as the Android app.
-
+WebUSB requires Chrome or Edge. Firefox and Safari are unsupported, and no iPhone or iPad browser will work.
 > [!CAUTION]
 > **SHU compatibility firmware limits:** Do not use Flash SHU Compatible with F3/G3 VCU 1.6.3 or newer, or ZT3 VCU 1.5.9 or newer. GT3 is not supported by Flash SHU Compatible at any version (its own limit, VCU 1.7.2, is listed for reference only). SHU compat saves the original backup first, but using it on newer firmware may require restoring that backup.
 
@@ -37,8 +34,8 @@ Needs Chrome or Edge — Firefox and Safari have no WebUSB, and ***no iPhone or 
 
 ## What This Tool Does
 
-x3utils talks to the scooter VCU over ST-LINK / SWD. It makes full firmware backups, flashes firmware, runs SHU-compatible patch flashing, and checks or rescues a locked chip. The GUI covers Windows, Linux, and macOS; the CLI scripts do the same job from a terminal.
-
+x3utils talks to the scooter VCU over ST-LINK / SWD. It makes full firmware backups, flashes firmware, runs SHU-compatible patch flashing, and checks or rescues a locked chip.
+The desktop GUI covers Windows, Linux and macOS. Web and Android provide direct ST-LINK subsets, while the CLI scripts offer the desktop workflow from a terminal.
 > [!WARNING]
 > This tool talks directly to the scooter VCU. A bad connection, wrong file, or interrupted flash can leave the controller unusable until recovered. Always make a full dump first and keep the backup somewhere safe.
 
