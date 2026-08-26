@@ -587,13 +587,28 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
     }
   }
 
+  /// Writes are allowed on any 128 KiB AT32F415, not just the CBT7 that was
+  /// hardware-tested first.
+  ///
+  /// The five 128 KiB parts — `RBT7`, `CBT7`, `KBU7-4`, `RBT7-7`, `CBU7` —
+  /// differ only in package and pin count, which never reach the programming
+  /// path: [At32Flash] is built from `pageSize` and `sramBytes` alone, and
+  /// `sramBytes` is a constant 32 KiB for every row of the table. The GEOMETRY
+  /// is therefore the real requirement and is checked directly. The 64 KiB
+  /// parts cannot hold the image and the 256 KiB parts use 2048 B pages with a
+  /// different layout, so both are still refused.
+  ///
+  /// `TargetInfo.tested` is deliberately NOT consulted any more. It stays in
+  /// the table as a record of which part someone put an ST-Link on, and is
+  /// reported rather than enforced.
   void _requireWritableTarget(swd.TargetInfo target) {
-    if (!target.tested ||
-        target.flashKB != 128 ||
-        !target.name.startsWith('AT32F415CBT7')) {
+    // Repeated from the connect path so the write gate stands on its own
+    // rather than relying on a caller having already checked the family.
+    _requireKnownAt32f415(target);
+    if (target.flashKB != 128 || target.pageSize != 1024) {
       throw StateError(
-        'Writing is allowed only on the hardware-tested 128 KiB '
-        'AT32F415CBT7; detected ${target.name}',
+        'Writing requires a 128 KiB AT32F415 with 1024 B pages; '
+        'detected ${target.name}',
       );
     }
   }

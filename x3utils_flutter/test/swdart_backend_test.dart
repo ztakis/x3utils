@@ -23,13 +23,14 @@ swd.TargetInfo _target({
   String name = 'AT32F415CBT7 (128 KB, 1024 B pages)',
   String family = 'AT32',
   int flashKB = 128,
+  int pageSize = 1024,
   bool tested = true,
 }) => swd.TargetInfo(
   name: name,
   family: family,
   idcode: 0x700301c5,
   flashKB: flashKB,
-  pageSize: 1024,
+  pageSize: pageSize,
   sramBytes: 32 * 1024,
   flashBase: 0x08000000,
   programAlign: 4,
@@ -632,9 +633,18 @@ void main() {
   );
 
   test(
-    'protection Rescue rejects an untested target before rewriting',
+    'protection Rescue rejects a wrong-geometry target before rewriting',
     () async {
-      final session = _FakeSession(target: _target(tested: false));
+      // 256 KiB / 2048 B part: in family, but the layout the rescue path
+      // assumes does not apply. `tested` is irrelevant to the gate now.
+      final session = _FakeSession(
+        target: _target(
+          name: 'AT32F415RCT7 (256 KB, 2048 B pages)',
+          flashKB: 256,
+          pageSize: 2048,
+          tested: false,
+        ),
+      );
       final backend = SwdartBackend(sessionFactory: () => session);
 
       await expectLater(
@@ -1047,8 +1057,15 @@ void main() {
     },
   );
 
-  test('full write refuses an untested AT32F415 before programming', () async {
-    final session = _FakeSession(target: _target(tested: false));
+  test('full write refuses a 256 KiB AT32F415 before programming', () async {
+    final session = _FakeSession(
+      target: _target(
+        name: 'AT32F415RCT7 (256 KB, 2048 B pages)',
+        flashKB: 256,
+        pageSize: 2048,
+        tested: false,
+      ),
+    );
     final backend = SwdartBackend(sessionFactory: () => session);
 
     await expectLater(
@@ -1064,6 +1081,31 @@ void main() {
       throwsA(isA<StateError>()),
     );
     expect(session.programBytes, isNull);
+  });
+
+  test('full write accepts an untested 128 KiB AT32F415 package', () async {
+    // The RBT7 found in the field: same die and geometry as the CBT7, and NOT
+    // flagged `tested`. It must program, because `tested` no longer gates.
+    final session = _FakeSession(
+      target: _target(
+        name: 'AT32F415RBT7 (128 KB, 1024 B pages)',
+        tested: false,
+      ),
+    );
+    final backend = SwdartBackend(sessionFactory: () => session);
+
+    final result = await backend.run(
+      HardwareRequest(
+        operation: HardwareOperation.flashFull,
+        mode: ConnectionMode.defaultSwd,
+        countdown: 3,
+        bytes: _image(),
+      ),
+      _callbacks(),
+    );
+
+    expect(result.ok, isTrue);
+    expect(session.programBytes, isNotNull);
   });
 
   test(
