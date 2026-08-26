@@ -2907,12 +2907,12 @@ class AppController extends ChangeNotifier {
   void _noteUntestedTarget(HardwareEvidence evidence) {
     if (evidence.targetTested != false) return;
     if (untestedTargetWarning != null) return;
-    final part = evidence.targetName ?? 'this chip';
+    final full = evidence.targetName ?? 'this chip';
+    // The bare part number for the operator; the console keeps the geometry.
+    final part = full.split(' (').first;
     untestedTargetWarning =
-        '$part is not the package x3utils has been tested on. '
-        'It has the same flash layout as the tested part, but no one has '
-        'verified a write on it — flash at your own risk.';
-    _log('== target not hardware-tested: $part ==');
+        'The board is using $part — a less common chip package.';
+    _log('== target not hardware-tested: $full ==');
   }
 
   bool _dumpConfirmed(HardwareResult r) => r.ok && r.evidence.dumped;
