@@ -122,8 +122,10 @@ void main() {
     expect(info['serialState'], 'real');
     expect(info['uid'], 'C49B0DB900002193A70705E8');
     expect(info['uidState'], 'matched');
-    expect(info['key'], '7aoymhtysf886lb6');
-    expect(info['keyEncoding'], 'ascii');
+    // Hex even though these 16 bytes are printable ASCII ('7aoymhtysf886lb6').
+    // keyState still reports 'oem', which is what printability was signalling.
+    expect(info['key'], '37616f796d68747973663838366c6236');
+    expect(info['keyEncoding'], 'hex');
     expect(info['keyState'], 'oem');
     expect(info['rand'], 'ffffffffffff');
     expect(info['zpEncLen'], 59032);
@@ -217,10 +219,12 @@ void main() {
     String value(List<InfoRow> rows, String label) =>
         rows.firstWhere((row) => row.label == label).display(revealed: true);
 
-    test('a printable key is rendered as hex, with its case recoverable', () {
-      // The JSON stores printable key bytes as TEXT. Grouping that text read
-      // as 8 bytes for a 16-byte key and uppercased it, so the value shown —
-      // and copied — was not the key on the chip.
+    test('a legacy ascii key is rendered as hex, with its case recoverable', () {
+      // Sidecars written before the hex switch stored printable key bytes as
+      // TEXT. Grouping that text read as 8 bytes for a 16-byte key and
+      // uppercased it, so the value shown — and copied — was not the key on the
+      // chip. New sidecars are always `keyEncoding: hex`; this is the read-back
+      // path for the old ones, which must keep working.
       final rows = DumpMetadata.rows({
         'backup': 'dump.bin',
         'key': 'OmZhXbB2MgUo2t3E',

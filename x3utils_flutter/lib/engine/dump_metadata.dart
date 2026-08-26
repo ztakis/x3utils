@@ -85,8 +85,17 @@ class DumpMetadata {
       'uidState': uid.state,
       'uidPrimary': uid.primary,
       'uidBackup': uid.backup,
-      'key': keyAscii ? String.fromCharCodes(keyBytes) : _hex(keyBytes),
-      'keyEncoding': keyAscii ? 'ascii' : 'hex',
+      // ALWAYS HEX, matching what Backup info displays. An OEM key is printable
+      // ASCII, and storing it as text put the only copy of an irreplaceable
+      // value into the one form a human or an editor can silently alter — case,
+      // trailing whitespace, re-encoding. Hex is unambiguous. Nothing is lost:
+      // [keyState] already records that the bytes were printable, which is all
+      // the text form was still signalling.
+      //
+      // `keyEncoding` stays because sidecars written before this change say
+      // `ascii`, and [_keyHex] needs it to read them back.
+      'key': _hex(keyBytes),
+      'keyEncoding': 'hex',
       'keyState': switch (keyState) {
         FwKeyState.defaultKey => 'defaultKey',
         FwKeyState.blank => 'blank',
@@ -336,9 +345,10 @@ class DumpMetadata {
 
   /// The stored key as grouped hex, whichever form the sidecar recorded.
   ///
-  /// `keyEncoding: ascii` means the 16 bytes were printable and [inspect]
-  /// stored them as text; its code units ARE those bytes, so the conversion
-  /// is lossless and the original case survives in the hex.
+  /// `keyEncoding: ascii` is a COMPATIBILITY PATH for sidecars written before
+  /// [inspect] switched to storing hex unconditionally. It means the 16 bytes
+  /// were printable and were stored as text; its code units ARE those bytes, so
+  /// the conversion is lossless and the original case survives in the hex.
   static String _keyHex(Map<String, Object?> metadata) {
     final raw = infoText(metadata['key']);
     if (raw == '—') return raw;
