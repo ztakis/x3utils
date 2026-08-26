@@ -302,7 +302,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
       callbacks.onProgress(const HardwareProgress(connected: true));
 
       if (request.operation == HardwareOperation.check) {
-        return const HardwareResult(0, HardwareEvidence(caught: true));
+        return HardwareResult(0, _identified(target, caught: true));
       }
 
       if (isFlash) {
@@ -352,7 +352,8 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
           }
           return HardwareResult(
             0,
-            HardwareEvidence(
+            _identified(
+              target,
               caught: true,
               erased: erased,
               wrote: wrote,
@@ -365,7 +366,8 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
           callbacks.onLine('[flash] failed: $error');
           return HardwareResult(
             1,
-            HardwareEvidence(
+            _identified(
+              target,
               caught: true,
               erased: erased,
               wrote: wrote,
@@ -393,7 +395,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
       }
       return HardwareResult(
         0,
-        const HardwareEvidence(caught: true, dumped: true),
+        _identified(target, caught: true, dumped: true),
         bytes: bytes,
       );
     } on UsbAcquireException catch (error) {
@@ -574,6 +576,31 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
   void _throwIfCancelled() {
     if (_cancelled) throw StateError('swdart operation cancelled');
   }
+
+  /// Evidence carrying which part swdart identified and whether it is one that
+  /// has been run on real hardware.
+  ///
+  /// Reported, never enforced: [_requireWritableTarget] gates on geometry, so a
+  /// package nobody has measured still programs. This is what lets the UI say
+  /// so.
+  HardwareEvidence _identified(
+    swd.TargetInfo target, {
+    bool caught = false,
+    bool dumped = false,
+    bool erased = false,
+    bool wrote = false,
+    bool verified = false,
+    bool resetRunning = false,
+  }) => HardwareEvidence(
+    caught: caught,
+    dumped: dumped,
+    erased: erased,
+    wrote: wrote,
+    verified: verified,
+    resetRunning: resetRunning,
+    targetName: target.name,
+    targetTested: target.tested,
+  );
 
   void _requireKnownAt32f415(swd.TargetInfo target) {
     final assumed = target.name.toLowerCase().contains('assumed');

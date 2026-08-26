@@ -2978,6 +2978,18 @@ class _HeroStageState extends State<_HeroStage>
                       ? Icons.warning_amber_rounded
                       : Icons.info_outline_rounded,
                 ),
+                // Above the output note and with a warning icon, not an info
+                // one: this is the only thing on screen saying the chip is a
+                // package nobody has written to before.
+                if (c.untestedTargetWarning != null) ...[
+                  const SizedBox(height: 14),
+                  _HeroMessage(
+                    text: c.untestedTargetWarning!,
+                    color: AppColors.hold,
+                    callout: true,
+                    icon: Icons.warning_amber_rounded,
+                  ),
+                ],
                 if (c.resultNote != null) ...[
                   const SizedBox(height: 14),
                   _HeroMessage(

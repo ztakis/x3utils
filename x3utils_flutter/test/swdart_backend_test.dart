@@ -1106,6 +1106,52 @@ void main() {
 
     expect(result.ok, isTrue);
     expect(session.programBytes, isNotNull);
+    // Reported, not enforced: the write went through AND the UI is told which
+    // package it was and that nobody has measured it.
+    expect(result.evidence.targetName, startsWith('AT32F415RBT7'));
+    expect(result.evidence.targetTested, isFalse);
+  });
+
+  test('Check reports the identified part and whether it is tested', () async {
+    final session = _FakeSession(
+      target: _target(
+        name: 'AT32F415RBT7 (128 KB, 1024 B pages)',
+        tested: false,
+      ),
+    );
+    final backend = SwdartBackend(sessionFactory: () => session);
+
+    final result = await backend.run(
+      const HardwareRequest(
+        operation: HardwareOperation.check,
+        mode: ConnectionMode.defaultSwd,
+        countdown: 3,
+      ),
+      _callbacks(),
+    );
+
+    // Check is the read-only probe an operator runs BEFORE opening anything,
+    // so it must carry the same identification the flash paths do.
+    expect(result.ok, isTrue);
+    expect(result.evidence.targetName, startsWith('AT32F415RBT7'));
+    expect(result.evidence.targetTested, isFalse);
+  });
+
+  test('Check on the tested part reports tested', () async {
+    final session = _FakeSession(target: _target());
+    final backend = SwdartBackend(sessionFactory: () => session);
+
+    final result = await backend.run(
+      const HardwareRequest(
+        operation: HardwareOperation.check,
+        mode: ConnectionMode.defaultSwd,
+        countdown: 3,
+      ),
+      _callbacks(),
+    );
+
+    expect(result.evidence.targetName, startsWith('AT32F415CBT7'));
+    expect(result.evidence.targetTested, isTrue);
   });
 
   test(
