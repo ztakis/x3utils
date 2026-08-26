@@ -395,11 +395,23 @@ class AppController extends ChangeNotifier {
   // failure self-documenting on the first real recurrence.
   bool loaderDiagnostics = false;
 
-  /// The toggle only means something where a swdart engine can run: always on
-  /// Web/Android, and on desktop through the backend selector.
+  /// The toggle only means something where a swdart engine is actually
+  /// SELECTED: always on Web/Android, and on desktop only while the swdart
+  /// backend is on.
+  ///
+  /// The desktop half deliberately reuses [desktopSwdartLoaderSelectorAvailable]
+  /// so this row and `SRAM loader` appear and disappear together — they
+  /// describe the same engine, and the diagnostics are SRAM-loader-only. The
+  /// previous form asked whether the router HELD a swdart backend, which is
+  /// true even when OpenOCD is selected, so the row stayed visible and ON while
+  /// it could not affect anything.
+  ///
+  /// Hiding does not clear the setting: [loaderDiagnostics] and its stored key
+  /// are untouched, so switching swdart back on restores the operator's choice.
+  /// Writing `false` here would be wrong — under the persisted-default rules an
+  /// explicit `false` is preserved, so it would silently destroy an ON choice.
   bool get loaderDiagnosticsAvailable =>
-      _backend is SwdartBackend ||
-      _desktopBackendRouter?.swdart is SwdartBackend;
+      _backend is SwdartBackend || desktopSwdartLoaderSelectorAvailable;
 
   void setLoaderDiagnostics(bool value) {
     loaderDiagnostics = value;

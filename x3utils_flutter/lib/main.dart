@@ -1008,9 +1008,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
     ];
     if (rows.isEmpty) return const <Widget>[];
+    // Desktop ALWAYS keeps the caret, even when the swdart switch is the only
+    // row left. Its membership changes as the backend is toggled — turning
+    // swdart off takes the loader and diagnostics rows with it — and dropping
+    // to a bare row there would destroy the group, so switching back on would
+    // rebuild it collapsed and hide the very switches being used. Web/Android
+    // have no selector and can only ever reach the one logging row, so they
+    // keep the bare form: a caret around a permanently single row hides it for
+    // nothing.
+    final grouped = c.desktopBackendSelectorAvailable || rows.length > 1;
     return [
       const Divider(color: AppColors.line, height: 28),
-      if (rows.length == 1) rows.single else _AdvancedGroup(children: rows),
+      if (grouped) _AdvancedGroup(children: rows) else rows.single,
     ];
   }
 

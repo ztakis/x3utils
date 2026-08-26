@@ -410,6 +410,44 @@ void main() {
     },
   );
 
+  test(
+    'Advanced logging hides with the SRAM loader when swdart is off, '
+    'and keeps its stored value',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final swdart = SwdartBackend();
+      final controller = AppController(
+        backend: DesktopBackendRouter(
+          openOcd: _RecordingBackend('OpenOCD', _fullCapabilities),
+          swdart: swdart,
+        ),
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.loaderDiagnosticsAvailable, isTrue);
+      expect(controller.desktopSwdartLoaderSelectorAvailable, isTrue);
+      expect(controller.loaderDiagnostics, isTrue);
+
+      // Both rows are swdart-only and must disappear together: the
+      // diagnostics describe the SRAM loader, which does not exist here.
+      controller.setUseSwdartDesktop(false);
+      expect(controller.loaderDiagnosticsAvailable, isFalse);
+      expect(controller.desktopSwdartLoaderSelectorAvailable, isFalse);
+
+      // Hidden, NOT cleared. Nothing was written to the key, so the operator's
+      // choice survives the round trip.
+      expect(controller.loaderDiagnostics, isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('loaderDiagnostics'), isNull);
+
+      controller.setUseSwdartDesktop(true);
+      expect(controller.loaderDiagnosticsAvailable, isTrue);
+      expect(controller.loaderDiagnostics, isTrue);
+      expect(swdart.loaderDiagnostics, isTrue);
+    },
+  );
+
   test('saved Advanced logging preference is applied at startup', () async {
     // false, not true: true is now the default, so only a saved false proves
     // that the stored preference beats the default.
