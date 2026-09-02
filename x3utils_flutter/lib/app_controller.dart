@@ -1670,14 +1670,6 @@ class AppController extends ChangeNotifier {
   bool _sawTargetProgress = false; // this run reached target/operation progress
   bool _cannotRun = false; // never launched (missing OpenOCD / unwired action)
 
-  /// Set when the backend identified a chip package nobody has run on hardware.
-  ///
-  /// Advisory only. Writes are gated on GEOMETRY — any 128 KiB AT32F415 with
-  /// 1024 B pages programs — so an unmeasured package is a thing the operator
-  /// is told about, not stopped by. Null when the part is the tested one, or
-  /// when the backend cannot name a part at all (OpenOCD).
-  String? untestedTargetWarning;
-
   bool get autoRetryArmed => _autoRetryTimer != null;
 
   String get autoRetryLabel =>
@@ -2100,7 +2092,6 @@ class AppController extends ChangeNotifier {
     _failureIsFinding = false;
     _rdpRetryPending = false;
     _hardwareFailureKind = null;
-    untestedTargetWarning = null;
     _sawTargetProgress = false;
     _cannotRun = false;
     _lastRunDuration = null;
@@ -2616,7 +2607,6 @@ class AppController extends ChangeNotifier {
       return null;
     }
     if (my != _token) return null;
-    _noteUntestedTarget(result.evidence);
     if (result.exitCode != 0 && _runIssue == null) {
       _setRunIssue(_backendExitFallback(request.operation), priority: 2);
     }
@@ -2944,22 +2934,6 @@ class AppController extends ChangeNotifier {
     'rdp_rescue' => 'Rescue',
     _ => 'Working',
   };
-
-  /// Record an identified-but-unmeasured chip package, once per run.
-  ///
-  /// `targetTested == null` means the backend cannot name a part (OpenOCD), and
-  /// must stay silent — treating it as untested would warn about every OpenOCD
-  /// run. Only an explicit `false` warns.
-  void _noteUntestedTarget(HardwareEvidence evidence) {
-    if (evidence.targetTested != false) return;
-    if (untestedTargetWarning != null) return;
-    final full = evidence.targetName ?? 'this chip';
-    // The bare part number for the operator; the console keeps the geometry.
-    final part = full.split(' (').first;
-    untestedTargetWarning =
-        'The board is using $part — a less common chip package.';
-    _log('== target not hardware-tested: $full ==');
-  }
 
   bool _dumpConfirmed(HardwareResult r) => r.ok && r.evidence.dumped;
 

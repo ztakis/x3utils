@@ -448,26 +448,6 @@ void main() {
     },
   );
 
-  test('an OpenOCD run never raises the untested-package warning', () async {
-    // OpenOCD reports no part-level identity, so its evidence leaves
-    // targetTested null. Null must stay silent: reading it as "untested" would
-    // warn on every OpenOCD run about a chip nothing was measured on.
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'desktopHardwareBackend': DesktopBackendSelection.openOcd.name,
-    });
-    final controller = AppController(
-      backend: DesktopBackendRouter(
-        openOcd: _RecordingBackend('OpenOCD', _fullCapabilities),
-        swdart: SwdartBackend(),
-      ),
-    );
-    addTearDown(controller.dispose);
-    await Future<void>.delayed(Duration.zero);
-
-    expect(controller.useSwdartDesktop, isFalse);
-    expect(controller.untestedTargetWarning, isNull);
-  });
-
   test('saved Advanced logging preference is applied at startup', () async {
     // false, not true: true is now the default, so only a saved false proves
     // that the stored preference beats the default.

@@ -143,8 +143,6 @@ class HardwareEvidence {
     this.verified = false,
     this.resetRunning = false,
     this.sramAttempted = false,
-    this.targetName,
-    this.targetTested,
   });
 
   final bool caught;
@@ -154,16 +152,6 @@ class HardwareEvidence {
   final bool verified;
   final bool resetRunning;
   final bool sramAttempted;
-
-  /// The part the backend identified, when it can name one.
-  final String? targetName;
-
-  /// Whether that part is one somebody has run on hardware.
-  ///
-  /// NULL means the backend cannot say — OpenOCD reports no part-level
-  /// identity, and a null must never be read as "untested" or every OpenOCD
-  /// run would raise a warning about a chip nothing was measured on.
-  final bool? targetTested;
 }
 
 class HardwareResult {

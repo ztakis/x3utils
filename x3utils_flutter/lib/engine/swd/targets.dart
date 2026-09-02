@@ -54,7 +54,10 @@ const _at32f415 = <_At32Part>[
   _At32Part(0x70030242, 'AT32F415KCU7-4', 256, 2048),
   _At32Part(0x70030243, 'AT32F415RCT7-7', 256, 2048),
   _At32Part(0x7003024c, 'AT32F415CCU7', 256, 2048),
-  _At32Part(0x700301c4, 'AT32F415RBT7', 128, 1024),
+  // RBT7 is the part in the maintainer's own ZT3 MCU and has been in service
+  // for a year. OpenOCD never printed a part number, so it went unnoticed until
+  // swdart named it — it was never unusual, only unnamed.
+  _At32Part(0x700301c4, 'AT32F415RBT7', 128, 1024, tested: true),
   _At32Part(0x700301c5, 'AT32F415CBT7', 128, 1024, tested: true),
   _At32Part(0x700301c6, 'AT32F415KBU7-4', 128, 1024),
   _At32Part(0x700301c7, 'AT32F415RBT7-7', 128, 1024),

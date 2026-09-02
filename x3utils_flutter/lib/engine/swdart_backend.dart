@@ -131,10 +131,11 @@ typedef SwdartSessionFactory = SwdartSession Function();
 /// AT32F415 backend powered by swdart.
 ///
 /// Plain SWD supports Check, 128 KiB Backup, and full-image or slot-0
-/// programming of the specifically hardware-tested AT32F415CBT7 target.
-/// Desktop may additionally enable clone-C45 guided attach, genuine-probe
-/// nRST, and Power-race. FAP Check is read-only; Unlock / rescue uses the
-/// deterministic USD erase plus FAP-only rewrite on the tested target.
+/// programming of any 128 KiB AT32F415 with 1024 B pages — the packages differ
+/// only in pin count, which never reaches the programming path. Desktop may
+/// additionally enable clone-C45 guided attach, genuine-probe nRST, and
+/// Power-race. FAP Check is read-only; Unlock / rescue uses the deterministic
+/// USD erase plus FAP-only rewrite behind the same geometry gate.
 class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
   SwdartBackend({
     SwdartSessionFactory? sessionFactory,
@@ -309,7 +310,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
       callbacks.onProgress(const HardwareProgress(connected: true));
 
       if (request.operation == HardwareOperation.check) {
-        return HardwareResult(0, _identified(target, caught: true));
+        return const HardwareResult(0, HardwareEvidence(caught: true));
       }
 
       if (isFlash) {
@@ -359,8 +360,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
           }
           return HardwareResult(
             0,
-            _identified(
-              target,
+            HardwareEvidence(
               caught: true,
               erased: erased,
               wrote: wrote,
@@ -373,8 +373,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
           callbacks.onLine('[flash] failed: $error');
           return HardwareResult(
             1,
-            _identified(
-              target,
+            HardwareEvidence(
               caught: true,
               erased: erased,
               wrote: wrote,
@@ -420,8 +419,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
       }
       return HardwareResult(
         0,
-        _identified(
-          target,
+        HardwareEvidence(
           caught: true,
           dumped: true,
           sramAttempted: request.captureSram,
@@ -607,33 +605,6 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
   void _throwIfCancelled() {
     if (_cancelled) throw StateError('swdart operation cancelled');
   }
-
-  /// Evidence carrying which part swdart identified and whether it is one that
-  /// has been run on real hardware.
-  ///
-  /// Reported, never enforced: [_requireWritableTarget] gates on geometry, so a
-  /// package nobody has measured still programs. This is what lets the UI say
-  /// so.
-  HardwareEvidence _identified(
-    swd.TargetInfo target, {
-    bool caught = false,
-    bool dumped = false,
-    bool erased = false,
-    bool wrote = false,
-    bool verified = false,
-    bool resetRunning = false,
-    bool sramAttempted = false,
-  }) => HardwareEvidence(
-    caught: caught,
-    dumped: dumped,
-    erased: erased,
-    wrote: wrote,
-    verified: verified,
-    resetRunning: resetRunning,
-    sramAttempted: sramAttempted,
-    targetName: target.name,
-    targetTested: target.tested,
-  );
 
   void _requireKnownAt32f415(swd.TargetInfo target) {
     final assumed = target.name.toLowerCase().contains('assumed');
