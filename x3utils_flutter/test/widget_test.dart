@@ -13,7 +13,14 @@ import 'package:flutter/material.dart'
         SelectableText;
 import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter/widgets.dart'
-    show Axis, NeverScrollableScrollPhysics, PageView, ValueKey;
+    show
+        Axis,
+        BuildContext,
+        Builder,
+        NeverScrollableScrollPhysics,
+        PageView,
+        SizedBox,
+        ValueKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:x3utils_flutter/app_controller.dart';
@@ -163,6 +170,83 @@ class _GuidedBackend implements HardwareBackend {
 }
 
 void main() {
+  testWidgets('SHU compat SRAM modal shows evidence and choices', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1024, 768);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (ctx) {
+            context = ctx;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    final future = showCompatRamConfirm(
+      context,
+      const CompatRamReport(
+        backupIdentity: 'G3 VCU 1.5.5',
+        sramIdentity: 'VCU 1.5.5 (1 matching table)',
+        finding: 'The saved backup and live SRAM identity agree.',
+        status: CompatRamStatus.matched,
+        canProceed: true,
+        serial: '1CGC1234567890',
+        region: 'code C',
+        modelNote: 'Serial model: G3',
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('compat-ram-dialog')), findsOneWidget);
+    expect(find.text('G3 VCU 1.5.5'), findsOneWidget);
+    expect(find.text('VCU 1.5.5 (1 matching table)'), findsOneWidget);
+    expect(find.text('Proceed'), findsOneWidget);
+    expect(find.text('Quit'), findsOneWidget);
+
+    await tester.tap(find.text('Quit'));
+    await tester.pump();
+    expect(await future, isFalse);
+  });
+
+  testWidgets('blocked SRAM modal offers Quit only', (
+    WidgetTester tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (ctx) {
+            context = ctx;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    final future = showCompatRamConfirm(
+      context,
+      const CompatRamReport(
+        backupIdentity: 'G3 VCU 1.5.5',
+        sramIdentity: 'VCU 1.5.8 (1 matching table)',
+        finding: 'Firmware-version mismatch.',
+        status: CompatRamStatus.blocked,
+        canProceed: false,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Proceed'), findsNothing);
+    expect(find.text('Quit'), findsOneWidget);
+    await tester.tap(find.text('Quit'));
+    await tester.pump();
+    expect(await future, isFalse);
+  });
+
   testWidgets('App boots and shows the default action', (
     WidgetTester tester,
   ) async {
@@ -1583,8 +1667,10 @@ ZP        59028 payload / 59032 encoded (readable)'''
     expect(find.text('ATTENTION'), findsOneWidget);
     expect(find.textContaining('F3 VCU — 1.6.3'), findsOneWidget);
     expect(find.textContaining('G3 VCU — 1.6.3'), findsOneWidget);
+    expect(find.textContaining('G3 MCU — 1.5.9'), findsOneWidget);
     expect(find.textContaining('GT3 VCU — 1.7.2'), findsOneWidget);
     expect(find.textContaining('ZT3 VCU — 1.5.9'), findsOneWidget);
+    expect(find.textContaining('ZT3 MCU — 1.6.0'), findsOneWidget);
     expect(find.text('I understand — continue (5s)'), findsOneWidget);
     expect(find.text('Ready to start'), findsOneWidget);
 

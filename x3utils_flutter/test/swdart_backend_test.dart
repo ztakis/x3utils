@@ -52,8 +52,11 @@ Uint8List _identifiedImage({String banner = 'SCOOTER_VCU_xxG3'}) {
   return bytes;
 }
 
-Uint8List _identifiedCompatImage({int versionValue = 0x155}) {
-  final bytes = _identifiedImage();
+Uint8List _identifiedCompatImage({
+  int versionValue = 0x155,
+  String banner = 'SCOOTER_VCU_xxG3',
+}) {
+  final bytes = _identifiedImage(banner: banner);
   const at = 0x3000;
   final i = (versionValue >> 11) & 1;
   final imm3 = (versionValue >> 8) & 7;
@@ -61,6 +64,30 @@ Uint8List _identifiedCompatImage({int versionValue = 0x155}) {
   final hw1 = 0xf240 | (i << 10);
   final hw2 = (imm3 << 12) | imm8;
   bytes.setRange(at, at + 4, [hw1 & 0xff, hw1 >> 8, hw2 & 0xff, hw2 >> 8]);
+  return bytes;
+}
+
+Uint8List _identifiedVcuSram({int versionValue = 0x155}) {
+  final bytes = Uint8List(32 * 1024);
+  const offset = 0x420;
+  bytes[offset] = 0x5c;
+  bytes[offset + 1] = 0x50;
+  bytes.setRange(offset + 0x20, offset + 0x2e, '1CGC1234567890'.codeUnits);
+  final raw = versionValue < 0x200 ? versionValue & 0xff : versionValue;
+  bytes[offset + 0x2e] = raw & 0xff;
+  bytes[offset + 0x2f] = raw >> 8;
+  return bytes;
+}
+
+Uint8List _identifiedMcuSram({required int versionValue}) {
+  final bytes = Uint8List(32 * 1024);
+  const offset = 0x420;
+  bytes[offset] = 0x5c;
+  bytes[offset + 1] = 0x51;
+  bytes.setRange(offset + 0x20, offset + 0x30, 'Z025B4G25BM30168'.codeUnits);
+  final raw = versionValue < 0x200 ? versionValue & 0xff : versionValue;
+  bytes[offset + 0x32] = raw & 0xff;
+  bytes[offset + 0x33] = raw >> 8;
   return bytes;
 }
 
@@ -87,6 +114,7 @@ class _FakeSession implements SwdartSession {
   _FakeSession({
     swd.TargetInfo? target,
     Uint8List? bytes,
+    Uint8List? sramBytes,
     this.connectCompleter,
     this.connectError,
     this.events,
@@ -105,10 +133,12 @@ class _FakeSession implements SwdartSession {
       swd.FlashProgramStage.verified,
     ],
   }) : target = target ?? _target(),
-       bytes = bytes ?? _image();
+       bytes = bytes ?? _image(),
+       sramBytes = sramBytes ?? Uint8List(32 * 1024);
 
   final swd.TargetInfo target;
   final Uint8List bytes;
+  final Uint8List sramBytes;
   final Completer<swd.TargetInfo>? connectCompleter;
   final Object? connectError;
   final List<String>? events;
@@ -129,6 +159,8 @@ class _FakeSession implements SwdartSession {
   int? connectCountdown;
   int? readAddress;
   int? readLength;
+  int? sramAddress;
+  int? sramLength;
   final List<int> readAddresses = [];
   int? programAddress;
   Uint8List? programBytes;
@@ -174,6 +206,19 @@ class _FakeSession implements SwdartSession {
     events?.add('read');
     log?.call('[flash] fake read');
     return onRead?.call(address, length) ?? bytes;
+  }
+
+  @override
+  Future<Uint8List> readSram({
+    required int address,
+    required int length,
+  }) async {
+    if (disconnects > 0) throw StateError('not connected');
+    sramAddress = address;
+    sramLength = length;
+    events?.add('sram');
+    log?.call('[sram] fake read');
+    return sramBytes;
   }
 
   @override
@@ -341,6 +386,7 @@ void main() {
         operation: HardwareOperation.dump,
         mode: ConnectionMode.defaultSwd,
         countdown: 3,
+        captureSram: true,
       ),
       _callbacks(),
     );
@@ -350,6 +396,10 @@ void main() {
     expect(result.bytes, hasLength(Firmware.expectedSize));
     expect(session.readAddress, 0x08000000);
     expect(session.readLength, Firmware.expectedSize);
+    expect(session.sramAddress, 0x20000000);
+    expect(session.sramLength, 32 * 1024);
+    expect(result.evidence.sramAttempted, isTrue);
+    expect(result.sramBytes, same(session.sramBytes));
   });
 
   test('C45 Genuine maps to software-driven nRST under-reset attach', () async {
@@ -1323,7 +1373,11 @@ void main() {
       });
       final events = <String>[];
       final backup = _identifiedCompatImage();
-      final session = _FakeSession(bytes: backup, events: events);
+      final session = _FakeSession(
+        bytes: backup,
+        sramBytes: _identifiedVcuSram(),
+        events: events,
+      );
       final swdart = SwdartBackend(sessionFactory: () => session);
       final router = DesktopBackendRouter(openOcd: null, swdart: swdart)
         ..select(DesktopBackendSelection.swdart);
@@ -1335,10 +1389,10 @@ void main() {
       controller.selectAction('flash_compat');
 
       expect(controller.canStart, isTrue);
-      await controller.start();
+      await controller.start(confirmCompatRam: (_) async => true);
 
       expect(controller.stage, StageState.ok);
-      expect(events, ['read', 'program', 'reset']);
+      expect(events, ['sram', 'read', 'program', 'reset']);
       expect(session.programAddress, 0x08000000);
       final programmed = session.programBytes!;
       expect(programmed, hasLength(Firmware.expectedSize));
@@ -1506,7 +1560,11 @@ void main() {
     });
     final events = <String>[];
     final backup = _identifiedCompatImage();
-    final session = _FakeSession(bytes: backup, events: events);
+    final session = _FakeSession(
+      bytes: backup,
+      sramBytes: _identifiedVcuSram(),
+      events: events,
+    );
     Uint8List? published;
     final controller = AppController(
       backend: SwdartBackend(sessionFactory: () => session),
@@ -1523,10 +1581,10 @@ void main() {
     expect(controller.isActionAvailable('flash_compat'), isTrue);
     controller.selectAction('flash_compat');
     expect(controller.canStart, isTrue);
-    await controller.start();
+    await controller.start(confirmCompatRam: (_) async => true);
 
     expect(controller.stage, StageState.ok);
-    expect(events, ['read', 'publish', 'program', 'reset']);
+    expect(events, ['sram', 'read', 'publish', 'program', 'reset']);
     expect(published, backup);
     expect(session.programAddress, 0x08000000);
     final expected = Uint8List.fromList(backup)
@@ -1565,7 +1623,7 @@ void main() {
     await controller.start();
 
     expect(controller.stage, StageState.fail);
-    expect(events, ['read', 'publish']);
+    expect(events, ['sram', 'read', 'publish']);
     expect(session.programBytes, isNull);
     expect(controller.sub, contains('Nothing was written'));
   });
@@ -1577,6 +1635,7 @@ void main() {
     final events = <String>[];
     final session = _FakeSession(
       bytes: _identifiedCompatImage(versionValue: 0x163),
+      sramBytes: _identifiedVcuSram(versionValue: 0x163),
       events: events,
     );
     final controller = AppController(
@@ -1591,13 +1650,130 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     controller.selectAction('flash_compat');
-    await controller.start();
+    await controller.start(confirmCompatRam: (_) async => true);
 
     expect(controller.stage, StageState.fail);
-    expect(events, ['read', 'publish']);
+    expect(events, ['sram', 'read', 'publish']);
     expect(session.programBytes, isNull);
     expect(controller.resultPath, startsWith(androidBackupDirectoryLabel));
-    expect(controller.sub, contains('does not work on that firmware'));
+    expect(controller.sub, contains('unsupported SHU compatibility boundary'));
+  });
+
+  test('Android SHU modal may quit after the backup is saved', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    final events = <String>[];
+    final backup = _identifiedCompatImage();
+    final session = _FakeSession(
+      bytes: backup,
+      sramBytes: _identifiedVcuSram(),
+      events: events,
+    );
+    final controller = AppController(
+      backend: SwdartBackend(sessionFactory: () => session),
+      androidMode: true,
+      androidBackupPublisher: (_, fileName) async {
+        events.add('publish');
+        return '$androidBackupDirectoryLabel/$fileName';
+      },
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    controller.selectAction('flash_compat');
+    await controller.start(
+      confirmCompatRam: (report) async {
+        expect(report.status, CompatRamStatus.matched);
+        expect(report.canProceed, isTrue);
+        expect(report.backupIdentity, 'G3 VCU 1.5.5');
+        expect(report.sramIdentity, contains('VCU 1.5.5'));
+        return false;
+      },
+    );
+
+    expect(controller.stage, StageState.fail);
+    expect(events, ['sram', 'read', 'publish']);
+    expect(session.programBytes, isNull);
+    expect(controller.resultPath, startsWith(androidBackupDirectoryLabel));
+  });
+
+  test('Android SHU blocks a flash versus SRAM version mismatch', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    final events = <String>[];
+    final session = _FakeSession(
+      bytes: _identifiedCompatImage(),
+      sramBytes: _identifiedVcuSram(versionValue: 0x158),
+      events: events,
+    );
+    final controller = AppController(
+      backend: SwdartBackend(sessionFactory: () => session),
+      androidMode: true,
+      androidBackupPublisher: (_, fileName) async {
+        events.add('publish');
+        return '$androidBackupDirectoryLabel/$fileName';
+      },
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    controller.selectAction('flash_compat');
+    await controller.start(
+      confirmCompatRam: (report) async {
+        expect(report.status, CompatRamStatus.blocked);
+        expect(report.canProceed, isFalse);
+        expect(report.finding, contains('Firmware-version mismatch'));
+        return true; // A blocked report cannot be overridden.
+      },
+    );
+
+    expect(controller.stage, StageState.fail);
+    expect(events, ['sram', 'read', 'publish']);
+    expect(session.programBytes, isNull);
+    expect(controller.sub, contains('Firmware-version mismatch'));
+  });
+
+  test('ZT3 MCU 1.6.0 is blocked after operator model selection', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    final events = <String>[];
+    final session = _FakeSession(
+      bytes: _identifiedCompatImage(
+        versionValue: 0x160,
+        banner: 'SCOOTER_MCU_0001',
+      ),
+      sramBytes: _identifiedMcuSram(versionValue: 0x160),
+      events: events,
+    );
+    final controller = AppController(
+      backend: SwdartBackend(sessionFactory: () => session),
+      androidMode: true,
+      androidBackupPublisher: (_, fileName) async {
+        events.add('publish');
+        return '$androidBackupDirectoryLabel/$fileName';
+      },
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    controller.selectAction('flash_compat');
+    await controller.start(
+      askMcuModel: (_) async => 'zt3',
+      confirmCompatRam: (report) async {
+        expect(report.status, CompatRamStatus.blocked);
+        expect(report.modelNote, contains('selected by you'));
+        expect(report.serial, isNull);
+        expect(report.finding, contains('boundary 1.6.0'));
+        return true;
+      },
+    );
+
+    expect(controller.stage, StageState.fail);
+    expect(events, ['sram', 'read', 'publish']);
+    expect(session.programBytes, isNull);
   });
 
   test('Android slot-0 Backup + Flash accepts a matching ZIP3.2', () async {

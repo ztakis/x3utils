@@ -97,8 +97,24 @@ void main() {
       // so a new release needs adding to `known` and nowhere else.
       expect(FwVersionMatrix.refusedFrom('zt3', 'VCU').toString(), '1.5.9');
       expect(FwVersionMatrix.refusedFrom('g3', 'VCU').toString(), '1.6.3');
-      // No MCU ceiling exists yet, so nothing is refused by version there.
-      expect(FwVersionMatrix.refusedFrom('zt3', 'MCU'), isNull);
+      // MCU policy is model-selected because its runtime table has no model.
+      expect(FwVersionMatrix.refusedFrom('zt3', 'MCU').toString(), '1.6.0');
+      expect(FwVersionMatrix.refusedFrom('g3', 'MCU').toString(), '1.5.9');
+    });
+
+    test('MCU blacklist candidates are detected for the declared model', () {
+      final zt3 = FwVersionScanner.identify(
+        _payloadWith({0x2000: _movw(0x160)}),
+        model: 'zt3',
+        type: 'MCU',
+      );
+      final g3 = FwVersionScanner.identify(
+        _payloadWith({0x2000: _movw(0x159)}),
+        model: 'g3',
+        type: 'MCU',
+      );
+      expect(zt3.verdict, FwVerdict.blacklisted);
+      expect(g3.verdict, FwVerdict.blacklisted);
     });
 
     test('the highest match decides, so an older one cannot rescue it', () {

@@ -125,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
       askMcuModel: (models) => _showMcuModelPicker(context, models),
       confirmUnidentified: (finding, ceiling) =>
           _showUnidentifiedConfirm(context, finding, ceiling),
+      confirmCompatRam: (report) => showCompatRamConfirm(context, report),
     );
   }
 
@@ -4148,7 +4149,7 @@ class _StageButtons extends StatelessWidget {
   );
 }
 
-/// Selection gate for SHU compat: recent VCU firmware versions are not
+/// Selection gate for SHU compat: recent VCU and known MCU firmware versions are not
 /// supported, so entering the action requires acknowledging the known version
 /// ceilings after a short countdown. Anything except acceptance keeps the
 /// previous action selected.
@@ -4226,6 +4227,170 @@ Future<String?> _showMcuModelPicker(BuildContext context, List<String> models) {
         ),
       ),
     ),
+  );
+}
+
+Future<bool> showCompatRamConfirm(
+  BuildContext context,
+  CompatRamReport report,
+) async {
+  final blocked = report.status == CompatRamStatus.blocked;
+  final warning = report.status == CompatRamStatus.warning;
+  final accent = blocked
+      ? AppColors.danger
+      : warning
+      ? AppColors.hold
+      : AppColors.ok;
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    barrierColor: const Color(0xB3040A0F),
+    builder: (ctx) => Dialog(
+      key: const ValueKey('compat-ram-dialog'),
+      backgroundColor: AppColors.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.line2),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 620),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    blocked
+                        ? Icons.block_rounded
+                        : warning
+                        ? Icons.warning_amber_rounded
+                        : Icons.verified_rounded,
+                    color: accent,
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Firmware and RAM check',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.txt,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _CompatIdentityRow(label: 'Backup', value: report.backupIdentity),
+              const SizedBox(height: 8),
+              _CompatIdentityRow(label: 'SRAM', value: report.sramIdentity),
+              if (report.modelNote != null) ...[
+                const SizedBox(height: 8),
+                _CompatIdentityRow(label: 'Model', value: report.modelNote!),
+              ],
+              if (report.serial != null) ...[
+                const SizedBox(height: 8),
+                _CompatIdentityRow(label: 'Serial', value: report.serial!),
+              ],
+              if (report.region != null) ...[
+                const SizedBox(height: 8),
+                _CompatIdentityRow(label: 'Region', value: report.region!),
+              ],
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: accent.withValues(alpha: 0.42)),
+                ),
+                child: Text(
+                  report.finding,
+                  key: const ValueKey('compat-ram-finding'),
+                  style: TextStyle(
+                    color: accent,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'The original flash backup has already been validated and '
+                'saved. Nothing has been patched or written yet.',
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: AppColors.dim,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _PillButton(
+                    label: 'Quit',
+                    onTap: () => Navigator.pop(ctx, false),
+                    bg: AppColors.line,
+                    fg: AppColors.txt,
+                    border: AppColors.line2,
+                    small: true,
+                  ),
+                  if (report.canProceed) ...[
+                    const SizedBox(width: 10),
+                    _PillButton(
+                      label: 'Proceed',
+                      onTap: () => Navigator.pop(ctx, true),
+                      gradient: warning
+                          ? const [Color(0xFFFFB45C), AppColors.hold]
+                          : const [AppColors.ok, Color(0xFF24A88A)],
+                      fg: blocked ? Colors.white : AppColors.bg,
+                      small: true,
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+  return report.canProceed && (ok ?? false);
+}
+
+class _CompatIdentityRow extends StatelessWidget {
+  const _CompatIdentityRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(
+        width: 72,
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppColors.mut),
+        ),
+      ),
+      Expanded(
+        child: Text(
+          value,
+          style: const TextStyle(
+            fontSize: 13,
+            height: 1.35,
+            color: AppColors.txt,
+          ),
+        ),
+      ),
+    ],
   );
 }
 
@@ -4372,7 +4537,9 @@ Future<bool?> _showShuCompatWarning(BuildContext context) {
               'Only continue if your installed firmware is older than:\n\n'
               'F3 VCU — 1.6.3\n'
               'G3 VCU — 1.6.3\n'
+              'G3 MCU — 1.5.9\n'
               'ZT3 VCU — 1.5.9\n'
+              'ZT3 MCU — 1.6.0\n'
               'GT3 VCU — 1.7.2 — for reference only:\n'
               'x3utils does not support SHU compatible on GT3 at any version',
               style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.dim),

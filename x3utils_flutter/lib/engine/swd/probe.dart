@@ -462,6 +462,14 @@ class Probe {
     return readMemory(base, readLength);
   }
 
+  Future<Uint8List> readSram({int address = 0x20000000, int? length}) async {
+    await _c.halt();
+    final readLength = length ?? _target?.sramBytes ?? 0;
+    if (readLength <= 0) throw SwdException('target SRAM size is unknown');
+    _emit('[sram] reading $readLength bytes from ${hex(address)}');
+    return readMemory(address, readLength);
+  }
+
   Future<void> program(
     int address,
     Uint8List data, {

@@ -418,10 +418,9 @@ void main() {
       },
     );
 
-    test('no MCU ceiling exists, and the prompt says so', () async {
-      // The VCU prompt names the model's ceiling. MCU has no blacklist rows,
-      // and the operator must be told that rather than left with a gap where
-      // the VCU gets a number — an absence of data is not a clean bill.
+    test('the declared MCU model selects its compatibility floor', () async {
+      // SRAM cannot name the MCU model, so the declaration selects the policy.
+      // ZT3 MCU 1.6.0 and newer is the current protective boundary.
       final runner = _RecordingRunner(_dump(banner: 'SCOOTER_MCU_0001'));
       final c = await compatRunner(runner);
       String? shown;
@@ -437,9 +436,7 @@ void main() {
       );
 
       expect(shown, contains('zt3 MCU you selected'));
-      expect(shownCeiling, contains('no MCU version ceiling recorded'));
-      // Never a version claim we cannot support.
-      expect(shownCeiling, isNot(contains('known not to work')));
+      expect(shownCeiling, contains('On ZT3 MCU, 1.6.0 and newer'));
       expect(runner.wroteFlash, isFalse);
     });
 

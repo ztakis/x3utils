@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../models.dart';
 import 'hardware_backend.dart';
+import 'sram_identity.dart';
 import 'swd/probe.dart' show GuidedConnectEvent, GuidedConnectStage;
 import 'swd/swd.dart' as swd;
 import 'swd/transport.dart';
@@ -31,6 +32,8 @@ abstract interface class SwdartSession {
   Future<swd.TargetInfo> connect(swd.ConnectMode mode, {int countdown = 0});
 
   Future<Uint8List> readFlash({required int address, required int length});
+
+  Future<Uint8List> readSram({required int address, required int length});
 
   Future<void> programFlash({
     required int address,
@@ -91,6 +94,10 @@ class SwdartProbeSession implements SwdartSession {
   @override
   Future<Uint8List> readFlash({required int address, required int length}) =>
       _probe.readFlash(address: address, length: length);
+
+  @override
+  Future<Uint8List> readSram({required int address, required int length}) =>
+      _probe.readSram(address: address, length: length);
 
   @override
   Future<void> programFlash({
@@ -383,6 +390,24 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
           'x3utils Backup requires a 128 KiB AT32F415; detected ${target.flashKB} KiB',
         );
       }
+      Uint8List? sramBytes;
+      if (request.captureSram) {
+        try {
+          sramBytes = await session.readSram(
+            address: kSramBase,
+            length: target.sramBytes,
+          );
+          if (sramBytes.length != target.sramBytes) {
+            callbacks.onLine(
+              '[sram] warning: received ${sramBytes.length} of '
+              '${target.sramBytes} bytes; ignoring snapshot',
+            );
+            sramBytes = null;
+          }
+        } catch (error) {
+          callbacks.onLine('[sram] warning: snapshot failed: $error');
+        }
+      }
       final bytes = await session.readFlash(
         address: _flashBase,
         length: _backupLength,
@@ -395,8 +420,14 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
       }
       return HardwareResult(
         0,
-        _identified(target, caught: true, dumped: true),
+        _identified(
+          target,
+          caught: true,
+          dumped: true,
+          sramAttempted: request.captureSram,
+        ),
         bytes: bytes,
+        sramBytes: sramBytes,
       );
     } on UsbAcquireException catch (error) {
       throw _toHardwareException(error);
@@ -591,6 +622,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
     bool wrote = false,
     bool verified = false,
     bool resetRunning = false,
+    bool sramAttempted = false,
   }) => HardwareEvidence(
     caught: caught,
     dumped: dumped,
@@ -598,6 +630,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
     wrote: wrote,
     verified: verified,
     resetRunning: resetRunning,
+    sramAttempted: sramAttempted,
     targetName: target.name,
     targetTested: target.tested,
   );

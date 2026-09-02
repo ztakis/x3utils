@@ -189,7 +189,9 @@ class FwVersionMatrix {
   /// resolves to [FwVerdict.unknown] and is handled by the caller's policy.
   static const blacklist = <String, List<String>>{
     'zt3/VCU': ['1.5.9'],
+    'zt3/MCU': ['1.6.0'],
     'g3/VCU': ['1.6.3'],
+    'g3/MCU': ['1.5.9'],
     'f3/VCU': ['1.6.3'],
   };
 

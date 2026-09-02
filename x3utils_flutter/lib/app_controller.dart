@@ -22,6 +22,7 @@ import 'engine/pack_zip3.dart';
 import 'engine/confirmed_file_writer.dart';
 import 'engine/dump_metadata.dart';
 import 'engine/fw_version.dart';
+import 'engine/sram_identity.dart';
 import 'engine/trash.dart';
 import 'engine/zp_extract.dart';
 
@@ -42,6 +43,11 @@ typedef AskMcuModel = Future<String?> Function(List<String> models);
 /// operator most needs to read before choosing.
 typedef ConfirmUnidentified =
     Future<bool> Function(String finding, String ceiling);
+
+/// Shows the post-backup comparison between the firmware image and the live
+/// runtime table. A blocked report is informational only: returning true can
+/// never override [CompatRamReport.canProceed].
+typedef ConfirmCompatRam = Future<bool> Function(CompatRamReport report);
 
 typedef BackupDownloader =
     Future<void> Function(Uint8List bytes, String fileName);
@@ -81,6 +87,42 @@ class CompatIdentity {
     final v = version == null ? 'unknownfw' : 'v$version';
     return '${model.toLowerCase()}_${type.toLowerCase()}_$v';
   }
+}
+
+enum CompatRamStatus { matched, warning, blocked }
+
+class CompatRamReport {
+  const CompatRamReport({
+    required this.backupIdentity,
+    required this.sramIdentity,
+    required this.finding,
+    required this.status,
+    required this.canProceed,
+    this.serial,
+    this.region,
+    this.modelNote,
+  });
+
+  final String backupIdentity;
+  final String sramIdentity;
+  final String finding;
+  final CompatRamStatus status;
+  final bool canProceed;
+  final String? serial;
+  final String? region;
+  final String? modelNote;
+}
+
+class _CompatRamDecision {
+  const _CompatRamDecision({
+    required this.proceed,
+    required this.report,
+    this.version,
+  });
+
+  final bool proceed;
+  final CompatRamReport report;
+  final FwVersion? version;
 }
 
 /// Drives the whole UI via a single StageState the hero binds to.
@@ -378,7 +420,8 @@ class AppController extends ChangeNotifier {
     // baseline buries the run instead of documenting it. The switch stays
     // available on all three, and turning it off writes false and keeps it off.
     loaderDiagnostics =
-        _prefs!.getBool('loaderDiagnostics') ?? (!_browserMode && !_androidMode);
+        _prefs!.getBool('loaderDiagnostics') ??
+        (!_browserMode && !_androidMode);
     _applyLoaderDiagnostics();
     notifyListeners();
   }
@@ -2034,16 +2077,19 @@ class AppController extends ChangeNotifier {
   ConfirmTrash? _confirmTrash;
   AskMcuModel? _askMcuModel;
   ConfirmUnidentified? _confirmUnidentified;
+  ConfirmCompatRam? _confirmCompatRam;
 
   Future<void> start({
     ConfirmFileReplace? confirmFileReplace,
     ConfirmTrash? confirmTrash,
     AskMcuModel? askMcuModel,
     ConfirmUnidentified? confirmUnidentified,
+    ConfirmCompatRam? confirmCompatRam,
   }) async {
     if (confirmTrash != null) _confirmTrash = confirmTrash;
     if (askMcuModel != null) _askMcuModel = askMcuModel;
     if (confirmUnidentified != null) _confirmUnidentified = confirmUnidentified;
+    if (confirmCompatRam != null) _confirmCompatRam = confirmCompatRam;
     _runIssue = null;
     _runIssuePriority = 0;
     messageTone = MessageTone.normal;
@@ -3752,6 +3798,7 @@ class AppController extends ChangeNotifier {
         operation: HardwareOperation.dump,
         mode: mode,
         countdown: countdownSeconds,
+        captureSram: true,
       ),
       guided: guided,
       title: 'Reading current firmware…',
@@ -3825,6 +3872,8 @@ class AppController extends ChangeNotifier {
 
     final identity = await _compatIdentityGateBytes(
       dumpBytes,
+      sramBytes: dumpResult.sramBytes,
+      sramAttempted: dumpResult.evidence.sramAttempted,
       backupResultText: backupResultText,
       backupPath: backupPath,
       backupNote: backupNote,
@@ -3905,9 +3954,141 @@ class AppController extends ChangeNotifier {
     );
   }
 
+  Future<_CompatRamDecision> _compatRamGate({
+    required BinIdentity backup,
+    required String type,
+    required String model,
+    required bool modelDeclared,
+    required FwIdentity firmware,
+    required Uint8List? sramBytes,
+  }) async {
+    final parsed = SramIdentityParser.parse(sramBytes);
+    final ram = parsed.identity;
+    var status = CompatRamStatus.matched;
+    var canProceed = true;
+    var finding = 'The saved backup and live SRAM identity agree.';
+
+    void block(String reason) {
+      status = CompatRamStatus.blocked;
+      canProceed = false;
+      finding = reason;
+    }
+
+    void warn(String reason) {
+      if (status == CompatRamStatus.blocked) return;
+      status = CompatRamStatus.warning;
+      finding = reason;
+    }
+
+    if (parsed.verdict == SramIdentityVerdict.conflicting) {
+      block(parsed.reason);
+    } else if (ram == null) {
+      warn('${parsed.reason} The saved backup remains the available evidence.');
+    } else if (ram.type != type) {
+      block(
+        'Component mismatch: the backup says $type but SRAM says ${ram.type}.',
+      );
+    } else {
+      if (type == 'VCU') {
+        final ramModel = ram.serialModel;
+        if (ramModel == 'g3 plus') {
+          block(
+            'The serial identifies G3 Plus, which has no SHU compatibility '
+            'policy in this build.',
+          );
+        } else if (ramModel != null && ramModel != model) {
+          block(
+            'Model mismatch: the backup says ${model.toUpperCase()} but the '
+            'SRAM serial says ${ramModel.toUpperCase()}.',
+          );
+        }
+        final backupSerial = backup.serial;
+        if (canProceed &&
+            backupSerial != null &&
+            backupSerial.readable &&
+            backupSerial.text != ram.serial) {
+          block('Serial mismatch between the saved backup and live SRAM.');
+        }
+      }
+
+      if (canProceed && firmware.verdict == FwVerdict.ambiguous) {
+        block(
+          'The backup contains contradictory firmware-version evidence '
+          '(${firmware.matches.join(', ')}).',
+        );
+      }
+      if (canProceed &&
+          firmware.version != null &&
+          firmware.version != ram.version) {
+        block(
+          'Firmware-version mismatch: the backup says ${firmware.version} '
+          'but SRAM says ${ram.version}.',
+        );
+      }
+      final floor = FwVersionMatrix.refusedFrom(model, type);
+      if (canProceed && floor != null && ram.version.compareTo(floor) >= 0) {
+        block(
+          '${model.toUpperCase()} $type ${ram.version} is at or above the '
+          'unsupported SHU compatibility boundary $floor.',
+        );
+      }
+      if (canProceed && firmware.blocked) {
+        block(
+          '${model.toUpperCase()} $type ${firmware.version} is not supported '
+          'by SHU compatibility.',
+        );
+      }
+      if (canProceed && firmware.verdict == FwVerdict.unknown) {
+        warn(
+          'SRAM identifies ${ram.version}, but the backup scanner did not '
+          'recognise that release. The SRAM result is runtime evidence.',
+        );
+      }
+    }
+
+    final backupVersion = firmware.version?.toString() ?? 'not recognised';
+    final sramIdentity = ram == null
+        ? parsed.reason
+        : '${ram.type} ${ram.version} '
+              '(${ram.tableOffsets.length} matching table'
+              '${ram.tableOffsets.length == 1 ? '' : 's'})';
+    final region = ram?.regionCode == null
+        ? null
+        : ram!.regionLabel == null
+        ? 'code ${ram.regionCode}'
+        : 'code ${ram.regionCode} · ${ram.regionLabel}';
+    final report = CompatRamReport(
+      backupIdentity: '${model.toUpperCase()} $type $backupVersion',
+      sramIdentity: sramIdentity,
+      finding: finding,
+      status: status,
+      canProceed: canProceed,
+      serial: ram?.serial,
+      region: region,
+      modelNote: modelDeclared
+          ? '${model.toUpperCase()} was selected by you; MCU SRAM does not '
+                'encode the scooter model.'
+          : ram?.serialModel == null
+          ? null
+          : 'Serial model: ${ram!.displayModel}',
+    );
+
+    _log('== SRAM identity: $sramIdentity ==');
+    _log('== SRAM comparison: $finding ==');
+    final ask = _confirmCompatRam;
+    final accepted = ask != null && await ask(report);
+    return _CompatRamDecision(
+      proceed: canProceed && accepted,
+      report: report,
+      version: ram?.version,
+    );
+  }
+
   /// Bytes-based variant of [_compatIdentityGate] for memory-backed platforms.
   Future<CompatIdentity?> _compatIdentityGateBytes(
     List<int> bytes, {
+    required Uint8List? sramBytes,
+    required bool sramAttempted,
     required String backupResultText,
     required String backupPath,
     required String backupNote,
@@ -3984,6 +4165,31 @@ class AppController extends ChangeNotifier {
     );
     _log('== ${fw.logLine} ==');
 
+    _CompatRamDecision? ramDecision;
+    if (sramAttempted) {
+      ramDecision = await _compatRamGate(
+        backup: id,
+        type: type,
+        model: model,
+        modelDeclared: modelDeclared,
+        firmware: fw,
+        sramBytes: sramBytes,
+      );
+      if (!ramDecision.proceed) {
+        await _finishRealAfterHold(
+          false,
+          '',
+          'Nothing was written — SRAM verification did not authorize SHU '
+              'compat. ${ramDecision.report.finding} $backupResultText',
+          reseat: false,
+          finding: true,
+          outputPath: backupPath,
+          outputNote: backupNote,
+        );
+        return null;
+      }
+    }
+
     if (fw.blocked) {
       await _finishRealAfterHold(
         false,
@@ -3999,7 +4205,7 @@ class AppController extends ChangeNotifier {
       return null;
     }
 
-    if (fw.uncertain) {
+    if (fw.uncertain && ramDecision == null) {
       final finding = fw.verdict == FwVerdict.ambiguous
           ? 'The installed firmware gave contradictory version evidence '
                 '(${fw.matches.join(', ')}).'
@@ -4035,13 +4241,23 @@ class AppController extends ChangeNotifier {
       );
     }
 
+    if (fw.uncertain) {
+      _log('== operator continued using the SRAM identity comparison ==');
+      return CompatIdentity(
+        model: model,
+        type: type,
+        version: ramDecision?.version?.toString(),
+        modelDeclared: modelDeclared,
+      );
+    }
+
     _setInstruction(
       'Installed firmware: ${model.toUpperCase()} $type ${fw.version}.',
     );
     return CompatIdentity(
       model: model,
       type: type,
-      version: fw.version?.toString(),
+      version: (ramDecision?.version ?? fw.version)?.toString(),
       modelDeclared: modelDeclared,
     );
   }
@@ -4066,6 +4282,7 @@ class AppController extends ChangeNotifier {
         mode: mode,
         countdown: countdownSeconds,
         filePath: staged,
+        captureSram: true,
       ),
       guided: guided,
       title: 'Reading current firmware…',
@@ -4123,6 +4340,8 @@ class AppController extends ChangeNotifier {
     // costs the operator nothing they wanted to keep.
     final identity = await _compatIdentityGate(
       raw,
+      sramBytes: d.sramBytes,
+      sramAttempted: d.evidence.sramAttempted,
       metadataPath: rawMetadataPath,
     );
     if (identity == null) return;
@@ -4243,6 +4462,8 @@ class AppController extends ChangeNotifier {
   /// complete.
   Future<CompatIdentity?> _compatIdentityGate(
     String rawPath, {
+    required Uint8List? sramBytes,
+    required bool sramAttempted,
     String? metadataPath,
   }) async {
     _setInstruction('Identifying the installed firmware...');
@@ -4340,6 +4561,31 @@ class AppController extends ChangeNotifier {
     );
     _log('== ${fw.logLine} ==');
 
+    _CompatRamDecision? ramDecision;
+    if (sramAttempted) {
+      ramDecision = await _compatRamGate(
+        backup: id,
+        type: type,
+        model: model,
+        modelDeclared: modelDeclared,
+        firmware: fw,
+        sramBytes: sramBytes,
+      );
+      if (!ramDecision.proceed) {
+        await _finishRealAfterHold(
+          false,
+          '',
+          'Nothing was written — SRAM verification did not authorize SHU '
+              'compat. ${ramDecision.report.finding} The backup was saved.',
+          reseat: false,
+          finding: true,
+          outputPath: rawPath,
+          outputMetadataPath: metadataPath,
+        );
+        return null;
+      }
+    }
+
     if (fw.blocked) {
       await _finishRealAfterHold(
         false,
@@ -4356,7 +4602,7 @@ class AppController extends ChangeNotifier {
       return null;
     }
 
-    if (fw.uncertain) {
+    if (fw.uncertain && ramDecision == null) {
       final finding = fw.verdict == FwVerdict.ambiguous
           ? 'The installed firmware gave contradictory version evidence '
                 '(${fw.matches.join(', ')}).'
@@ -4367,10 +4613,9 @@ class AppController extends ChangeNotifier {
       // not read, so the one number that would have decided it is the useful
       // thing to hand them.
       //
-      // When no ceiling is recorded — MCU today — say THAT, rather than
-      // leaving a gap where the VCU gets a number. Silence there reads as
-      // reassurance; the truth is an absence of data, which is a different
-      // thing and the operator should weigh it themselves.
+      // When no ceiling is recorded for a model/type, say THAT rather than
+      // leaving a gap where another controller gets a number. Silence there
+      // reads as reassurance; absence of data is a different thing.
       final floor = FwVersionMatrix.refusedFrom(model, type);
       final ceiling = floor == null
           ? ' x3utils has no $type version ceiling recorded at all, so it '
@@ -4406,13 +4651,23 @@ class AppController extends ChangeNotifier {
       );
     }
 
+    if (fw.uncertain) {
+      _log('== operator continued using the SRAM identity comparison ==');
+      return CompatIdentity(
+        model: model,
+        type: type,
+        version: ramDecision?.version?.toString(),
+        modelDeclared: modelDeclared,
+      );
+    }
+
     _setInstruction(
       'Installed firmware: ${model.toUpperCase()} $type ${fw.version}.',
     );
     return CompatIdentity(
       model: model,
       type: type,
-      version: fw.version?.toString(),
+      version: (ramDecision?.version ?? fw.version)?.toString(),
       modelDeclared: modelDeclared,
     );
   }

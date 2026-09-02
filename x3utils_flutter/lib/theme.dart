@@ -110,7 +110,7 @@ const kMono = 'Consolas';
 const kHeroBlockWidth = 500.0;
 
 /// App version — single source of truth (keep pubspec.yaml `version:` in sync).
-const kAppVersion = '2.1.1';
+const kAppVersion = '2.1.2';
 // Release channel shown after the version (e.g. "v1.2.0 BETA"); '' for stable.
 // Kept OUT of kAppVersion so VERSION / pubspec / kAppVersion stay byte-equal —
 // package_macos.sh asserts that three-way match.

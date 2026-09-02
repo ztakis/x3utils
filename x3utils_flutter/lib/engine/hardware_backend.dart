@@ -114,6 +114,7 @@ class HardwareRequest {
     required this.countdown,
     this.filePath,
     this.bytes,
+    this.captureSram = false,
   });
 
   final HardwareOperation operation;
@@ -127,6 +128,10 @@ class HardwareRequest {
 
   /// In-memory program input used by browser/native-library backends.
   final Uint8List? bytes;
+
+  /// Ask a capable backend to take an SRAM snapshot during this same halted
+  /// session. SHU Compat opts in; ordinary backups remain unchanged.
+  final bool captureSram;
 }
 
 class HardwareEvidence {
@@ -137,6 +142,7 @@ class HardwareEvidence {
     this.wrote = false,
     this.verified = false,
     this.resetRunning = false,
+    this.sramAttempted = false,
     this.targetName,
     this.targetTested,
   });
@@ -147,6 +153,7 @@ class HardwareEvidence {
   final bool wrote;
   final bool verified;
   final bool resetRunning;
+  final bool sramAttempted;
 
   /// The part the backend identified, when it can name one.
   final String? targetName;
@@ -160,13 +167,22 @@ class HardwareEvidence {
 }
 
 class HardwareResult {
-  const HardwareResult(this.exitCode, this.evidence, {this.bytes});
+  const HardwareResult(
+    this.exitCode,
+    this.evidence, {
+    this.bytes,
+    this.sramBytes,
+  });
 
   final int exitCode;
   final HardwareEvidence evidence;
 
   /// In-memory read result used by backends that do not write a native path.
   final Uint8List? bytes;
+
+  /// Optional SRAM snapshot captured by swdart during the same halted session
+  /// as a full flash dump. It is never persisted as part of the backup.
+  final Uint8List? sramBytes;
 
   bool get ok => exitCode == 0;
 }
