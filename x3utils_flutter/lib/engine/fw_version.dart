@@ -191,8 +191,9 @@ class FwVersionMatrix {
     'zt3/VCU': ['1.5.9'],
     'zt3/MCU': ['1.6.0'],
     'g3/VCU': ['1.6.3'],
-    'g3/MCU': ['1.5.9'],
+    'g3/MCU': ['1.6.0'],
     'f3/VCU': ['1.6.3'],
+    'f3/MCU': ['1.6.0'],
   };
 
   /// Models with no supported version at all. GT3 never carried the mechanism
@@ -279,6 +280,13 @@ class FwVersionScanner {
       matches: found,
     );
   }
+
+  /// Whether [payload] contains the exact runtime [version]. This deliberately
+  /// checks one candidate only and does not need a model declaration: it is
+  /// used to corroborate a version already read from SRAM, not to discover or
+  /// authorize a firmware version on its own.
+  static bool containsVersion(List<int> payload, FwVersion version) =>
+      _scan(payload, {version.value: version}).isNotEmpty;
 
   /// Distinct candidate versions present in [bytes], in ascending order.
   static List<FwVersion> _scan(List<int> bytes, Map<int, FwVersion> wanted) {

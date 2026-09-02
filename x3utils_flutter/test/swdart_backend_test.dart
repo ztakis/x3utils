@@ -1553,6 +1553,212 @@ void main() {
     expect(controller.resultNote, contains('Android backup only'));
   });
 
+  test('Android SHU blocks XTEA before asking for an MCU model', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    final events = <String>[];
+    final backup =
+        _identifiedCompatImage(versionValue: 0x160, banner: 'SCOOTER_MCU_0001')
+          ..setRange(
+            CompatXtea.offset,
+            CompatXtea.offset + CompatXtea.length,
+            'xtea1234key56789'.codeUnits,
+          );
+    final session = _FakeSession(
+      bytes: backup,
+      sramBytes: _identifiedMcuSram(versionValue: 0x160),
+      events: events,
+    );
+    var modelPrompts = 0;
+    final controller = AppController(
+      backend: SwdartBackend(sessionFactory: () => session),
+      androidMode: true,
+      androidBackupPublisher: (_, fileName) async {
+        events.add('publish');
+        return '$androidBackupDirectoryLabel/$fileName';
+      },
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    controller.selectAction('flash_compat');
+    await controller.start(
+      askMcuModel: (_) async {
+        modelPrompts++;
+        return 'zt3';
+      },
+      confirmCompatRam: (report) async {
+        expect(report.status, CompatRamStatus.blocked);
+        expect(report.canProceed, isFalse);
+        expect(report.romIdentity, contains('XTEA: present'));
+        expect(report.finding, contains('ROM and SRAM agree on MCU 1.6.0'));
+        expect(report.modelNote, contains('selection was skipped'));
+        return true; // A blocked report cannot be overridden.
+      },
+    );
+
+    expect(modelPrompts, 0);
+    expect(controller.stage, StageState.fail);
+    expect(events, ['sram', 'read', 'publish']);
+    expect(session.programBytes, isNull);
+    expect(controller.sub, contains('XTEA key is present'));
+  });
+
+  test('Android SHU reports an XTEA versus SRAM version conflict', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    final events = <String>[];
+    final backup =
+        _identifiedCompatImage(versionValue: 0x152, banner: 'SCOOTER_MCU_0001')
+          ..setRange(
+            CompatXtea.offset,
+            CompatXtea.offset + CompatXtea.length,
+            'xtea1234key56789'.codeUnits,
+          );
+    final session = _FakeSession(
+      bytes: backup,
+      sramBytes: _identifiedMcuSram(versionValue: 0x160),
+      events: events,
+    );
+    var modelPrompts = 0;
+    final controller = AppController(
+      backend: SwdartBackend(sessionFactory: () => session),
+      androidMode: true,
+      androidBackupPublisher: (_, fileName) async {
+        events.add('publish');
+        return '$androidBackupDirectoryLabel/$fileName';
+      },
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    controller.selectAction('flash_compat');
+    await controller.start(
+      askMcuModel: (_) async {
+        modelPrompts++;
+        return 'zt3';
+      },
+      confirmCompatRam: (report) async {
+        expect(report.status, CompatRamStatus.blocked);
+        expect(report.canProceed, isFalse);
+        expect(report.finding, contains('does not contain the SRAM-reported'));
+        expect(report.finding, contains('evidence conflicts'));
+        return true;
+      },
+    );
+
+    expect(modelPrompts, 0);
+    expect(controller.stage, StageState.fail);
+    expect(events, ['sram', 'read', 'publish']);
+    expect(session.programBytes, isNull);
+  });
+
+  test(
+    'Android SHU old MCU layout continues to model and version checks',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      final events = <String>[];
+      final backup = _identifiedCompatImage(
+        versionValue: 0x152,
+        banner: 'SCOOTER_MCU_0001',
+      );
+      final session = _FakeSession(
+        bytes: backup,
+        sramBytes: _identifiedMcuSram(versionValue: 0x152),
+        events: events,
+      );
+      var modelPrompts = 0;
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        androidMode: true,
+        androidBackupPublisher: (_, fileName) async {
+          events.add('publish');
+          return '$androidBackupDirectoryLabel/$fileName';
+        },
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      controller.selectAction('flash_compat');
+      await controller.start(
+        askMcuModel: (_) async {
+          modelPrompts++;
+          return 'zt3';
+        },
+        confirmCompatRam: (report) async {
+          expect(report.status, CompatRamStatus.matched);
+          expect(report.romIdentity, contains('XTEA: not detected'));
+          return true;
+        },
+      );
+
+      expect(modelPrompts, 1);
+      expect(controller.stage, StageState.ok);
+      expect(events, ['sram', 'read', 'publish', 'program', 'reset']);
+    },
+  );
+
+  test(
+    'Android SHU reports default and cleared key fields as warnings',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      for (final entry in <(String, int, List<int>, String)>[
+        (
+          'default TEA',
+          CompatPatch.offset,
+          CompatPatch.signature,
+          'TEA: default SHU key',
+        ),
+        (
+          'cleared TEA',
+          CompatPatch.offset,
+          List<int>.filled(CompatPatch.signature.length, 0xFF),
+          'TEA: cleared (FF)',
+        ),
+        (
+          'cleared XTEA',
+          CompatXtea.offset,
+          List<int>.filled(CompatXtea.length, 0xFF),
+          'XTEA: cleared (FF)',
+        ),
+      ]) {
+        final backup = _identifiedCompatImage()
+          ..setRange(entry.$2, entry.$2 + entry.$3.length, entry.$3);
+        final session = _FakeSession(
+          bytes: backup,
+          sramBytes: _identifiedVcuSram(),
+        );
+        final controller = AppController(
+          backend: SwdartBackend(sessionFactory: () => session),
+          androidMode: true,
+          androidBackupPublisher: (_, fileName) async =>
+              '$androidBackupDirectoryLabel/$fileName',
+        );
+        addTearDown(controller.dispose);
+        await Future<void>.delayed(Duration.zero);
+
+        controller.selectAction('flash_compat');
+        await controller.start(
+          confirmCompatRam: (report) async {
+            expect(report.status, CompatRamStatus.warning, reason: entry.$1);
+            expect(report.canProceed, isTrue, reason: entry.$1);
+            expect(report.romIdentity, contains(entry.$4));
+            return true;
+          },
+        );
+
+        expect(controller.stage, StageState.ok, reason: entry.$1);
+        expect(session.programBytes, isNotNull, reason: entry.$1);
+      }
+    },
+  );
+
   test('Android SHU aborts before patching when backup save fails', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'defaultAutoRetry': 0,
@@ -1642,6 +1848,7 @@ void main() {
         expect(report.canProceed, isTrue);
         expect(report.backupIdentity, 'G3 VCU 1.5.5');
         expect(report.sramIdentity, contains('VCU 1.5.5'));
+        expect(report.modelNote, 'G3');
         return false;
       },
     );

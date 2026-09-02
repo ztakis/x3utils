@@ -192,20 +192,26 @@ void main() {
       context,
       const CompatRamReport(
         backupIdentity: 'G3 VCU 1.5.5',
+        romIdentity: 'TEA: non-default · XTEA: not detected',
         sramIdentity: 'VCU 1.5.5 (1 matching table)',
         finding: 'The saved backup and live SRAM identity agree.',
         status: CompatRamStatus.matched,
         canProceed: true,
         serial: '1CGC1234567890',
-        region: 'code C',
-        modelNote: 'Serial model: G3',
+        modelNote: 'G3',
       ),
     );
     await tester.pump();
 
     expect(find.byKey(const ValueKey('compat-ram-dialog')), findsOneWidget);
+    expect(find.text('ROM and RAM check'), findsOneWidget);
     expect(find.text('G3 VCU 1.5.5'), findsOneWidget);
+    expect(find.text('TEA: non-default · XTEA: not detected'), findsOneWidget);
     expect(find.text('VCU 1.5.5 (1 matching table)'), findsOneWidget);
+    expect(find.text('G3'), findsOneWidget);
+    expect(find.text('Serial model: G3'), findsNothing);
+    expect(find.text('Region'), findsNothing);
+    expect(find.text('code C'), findsNothing);
     expect(find.text('Proceed'), findsOneWidget);
     expect(find.text('Quit'), findsOneWidget);
 
@@ -232,6 +238,7 @@ void main() {
       context,
       const CompatRamReport(
         backupIdentity: 'G3 VCU 1.5.5',
+        romIdentity: 'TEA: non-default · XTEA: present',
         sramIdentity: 'VCU 1.5.8 (1 matching table)',
         finding: 'Firmware-version mismatch.',
         status: CompatRamStatus.blocked,

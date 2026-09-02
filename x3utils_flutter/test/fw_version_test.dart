@@ -78,6 +78,19 @@ void main() {
         expect(id.version.toString(), '1.5.8', reason: 'r$rd');
       }
     });
+
+    test('corroborates one SRAM version without a model list', () {
+      final p = _payloadWith({0x2000: _movw(0x160), 0x2400: _movw(0x152)});
+
+      expect(
+        FwVersionScanner.containsVersion(p, FwVersion.parse('1.6.0')!),
+        isTrue,
+      );
+      expect(
+        FwVersionScanner.containsVersion(p, FwVersion.parse('1.5.9')!),
+        isFalse,
+      );
+    });
   });
 
   group('verdicts', () {

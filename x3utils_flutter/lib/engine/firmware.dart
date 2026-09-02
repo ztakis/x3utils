@@ -743,6 +743,47 @@ enum FwKeyState {
   other,
 }
 
+/// State of the 16-byte field added at 0x1440 by the newer OEM firmware
+/// generation. This is a compatibility fingerprint, not cryptographic key
+/// validation: TEA and XTEA both accept arbitrary 16-byte keys, while the OEM
+/// stores this particular field as ASCII letters and digits.
+enum FwXteaState {
+  /// Sixteen ASCII letters/digits: the observed OEM XTEA-field shape.
+  present,
+
+  /// Sixteen 0xFF bytes: cleared by SHU/modded firmware.
+  cleared,
+
+  /// Anything else, including the code/data occupying this offset in the old
+  /// layout. This means no recognisable OEM XTEA field, not a cryptographic
+  /// proof that XTEA is unused anywhere in the image.
+  notDetected,
+}
+
+class CompatXtea {
+  const CompatXtea._();
+
+  static const int offset = 0x1440;
+  static const int length = 16;
+
+  static FwXteaState keyState(List<int> image, {int at = offset}) {
+    if (image.length < at + length) return FwXteaState.notDetected;
+    var alphanumeric = true;
+    var cleared = true;
+    for (var i = 0; i < length; i++) {
+      final byte = image[at + i];
+      final digit = byte >= 0x30 && byte <= 0x39;
+      final upper = byte >= 0x41 && byte <= 0x5A;
+      final lower = byte >= 0x61 && byte <= 0x7A;
+      if (!digit && !upper && !lower) alphanumeric = false;
+      if (byte != 0xFF) cleared = false;
+    }
+    if (alphanumeric) return FwXteaState.present;
+    if (cleared) return FwXteaState.cleared;
+    return FwXteaState.notDetected;
+  }
+}
+
 /// The SHU-compatible patch (flash_compat step 2): inject a fixed 16-byte
 /// signature at 0x1420 into the chip's own firmware, then flash it back.
 class CompatPatch {
@@ -806,7 +847,10 @@ class CompatPatch {
     }
     for (var i = 0; i < signature.length; i++) {
       if (patched[offset + i] != signature[i]) {
-        return (FirmwareCheck.fail('Patch verification failed after write.'), null);
+        return (
+          FirmwareCheck.fail('Patch verification failed after write.'),
+          null,
+        );
       }
     }
     return (FirmwareCheck.valid, patched);

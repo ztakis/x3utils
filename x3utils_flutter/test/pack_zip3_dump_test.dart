@@ -620,4 +620,39 @@ void main() {
       );
     });
   });
+
+  group('CompatXtea.keyState', () {
+    test('sixteen ASCII letters and digits identify the OEM XTEA field', () {
+      final dump = _dump()
+        ..setRange(
+          CompatXtea.offset,
+          CompatXtea.offset + CompatXtea.length,
+          'xtea1234key56789'.codeUnits,
+        );
+
+      expect(CompatXtea.keyState(dump), FwXteaState.present);
+    });
+
+    test('the binary bytes in the old layout are not an XTEA marker', () {
+      final dump = _dump()
+        ..setRange(
+          CompatXtea.offset,
+          CompatXtea.offset + CompatXtea.length,
+          List<int>.generate(CompatXtea.length, (i) => i),
+        );
+
+      expect(CompatXtea.keyState(dump), FwXteaState.notDetected);
+    });
+
+    test('all FF reports a cleared XTEA field', () {
+      final dump = _dump()
+        ..setRange(
+          CompatXtea.offset,
+          CompatXtea.offset + CompatXtea.length,
+          List<int>.filled(CompatXtea.length, 0xFF),
+        );
+
+      expect(CompatXtea.keyState(dump), FwXteaState.cleared);
+    });
+  });
 }

@@ -4261,7 +4261,7 @@ Future<bool> showCompatRamConfirm(
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
-                      'Firmware and RAM check',
+                      'ROM and RAM check',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -4274,6 +4274,8 @@ Future<bool> showCompatRamConfirm(
               const SizedBox(height: 16),
               _CompatIdentityRow(label: 'Backup', value: report.backupIdentity),
               const SizedBox(height: 8),
+              _CompatIdentityRow(label: 'ROM keys', value: report.romIdentity),
+              const SizedBox(height: 8),
               _CompatIdentityRow(label: 'SRAM', value: report.sramIdentity),
               if (report.modelNote != null) ...[
                 const SizedBox(height: 8),
@@ -4282,10 +4284,6 @@ Future<bool> showCompatRamConfirm(
               if (report.serial != null) ...[
                 const SizedBox(height: 8),
                 _CompatIdentityRow(label: 'Serial', value: report.serial!),
-              ],
-              if (report.region != null) ...[
-                const SizedBox(height: 8),
-                _CompatIdentityRow(label: 'Region', value: report.region!),
               ],
               const SizedBox(height: 16),
               Container(
