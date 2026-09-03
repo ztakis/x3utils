@@ -3158,6 +3158,21 @@ class AppController extends ChangeNotifier {
     if (useExtra) {
       metadataPath = await _maybeDeclareExtraMcuModel(outPath, metadataPath);
       final copy = _copyExtraBackup(outPath, r.bytes!);
+      // Persist the raw SRAM snapshot beside the dump. Flash can be re-read
+      // from the .bin at any time; SRAM cannot, so saving it is the only way a
+      // newly learned SRAM offset can ever be applied to this capture later.
+      String? ramPath;
+      if (r.sramBytes != null) {
+        try {
+          ramPath = ExtraBackupMetadata.writeSramBin(outPath, r.sramBytes!);
+          _log(
+            '== Extra SRAM snapshot (${r.sramBytes!.length} B) → $ramPath ==',
+          );
+        } catch (error) {
+          _log('== Extra SRAM snapshot was not saved: $error ==');
+        }
+      }
+      final ramReturnedButNotSaved = r.sramBytes != null && ramPath == null;
       String? extraPath;
       try {
         final metadata = metadataPath == null
@@ -3168,6 +3183,7 @@ class AppController extends ChangeNotifier {
           firstRead: r.bytes!,
           secondRead: r.comparisonBytes!,
           sramBytes: r.sramBytes,
+          sramPath: ramPath,
           hardware: r.extraBackupEvidence!,
           backupMetadata: metadata,
           secondaryCreated: copy.path != null,
@@ -3182,18 +3198,22 @@ class AppController extends ChangeNotifier {
         _log('== Extra backup certificate was not written: $error ==');
       }
       if (copy.verified) {
-        for (final sidecar in [metadataPath, extraPath]) {
-          if (sidecar == null) continue;
-          final copied = _backupSecondCopy(sidecar);
+        for (final artifact in [metadataPath, extraPath, ramPath]) {
+          if (artifact == null) continue;
+          final copied = _backupSecondCopy(artifact);
           if (copied != null) _log('== 2nd copy → $copied ==');
         }
       }
+      // A returned-but-unsaved SRAM snapshot leaves the Extra set incomplete;
+      // SRAM the probe never returned does not, because it is best-effort
+      // evidence and its absence is recorded in the certificate.
       extraArtifactsComplete =
           copy.verified &&
           metadataPath != null &&
           File(metadataPath).existsSync() &&
           extraPath != null &&
-          File(extraPath).existsSync();
+          File(extraPath).existsSync() &&
+          !ramReturnedButNotSaved;
       if (!extraArtifactsComplete) {
         outputNote =
             'The Extra record is incomplete. Repeat Extra Backup if you '

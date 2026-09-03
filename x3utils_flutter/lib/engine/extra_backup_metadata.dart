@@ -33,6 +33,44 @@ class ExtraBackupMetadata {
     return '$stem.extra.json';
   }
 
+  /// Path of the raw SRAM snapshot beside a dump: `dump_<ts>_RAM.bin`.
+  ///
+  /// SRAM is live memory that cannot be re-read from the saved `.bin`, so it is
+  /// persisted as its own raw artifact. It is 32 KiB, never the 131072 bytes a
+  /// flash image must be, so the firmware validators refuse it as a flash
+  /// source; the `_RAM` name is the human-facing signal on top of that gate.
+  static String sramBinPath(String dumpPath) {
+    final extension = p.extension(dumpPath);
+    final stem = extension.isEmpty
+        ? dumpPath
+        : dumpPath.substring(0, dumpPath.length - extension.length);
+    return '${stem}_RAM.bin';
+  }
+
+  /// Writes the raw SRAM snapshot to [sramBinPath] via a `.part` + rename so a
+  /// truncated write never lands as a real `_RAM.bin`. Refuses to overwrite an
+  /// existing snapshot, mirroring [write].
+  static String writeSramBin(String dumpPath, List<int> bytes) {
+    final path = sramBinPath(dumpPath);
+    final target = File(path);
+    if (target.existsSync()) {
+      throw FileSystemException('Extra SRAM snapshot already exists', path);
+    }
+    final temporary = File('$path.part');
+    try {
+      temporary.createSync(exclusive: true);
+      temporary.writeAsBytesSync(bytes, flush: true);
+      if (target.existsSync()) {
+        throw FileSystemException('Extra SRAM snapshot already exists', path);
+      }
+      temporary.renameSync(path);
+      return path;
+    } catch (_) {
+      if (temporary.existsSync()) temporary.deleteSync();
+      rethrow;
+    }
+  }
+
   static String digest(List<int> bytes) =>
       crypto.sha256.convert(bytes).toString();
 
@@ -41,6 +79,7 @@ class ExtraBackupMetadata {
     required List<int> firstRead,
     required List<int> secondRead,
     required List<int>? sramBytes,
+    String? sramPath,
     required ExtraBackupHardwareEvidence hardware,
     required Map<String, Object?> backupMetadata,
     required bool secondaryCreated,
@@ -178,6 +217,7 @@ class ExtraBackupMetadata {
         'sramAttempted': true,
         'sramBytesReturned': sramBytes?.length,
         'sramSha256': sramBytes == null ? null : digest(sramBytes),
+        'sramFile': sramPath == null ? null : p.basename(sramPath),
         'backend': backendName,
         'connectionMode': connectionMode,
         'hostPlatform': Platform.operatingSystem,
