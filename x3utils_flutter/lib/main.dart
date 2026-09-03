@@ -3037,6 +3037,12 @@ class _HeroStageState extends State<_HeroStage>
                   const SizedBox(height: 12),
                   _MakeZip3Form(c: c),
                 ],
+                if (c.stage == StageState.idle &&
+                    c.actionId == 'dump' &&
+                    c.extraBackupAvailable) ...[
+                  const SizedBox(height: 14),
+                  _ExtraBackupToggle(c: c),
+                ],
                 // The packer's idle page carries a file bar AND a form, so it
                 // gets a tighter pre-CTA gap than the other actions.
                 SizedBox(
@@ -3059,6 +3065,60 @@ class _HeroStageState extends State<_HeroStage>
       ),
     );
   }
+}
+
+/// Standalone Backup BETA opt-in. It is deliberately action-local and
+/// transient: Backup + Flash and SHU compat never inherit this request.
+class _ExtraBackupToggle extends StatelessWidget {
+  const _ExtraBackupToggle({required this.c});
+
+  final AppController c;
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
+    child: InkWell(
+      key: const ValueKey('extra-backup-toggle'),
+      onTap: () => c.setExtraBackup(!c.extraBackup),
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
+        child: Row(
+          children: [
+            Icon(
+              c.extraBackup
+                  ? Icons.check_box_rounded
+                  : Icons.check_box_outline_blank_rounded,
+              size: 19,
+              color: c.extraBackup ? AppColors.brand : AppColors.mut,
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Extra backup (BETA)',
+                    style: TextStyle(
+                      color: c.extraBackup ? AppColors.txt : AppColors.dim,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Capture SRAM, read flash twice, compare every byte, and '
+                    'save a verified secondary copy plus .extra.json.',
+                    style: TextStyle(color: AppColors.mut, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// Reveals local backup identity data only after the operator asks for it.

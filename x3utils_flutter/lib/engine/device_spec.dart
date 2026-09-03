@@ -8,7 +8,7 @@
 /// Two layers share these records:
 /// - **Model validation**: trust `info.json`'s declared `model` / `type`
 ///   against [kSupportedDevices] — see [DeviceSpec.evaluateZip3].
-/// - **Device-side guard**: BANNERS ENFORCE, SERIALS INFORM (decided
+/// - **Device-side guard**: BANNERS ENFORCE, VCU SERIALS INFORM (decided
 ///   2026-07-19). [DeviceSpec.checkTargetMatch] requires supported firmware
 ///   banners and blocks on their type/model disagreement. Serial facts —
 ///   prefix→model decode, the
@@ -17,7 +17,9 @@
 ///   block. Serial-based enforcement (pairing matrix, exact-match rules) was
 ///   deliberately RETIRED: the BLE app owns serial provisioning (it rewrites
 ///   the generic serial with the bound one at 0x1F020/0x1F420), layouts vary
-///   by firmware, and SWD cannot be authoritative about them. Do not rebuild
+///   by firmware, and SWD cannot be authoritative about them. MCU controller
+///   SN/MN values are separate 16-character manufacturing identity evidence;
+///   they are recorded in JSON but are not scooter serials. Do not rebuild
 ///   serial blocking without a new decision.
 library;
 
@@ -108,6 +110,16 @@ const kGenericSerials = <String>{
 
 final _serialRe = RegExp(r'^[0-9A-Za-z]{14}$');
 
+/// MCU controller SN/MN occupies the same two flash locations as the VCU
+/// scooter serial, but it is a distinct 16-character manufacturing identity.
+/// It must never be truncated to [kSerialLength] or presented as the scooter
+/// serial. The physical controller label carries Part Number and SN/MN as two
+/// separate fields; these bytes are the SN/MN, not the Part Number.
+const kControllerSnMnOffset = 0x1F020;
+const kControllerSnMnBackupOffset = 0x1F420;
+const kControllerSnMnLength = 16;
+final _controllerSnMnRe = RegExp(r'^[0-9A-Za-z]{16}$');
+
 /// What a serial region turned out to hold.
 enum SerialState {
   /// A shape-valid serial that is not a known factory-generic string.
@@ -134,6 +146,25 @@ class SerialInfo {
 
   bool get readable =>
       state == SerialState.real || state == SerialState.generic;
+}
+
+enum ControllerSnMnState {
+  matched,
+  primaryOnly,
+  backupOnly,
+  conflict,
+  blank,
+  unreadable,
+}
+
+/// MCU-only controller SN/MN evidence from both full-flash identity copies.
+class ControllerSnMnInfo {
+  const ControllerSnMnInfo(this.state, {this.value, this.primary, this.backup});
+
+  final ControllerSnMnState state;
+  final String? value;
+  final String? primary;
+  final String? backup;
 }
 
 /// Outcome of checking a package's declared model/type against the allow-list.
@@ -334,8 +365,8 @@ class DeviceSpec {
 
   /// Everything we can READ from a bin, for display and logs — enforces
   /// nothing. Works on a loaded firmware file or a target backup dump
-  /// ([slotBin] false: banner at 0x1400 + serial pair; true: banner at 0x400,
-  /// no serial — slot bins structurally lack one).
+  /// ([slotBin] false: banner at 0x1400 plus component-specific identity;
+  /// true: banner at 0x400 with no full-flash identity region).
   static BinIdentity describeBin(List<int> bytes, {required bool slotBin}) {
     final offset = slotBin ? kBannerOffset : kSlotBannerOffset;
     final banner = _bannerAt(bytes, offset);
@@ -352,12 +383,16 @@ class DeviceSpec {
       bannerModel: bannerModel,
       bannerType: bannerType,
       bannerSupported: supportedBanner != null,
-      serial: slotBin ? null : readSerial(bytes),
+      slotBin: slotBin,
+      serial: !slotBin && bannerType == 'VCU' ? readSerial(bytes) : null,
+      controllerSnMn: !slotBin && bannerType == 'MCU'
+          ? readControllerSnMn(bytes)
+          : null,
     );
   }
 
   /// Classify the serial pair at [kSerialOffset]/[kSerialBackupOffset]: a
-  /// shape-valid 15-char serial (primary first, then the backup copy) is
+  /// shape-valid 14-character serial (primary first, then the backup copy) is
   /// [SerialState.real] or [SerialState.generic]; both copies blank is
   /// [SerialState.cleared]; anything else is [SerialState.none].
   static SerialInfo readSerial(List<int> b) {
@@ -376,6 +411,47 @@ class DeviceSpec {
       return const SerialInfo(SerialState.cleared);
     }
     return const SerialInfo(SerialState.none);
+  }
+
+  /// Read the two MCU controller SN/MN copies without treating either as the
+  /// scooter serial. A value is exposed only when at least one complete,
+  /// shape-valid 16-character copy exists; conflicts preserve both copies.
+  static ControllerSnMnInfo readControllerSnMn(List<int> b) {
+    final primary = _controllerSnMnTextAt(b, kControllerSnMnOffset);
+    final backup = _controllerSnMnTextAt(b, kControllerSnMnBackupOffset);
+    if (primary != null && backup != null) {
+      return primary == backup
+          ? ControllerSnMnInfo(
+              ControllerSnMnState.matched,
+              value: primary,
+              primary: primary,
+              backup: backup,
+            )
+          : ControllerSnMnInfo(
+              ControllerSnMnState.conflict,
+              primary: primary,
+              backup: backup,
+            );
+    }
+    if (primary != null) {
+      return ControllerSnMnInfo(
+        ControllerSnMnState.primaryOnly,
+        value: primary,
+        primary: primary,
+      );
+    }
+    if (backup != null) {
+      return ControllerSnMnInfo(
+        ControllerSnMnState.backupOnly,
+        value: backup,
+        backup: backup,
+      );
+    }
+    if (_regionBlank(b, kControllerSnMnOffset, kControllerSnMnLength) &&
+        _regionBlank(b, kControllerSnMnBackupOffset, kControllerSnMnLength)) {
+      return const ControllerSnMnInfo(ControllerSnMnState.blank);
+    }
+    return const ControllerSnMnInfo(ControllerSnMnState.unreadable);
   }
 
   /// A human note when this flash changes the device serial (full-image writes
@@ -422,11 +498,19 @@ class DeviceSpec {
     return _serialRe.hasMatch(s) ? s : null;
   }
 
+  static String? _controllerSnMnTextAt(List<int> b, int off) {
+    if (b.length < off + kControllerSnMnLength) return null;
+    final value = String.fromCharCodes(
+      b.sublist(off, off + kControllerSnMnLength),
+    );
+    return _controllerSnMnRe.hasMatch(value) ? value : null;
+  }
+
   /// True when the serial region at [off] exists and is uniformly blank
   /// (all 0x00 or all 0xFF — written-zeros vs erased flash).
-  static bool _regionBlank(List<int> b, int off) {
-    if (b.length < off + kSerialLength) return false;
-    final region = b.sublist(off, off + kSerialLength);
+  static bool _regionBlank(List<int> b, int off, [int length = kSerialLength]) {
+    if (b.length < off + length) return false;
+    final region = b.sublist(off, off + length);
     return region.every((v) => v == 0x00) || region.every((v) => v == 0xFF);
   }
 
@@ -482,14 +566,18 @@ class BinIdentity {
     this.bannerModel,
     this.bannerType,
     this.bannerSupported = false,
+    this.slotBin = false,
     this.serial,
+    this.controllerSnMn,
   });
 
   final String? banner; // raw 16-char banner, null when absent/garbage
   final String? bannerModel; // zt3/g3/... for VCU banners with a known code
   final String? bannerType; // VCU | MCU
   final bool bannerSupported;
-  final SerialInfo? serial; // null for slot bins (structurally no serial)
+  final bool slotBin;
+  final SerialInfo? serial; // VCU full images only
+  final ControllerSnMnInfo? controllerSnMn; // MCU full images only; JSON-only
 
   /// Friendly identity read from the firmware banner, without claiming target
   /// compatibility. Unknown-but-shaped banners retain their raw evidence.
@@ -577,7 +665,11 @@ class BinIdentity {
     final b = banner == null ? 'banner: none' : 'banner: $banner';
     final s = serial;
     final ser = s == null
-        ? 'serial: n/a (slot bin)'
+        ? slotBin
+              ? 'serial: n/a (slot bin)'
+              : bannerType == 'MCU'
+              ? 'serial: n/a (MCU)'
+              : 'serial: n/a'
         : switch (s.state) {
             SerialState.real =>
               'serial: ${s.text} (model ${s.model ?? 'unknown'})',

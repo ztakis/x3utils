@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -10,6 +11,7 @@ import 'package:x3utils_flutter/engine/android_backup_store.dart';
 import 'package:x3utils_flutter/engine/desktop_backend_router.dart';
 import 'package:x3utils_flutter/engine/device_spec.dart';
 import 'package:x3utils_flutter/engine/firmware.dart';
+import 'package:x3utils_flutter/engine/extra_backup_metadata.dart';
 import 'package:x3utils_flutter/engine/hardware_backend.dart';
 import 'package:x3utils_flutter/engine/pack_zip3.dart';
 import 'package:x3utils_flutter/engine/swd/probe.dart'
@@ -400,7 +402,46 @@ void main() {
     expect(session.sramLength, 32 * 1024);
     expect(result.evidence.sramAttempted, isTrue);
     expect(result.sramBytes, same(session.sramBytes));
+    expect(result.comparisonBytes, isNull);
+    expect(session.readAddresses, [0x08000000]);
   });
+
+  test(
+    'Extra Backup captures SRAM, USD, and two flash reads in one session',
+    () async {
+      final bytes = _identifiedCompatImage();
+      final events = <String>[];
+      final session = _FakeSession(
+        bytes: bytes,
+        sramBytes: _identifiedVcuSram(),
+        events: events,
+        onRead: (address, length) => address == 0x1ffff800
+            ? Uint8List.fromList([0xa5, 0x5a, 0xff, 0x00])
+            : bytes,
+      );
+      final backend = SwdartBackend(sessionFactory: () => session);
+
+      final result = await backend.run(
+        const HardwareRequest(
+          operation: HardwareOperation.dump,
+          mode: ConnectionMode.defaultSwd,
+          countdown: 3,
+          extraBackup: true,
+        ),
+        _callbacks(),
+      );
+
+      expect(result.ok, isTrue);
+      expect(result.bytes, same(bytes));
+      expect(result.comparisonBytes, same(bytes));
+      expect(result.sramBytes, same(session.sramBytes));
+      expect(result.extraBackupEvidence?.usdWord, 0x00ff5aa5);
+      expect(result.extraBackupEvidence?.idcode, 0x700301c5);
+      expect(session.readAddresses, [0x08000000, 0x08000000, 0x1ffff800]);
+      expect(events, ['sram', 'read', 'read', 'read']);
+      expect(session.disconnects, 1);
+    },
+  );
 
   test('C45 Genuine maps to software-driven nRST under-reset attach', () async {
     final session = _FakeSession();
@@ -1267,6 +1308,211 @@ void main() {
       controller.selectMode(ConnectionMode.defaultSwd);
       controller.selectAction('flash_compat');
       expect(controller.canStart, isTrue);
+    },
+  );
+
+  test(
+    'controller Extra Backup writes verified primary, secondary, and certificate',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      final root = Directory.systemTemp.createTempSync('x3utils_extra_test');
+      final secondary = Directory(p.join(root.path, 'secondary'))..createSync();
+      addTearDown(() {
+        Firmware.setRoot(null);
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final bytes = _identifiedCompatImage();
+      final session = _FakeSession(
+        bytes: bytes,
+        sramBytes: _identifiedVcuSram(),
+        onRead: (address, length) => address == 0x1ffff800
+            ? Uint8List.fromList([0xa5, 0x5a, 0xff, 0x00])
+            : bytes,
+      );
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        backupSecondCopy: (source) => File(
+          source,
+        ).copySync(p.join(secondary.path, p.basename(source))).path,
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+      controller.setX3utilsRoot(root.path);
+      controller.setSecondCopy(false);
+      controller.selectAction('dump');
+      controller.setExtraBackup(true);
+
+      await controller.start();
+
+      expect(controller.stage, StageState.ok);
+      expect(controller.resultPath, endsWith('.bin'));
+      final primary = File(controller.resultPath!);
+      expect(primary.readAsBytesSync(), bytes);
+      final normalSidecar = File(controller.resultMetadataPath!);
+      final extraSidecar = File(
+        ExtraBackupMetadata.sidecarPath(controller.resultPath!),
+      );
+      expect(normalSidecar.existsSync(), isTrue);
+      expect(extraSidecar.existsSync(), isTrue);
+      expect(
+        File(p.join(secondary.path, p.basename(primary.path))).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(
+          p.join(secondary.path, p.basename(normalSidecar.path)),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(
+          p.join(secondary.path, p.basename(extraSidecar.path)),
+        ).existsSync(),
+        isTrue,
+      );
+      final extra = jsonDecode(extraSidecar.readAsStringSync()) as Map;
+      expect((extra['capture'] as Map)['match'], isTrue);
+      expect((extra['capture'] as Map)['flashReads'], 2);
+      expect((extra['secondaryCopy'] as Map)['verified'], isTrue);
+      expect((extra['firmware'] as Map)['version'], '1.5.5');
+      expect((extra['firmware'] as Map)['blacklisted'], isFalse);
+      expect((extra['firmware'] as Map)['blacklistFrom'], '1.6.3');
+      expect(
+        (extra['firmware'] as Map)['shuCompatibilityAtCapture'],
+        'eligibleByCurrentPolicy',
+      );
+      expect((extra['runtime'] as Map)['version'], '1.5.5');
+      expect((extra['protection'] as Map)['verdict'], 'notProtected');
+      expect((extra['protection'] as Map)['rdpOn'], isFalse);
+      expect((extra['protection'] as Map)['fapUnlocked'], isTrue);
+      expect((extra['compatibilityFields'] as Map)['teaAt0x1420'], isNotNull);
+      expect((extra['compatibilityFields'] as Map)['xteaAt0x1440'], isNotNull);
+      expect(
+        (extra['backup'] as Map)['factoryConditionClaim'],
+        'notProvenWithoutAnExternalReference',
+      );
+      expect(controller.console.join('\n'), contains('Extra comparison OK'));
+    },
+  );
+
+  test(
+    'controller Extra Backup refuses mismatched reads without saving',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      final root = Directory.systemTemp.createTempSync(
+        'x3utils_extra_mismatch',
+      );
+      addTearDown(() {
+        Firmware.setRoot(null);
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final first = _identifiedCompatImage();
+      final second = Uint8List.fromList(first)..[0x6000] ^= 0x01;
+      var flashRead = 0;
+      final session = _FakeSession(
+        sramBytes: _identifiedVcuSram(),
+        onRead: (address, length) {
+          if (address == 0x1ffff800) {
+            return Uint8List.fromList([0xa5, 0x5a, 0xff, 0x00]);
+          }
+          return flashRead++ == 0 ? first : second;
+        },
+      );
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        backupSecondCopy: (_) => fail('mismatched capture must not be copied'),
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+      controller.setX3utilsRoot(root.path);
+      controller.selectAction('dump');
+      controller.setExtraBackup(true);
+
+      await controller.start();
+
+      expect(controller.stage, StageState.fail);
+      expect(controller.resultPath, isNull);
+      expect(
+        Directory(p.join(root.path, 'backup')).listSync().whereType<File>(),
+        isEmpty,
+      );
+      expect(controller.console.join('\n'), contains('1 differing bytes'));
+    },
+  );
+
+  test(
+    'controller Extra Backup records an operator-declared MCU model',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      final root = Directory.systemTemp.createTempSync('x3utils_extra_mcu');
+      final secondary = Directory(p.join(root.path, 'secondary'))..createSync();
+      addTearDown(() {
+        Firmware.setRoot(null);
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final bytes = _identifiedCompatImage(
+        versionValue: 0x157,
+        banner: 'SCOOTER_MCU_0001',
+      );
+      const controllerSnMn = 'Z025B4G25BM30168';
+      bytes.setRange(
+        kControllerSnMnOffset,
+        kControllerSnMnOffset + kControllerSnMnLength,
+        controllerSnMn.codeUnits,
+      );
+      bytes.setRange(
+        kControllerSnMnBackupOffset,
+        kControllerSnMnBackupOffset + kControllerSnMnLength,
+        controllerSnMn.codeUnits,
+      );
+      final session = _FakeSession(
+        bytes: bytes,
+        sramBytes: _identifiedMcuSram(versionValue: 0x157),
+        onRead: (address, length) => address == 0x1ffff800
+            ? Uint8List.fromList([0xa5, 0x5a, 0xff, 0x00])
+            : bytes,
+      );
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        backupSecondCopy: (source) => File(
+          source,
+        ).copySync(p.join(secondary.path, p.basename(source))).path,
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+      controller.setX3utilsRoot(root.path);
+      controller.selectAction('dump');
+      controller.setExtraBackup(true);
+
+      await controller.start(askMcuModel: (_) async => 'g3');
+
+      expect(controller.stage, StageState.ok);
+      final extra =
+          jsonDecode(
+                File(
+                  ExtraBackupMetadata.sidecarPath(controller.resultPath!),
+                ).readAsStringSync(),
+              )
+              as Map;
+      expect((extra['firmware'] as Map)['model'], 'g3');
+      expect((extra['firmware'] as Map)['modelSource'], 'operatorDeclared');
+      expect((extra['firmware'] as Map)['mcuModelUserProvided'], isTrue);
+      expect((extra['firmware'] as Map)['version'], '1.5.7');
+      expect((extra['runtime'] as Map)['controllerSnMnCandidates'], [
+        controllerSnMn,
+      ]);
+      final identity = extra['identity'] as Map;
+      expect(identity['scooterSerial'], isNull);
+      expect(identity['controllerSnMn'], controllerSnMn);
+      expect(identity['controllerSnMnState'], 'matched');
+      expect(identity['controllerSnMnPrimary'], controllerSnMn);
+      expect(identity['controllerSnMnBackup'], controllerSnMn);
     },
   );
 

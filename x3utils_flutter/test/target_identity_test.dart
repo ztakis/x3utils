@@ -19,6 +19,8 @@ Uint8List _fullImage({
   String? banner,
   String? serial,
   String? serialBackup,
+  String? controllerSnMn,
+  String? controllerSnMnBackup,
   bool garbageSerialRegions = false,
   int fill = 0x00,
 }) {
@@ -38,6 +40,8 @@ Uint8List _fullImage({
   put(banner, kSlotBannerOffset);
   put(serial, kSerialOffset);
   put(serialBackup ?? serial, kSerialBackupOffset);
+  put(controllerSnMn, kControllerSnMnOffset);
+  put(controllerSnMnBackup ?? controllerSnMn, kControllerSnMnBackupOffset);
   return b;
 }
 
@@ -114,6 +118,33 @@ void main() {
       final s = DeviceSpec.readSerial(_fullImage(serial: 'ZZZ12345678901'));
       expect(s.state, SerialState.real);
       expect(s.model, isNull);
+    });
+  });
+
+  group('readControllerSnMn classification', () {
+    const snMn = 'Z025B4G25BM30168';
+
+    test('preserves two matching 16-character copies', () {
+      final identity = DeviceSpec.readControllerSnMn(
+        _fullImage(controllerSnMn: snMn),
+      );
+      expect(identity.state, ControllerSnMnState.matched);
+      expect(identity.value, snMn);
+      expect(identity.primary, snMn);
+      expect(identity.backup, snMn);
+    });
+
+    test('preserves conflicting copies without selecting one', () {
+      final identity = DeviceSpec.readControllerSnMn(
+        _fullImage(
+          controllerSnMn: snMn,
+          controllerSnMnBackup: 'Z025000000000000',
+        ),
+      );
+      expect(identity.state, ControllerSnMnState.conflict);
+      expect(identity.value, isNull);
+      expect(identity.primary, snMn);
+      expect(identity.backup, 'Z025000000000000');
     });
   });
 
@@ -367,6 +398,20 @@ void main() {
       expect(id.warn, isFalse);
       expect(id.summary, 'MCU');
       expect(id.logLine, contains('slot bin'));
+    });
+
+    test('MCU full image keeps SN/MN separate from scooter serial', () {
+      const snMn = 'Z025B4G25BM30168';
+      final id = DeviceSpec.describeBin(
+        _fullImage(banner: _mcuBanner, controllerSnMn: snMn),
+        slotBin: false,
+      );
+      expect(id.serial, isNull);
+      expect(id.controllerSnMn?.state, ControllerSnMnState.matched);
+      expect(id.controllerSnMn?.value, snMn);
+      expect(id.summary, 'MCU');
+      expect(id.logLine, contains('serial: n/a (MCU)'));
+      expect(id.logLine, isNot(contains(snMn)));
     });
   });
 

@@ -1069,6 +1069,37 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Extra Backup toggle is desktop Backup-only and transient', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1024, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final controller = AppController(backend: SwdartBackend());
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(home: HomeScreen(controller: controller)),
+    );
+    await tester.pump();
+    controller.selectAction('dump');
+    await tester.pump();
+
+    final toggle = find.byKey(const ValueKey('extra-backup-toggle'));
+    expect(toggle, findsOneWidget);
+    expect(controller.extraBackup, isFalse);
+    await tester.tap(toggle);
+    await tester.pump();
+    expect(controller.extraBackup, isTrue);
+
+    controller.selectAction('flash_backup');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('extra-backup-toggle')), findsNothing);
+    expect(controller.extraBackup, isFalse);
+  });
+
   testWidgets('Browser centers firmware picker labels', (
     WidgetTester tester,
   ) async {
@@ -1600,6 +1631,9 @@ ZP        59028 payload / 59032 encoded (readable)'''
     await tester.pump();
     expect(find.text('Backup info'), findsOneWidget);
     expect(find.textContaining('operator-declared'), findsOneWidget);
+    expect(find.text('Serial'), findsNothing);
+    expect(find.text('SN/MN'), findsNothing);
+    expect(find.text('Part Number'), findsNothing);
     final persisted = DumpMetadata.readJson(sidecar);
     expect(persisted['model'], 'g3');
     expect(persisted['modelSource'], 'operatorDeclared');

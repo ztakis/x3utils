@@ -240,21 +240,20 @@ class FileInfo {
           state: version.verdict,
         ),
         if (mcuModel != null) _declaredMcuModelRow(mcuModel),
-        // Same rule as the key. A shape-valid serial that is not on the known
-        // generic list has been RECOGNISED BY NOTHING; `real` would claim we
-        // checked it against something. A known generic, an erased pair and an
-        // unreadable region are all observations, and keep their state.
-        InfoRow(
-          'Serial',
-          infoText(facts['serial']),
-          state: switch (facts['serialState']) {
-            'generic' => 'generic replacement serial',
-            'cleared' => 'cleared',
-            'none' => 'unreadable',
-            _ => null,
-          },
-          secret: true,
-        ),
+        // Scooter serial is VCU-only. MCU controller SN/MN remains available
+        // in JSON metadata but is deliberately absent from user-facing info.
+        if (identity.bannerType == 'VCU')
+          InfoRow(
+            'Serial',
+            infoText(facts['scooterSerial']),
+            state: switch (facts['scooterSerialState']) {
+              'generic' => 'generic replacement serial',
+              'cleared' => 'cleared',
+              'none' => 'unreadable',
+              _ => null,
+            },
+            secret: true,
+          ),
         InfoRow(
           'UID',
           uidConflict

@@ -21,6 +21,7 @@ import 'engine/firmware_inspection.dart';
 import 'engine/pack_zip3.dart';
 import 'engine/confirmed_file_writer.dart';
 import 'engine/dump_metadata.dart';
+import 'engine/extra_backup_metadata.dart';
 import 'engine/fw_version.dart';
 import 'engine/sram_identity.dart';
 import 'engine/trash.dart';
@@ -51,6 +52,15 @@ typedef ConfirmCompatRam = Future<bool> Function(CompatRamReport report);
 
 typedef BackupDownloader =
     Future<void> Function(Uint8List bytes, String fileName);
+
+typedef BackupSecondCopy = String? Function(String sourcePath);
+
+class _BackupCopyResult {
+  const _BackupCopyResult({this.path, this.verified = false});
+
+  final String? path;
+  final bool verified;
+}
 
 /// Testing-only Android connection mode. Set false for a shipping build unless
 /// genuine ST-Link nRST has been deliberately retained.
@@ -175,6 +185,7 @@ class AppController extends ChangeNotifier {
     @visibleForTesting bool? androidMode,
     @visibleForTesting BackupDownloader? backupDownloader,
     @visibleForTesting AndroidBackupPublisher? androidBackupPublisher,
+    @visibleForTesting BackupSecondCopy? backupSecondCopy,
   }) : assert(
          backend == null || runner == null,
          'Provide either backend or runner, not both.',
@@ -186,8 +197,8 @@ class AppController extends ChangeNotifier {
        // passes it explicitly.
        _phoneMode = phoneMode ?? androidMode ?? (!kIsWeb && Platform.isAndroid),
        _backupDownloader = backupDownloader ?? downloadBackupBytes,
-       _androidBackupPublisher =
-           androidBackupPublisher ?? publishAndroidBackup {
+       _androidBackupPublisher = androidBackupPublisher ?? publishAndroidBackup,
+       _backupSecondCopy = backupSecondCopy ?? Firmware.secondCopy {
     if (backend != null) {
       _backend = backend;
       if (!_browserMode && backend is DesktopBackendRouter) {
@@ -272,6 +283,7 @@ class AppController extends ChangeNotifier {
   final bool _phoneMode;
   final BackupDownloader _backupDownloader;
   final AndroidBackupPublisher _androidBackupPublisher;
+  final BackupSecondCopy _backupSecondCopy;
   DesktopBackendRouter? _desktopBackendRouter;
 
   bool get browserMode => _browserMode;
@@ -305,6 +317,7 @@ class AppController extends ChangeNotifier {
   String? x3utilsRoot; // null = the per-OS default (Firmware.defaultRoot)
   String backupPrefix = '';
   bool secondCopy = true; // redundant %LOCALAPPDATA%\x3utils_backup copy
+  bool extraBackup = false; // transient, standalone Backup only
 
   /// BETA3 bench switch — safe ACP validation is the default; this deliberately
   /// restores the unrestricted BETA2 behavior for comparison runs only.
@@ -315,6 +328,13 @@ class AppController extends ChangeNotifier {
 
   bool get useSwdartDesktop =>
       _desktopBackendRouter?.selection == DesktopBackendSelection.swdart;
+
+  bool get extraBackupAvailable {
+    if (_browserMode || _androidMode) return false;
+    final capabilities =
+        _desktopBackendRouter?.selectedCapabilities ?? _backend?.capabilities;
+    return capabilities?.extraBackup ?? false;
+  }
 
   SwdartBackend? get _desktopSwdartBackend {
     final swdart = _desktopBackendRouter?.swdart;
@@ -558,6 +578,12 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setExtraBackup(bool value) {
+    if (running) return;
+    extraBackup = value && actionId == 'dump' && extraBackupAvailable;
+    notifyListeners();
+  }
+
   void setUseSwdartDesktop(bool value) {
     final router = _desktopBackendRouter;
     if (router == null || running) return;
@@ -565,6 +591,7 @@ class AppController extends ChangeNotifier {
       value ? DesktopBackendSelection.swdart : DesktopBackendSelection.openOcd,
     );
     _prefs?.setString('desktopHardwareBackend', router.selection.name);
+    if (!extraBackupAvailable) extraBackup = false;
     _syncBackendStatus();
     _log('== desktop backend selected: ${router.name} ==');
     _goIdle();
@@ -626,11 +653,11 @@ class AppController extends ChangeNotifier {
   /// 2nd-copy dir can never hold metadata for an image that is not beside it.
   void _maybeSecondCopy(String srcPath, {String? sidecarPath}) {
     if (!secondCopy) return;
-    final dest = Firmware.secondCopy(srcPath);
+    final dest = _backupSecondCopy(srcPath);
     if (dest == null) return;
     _log('== 2nd copy → $dest ==');
     if (sidecarPath == null) return;
-    final info = Firmware.secondCopy(sidecarPath);
+    final info = _backupSecondCopy(sidecarPath);
     if (info != null) _log('== 2nd copy → $info ==');
   }
 
@@ -1861,6 +1888,7 @@ class AppController extends ChangeNotifier {
     _resetZip3Form(); // the packer form is transient, per action entry
     compatMakeZip3 = false; // the compat zip3 opt-ins are transient too
     compatMakeZip32 = false;
+    extraBackup = false;
     _firmwareSelected = null; // no action remembers a loaded bin
     _firmwareSelectedDigest = null;
     _firmwareSelectedBytes = null;
@@ -2999,16 +3027,23 @@ class AppController extends ChangeNotifier {
 
   Future<void> _runDump(bool guided) async {
     final memoryBacked = _browserMode || _androidMode;
+    final useExtra = !memoryBacked && extraBackup && extraBackupAvailable;
     final staged = memoryBacked ? null : _stagedDumpPath();
     if (!memoryBacked && staged == null) return;
     _showOpenOcdProgress(eyebrow: 'Backing up');
-    _setInstruction('Reading the full 128 KB flash...');
+    _setInstruction(
+      useExtra
+          ? 'Capturing SRAM and reading the full 128 KB flash twice...'
+          : 'Reading the full 128 KB flash...',
+    );
     final r = await _runRealCore(
       HardwareRequest(
         operation: HardwareOperation.dump,
         mode: mode,
         countdown: countdownSeconds,
         filePath: staged,
+        captureSram: useExtra,
+        extraBackup: useExtra,
       ),
       guided: guided,
     );
@@ -3036,6 +3071,52 @@ class AppController extends ChangeNotifier {
     if (_androidMode) {
       await _finishAndroidDump(r);
       return;
+    }
+    if (useExtra) {
+      final first = r.bytes;
+      final second = r.comparisonBytes;
+      final hardware = r.extraBackupEvidence;
+      if (first == null ||
+          second == null ||
+          hardware == null ||
+          first.length != Firmware.expectedSize ||
+          second.length != Firmware.expectedSize) {
+        await _finishRealAfterHold(
+          false,
+          '',
+          'Extra backup did not return two complete flash reads and target '
+              'evidence. Nothing was saved as a backup.',
+          reseat: false,
+        );
+        return;
+      }
+      var differences = 0;
+      int? firstDifference;
+      for (var i = 0; i < first.length; i++) {
+        if (first[i] == second[i]) continue;
+        differences++;
+        firstDifference ??= i;
+      }
+      final firstHash = ExtraBackupMetadata.digest(first);
+      final secondHash = ExtraBackupMetadata.digest(second);
+      _log('== Extra read 1 SHA-256: $firstHash ==');
+      _log('== Extra read 2 SHA-256: $secondHash ==');
+      if (differences != 0) {
+        _log(
+          '== Extra comparison FAILED: $differences differing bytes; first '
+          'at 0x${firstDifference!.toRadixString(16).toUpperCase()} ==',
+        );
+        await _finishRealAfterHold(
+          false,
+          '',
+          'The two full flash reads differ ($differences bytes; first at '
+              '0x${firstDifference.toRadixString(16).toUpperCase()}). '
+              'Contact is not reliable enough. Nothing was saved as a backup.',
+          reseat: true,
+        );
+        return;
+      }
+      _log('== Extra comparison OK: both 128 KiB reads are identical ==');
     }
     final nativeStaged = staged!;
     final stageError = await _stageReturnedDumpBytes(r, nativeStaged);
@@ -3071,15 +3152,112 @@ class AppController extends ChangeNotifier {
     final outPath = Firmware.promoteDump(nativeStaged);
     _log('== validated OK → $outPath ==');
     _setInstruction('Backup validated. Keep this file safe.');
-    final metadataPath = _writeDumpMetadata(outPath);
-    _maybeSecondCopy(outPath, sidecarPath: metadataPath);
+    var metadataPath = _writeDumpMetadata(outPath);
+    String? outputNote;
+    if (useExtra) {
+      metadataPath = await _maybeDeclareExtraMcuModel(outPath, metadataPath);
+      final copy = _copyExtraBackup(outPath, r.bytes!);
+      String? extraPath;
+      try {
+        final metadata = metadataPath == null
+            ? DumpMetadata.inspect(r.bytes!, backupPath: outPath)
+            : DumpMetadata.readJson(metadataPath);
+        final extra = ExtraBackupMetadata.inspect(
+          dumpPath: outPath,
+          firstRead: r.bytes!,
+          secondRead: r.comparisonBytes!,
+          sramBytes: r.sramBytes,
+          hardware: r.extraBackupEvidence!,
+          backupMetadata: metadata,
+          secondaryCreated: copy.path != null,
+          secondaryVerified: copy.verified,
+          backendName: backendName,
+          connectionMode: mode.name,
+          secondaryPath: copy.path,
+        );
+        extraPath = ExtraBackupMetadata.write(outPath, extra);
+        _log('== Extra backup certificate → $extraPath ==');
+        final findings = (extra['findings'] as List).length;
+        if (findings != 0) {
+          outputNote =
+              'Extra backup completed with $findings recorded finding(s).';
+        }
+      } catch (error) {
+        _log('== Extra backup certificate was not written: $error ==');
+        outputNote = 'The backup is valid, but its Extra certificate failed.';
+      }
+      if (copy.verified) {
+        for (final sidecar in [metadataPath, extraPath]) {
+          if (sidecar == null) continue;
+          final copied = _backupSecondCopy(sidecar);
+          if (copied != null) _log('== 2nd copy → $copied ==');
+        }
+      }
+      if (!copy.verified) {
+        outputNote =
+            'The backup is valid, but its required secondary copy '
+            'could not be verified.';
+      }
+    } else {
+      _maybeSecondCopy(outPath, sidecarPath: metadataPath);
+    }
     await _finishRealAfterHold(
       true,
-      'Backed up and verified.',
+      useExtra
+          ? 'Backed up, double-read verified, and certified.'
+          : 'Backed up and verified.',
       '',
       outputPath: outPath,
+      outputNote: outputNote,
       outputMetadataPath: metadataPath,
     );
+  }
+
+  Future<String?> _maybeDeclareExtraMcuModel(
+    String dumpPath,
+    String? metadataPath,
+  ) async {
+    if (metadataPath == null) return null;
+    var metadata = DumpMetadata.readJson(metadataPath);
+    if (!DumpMetadata.needsMcuModelDeclaration(metadata)) return metadataPath;
+    final models =
+        FwVersionMatrix.known.keys
+            .where((key) => key.endsWith('/MCU'))
+            .map((key) => key.split('/').first)
+            .toList()
+          ..sort();
+    final selected = await _askMcuModel?.call(models);
+    if (selected == null) {
+      _log('== Extra MCU model was not declared ==');
+      return metadataPath;
+    }
+    metadata = DumpMetadata.declareMcuModel(dumpPath, metadataPath, selected);
+    _log('== operator declared MCU model: $selected (not verifiable) ==');
+    return metadataPath;
+  }
+
+  _BackupCopyResult _copyExtraBackup(String srcPath, Uint8List sourceBytes) {
+    final destination = _backupSecondCopy(srcPath);
+    if (destination == null) {
+      _log('== required Extra secondary copy FAILED ==');
+      return const _BackupCopyResult();
+    }
+    var verified = false;
+    try {
+      final copied = File(destination).readAsBytesSync();
+      verified =
+          copied.length == sourceBytes.length &&
+          ExtraBackupMetadata.digest(copied) ==
+              ExtraBackupMetadata.digest(sourceBytes);
+    } catch (error) {
+      _log('== Extra secondary verification failed: $error ==');
+    }
+    _log(
+      verified
+          ? '== 2nd copy verified → $destination =='
+          : '== 2nd copy verification FAILED → $destination ==',
+    );
+    return _BackupCopyResult(path: destination, verified: verified);
   }
 
   Future<void> _finishBrowserDump(HardwareResult result) async {
@@ -3466,10 +3644,12 @@ class AppController extends ChangeNotifier {
       final fwId = DeviceSpec.describeBin(fwBytes, slotBin: slot0);
       _log('== target identity: ${targetId.logLine} ==');
       _log('== firmware identity: ${fwId.logLine} ==');
-      serialNote = DeviceSpec.serialChangeNote(
-        target: targetId.serial!,
-        incoming: fwId.serial,
-      );
+      if (targetId.serial != null) {
+        serialNote = DeviceSpec.serialChangeNote(
+          target: targetId.serial!,
+          incoming: fwId.serial,
+        );
+      }
       if (serialNote != null) _log('== note: $serialNote ==');
       final tm = DeviceSpec.checkTargetMatch(
         dump: dumpBytes,
@@ -3704,10 +3884,12 @@ class AppController extends ChangeNotifier {
       final firmwareId = DeviceSpec.describeBin(firmwareBytes, slotBin: slot0);
       _log('== target identity: ${targetId.logLine} ==');
       _log('== firmware identity: ${firmwareId.logLine} ==');
-      serialNote = DeviceSpec.serialChangeNote(
-        target: targetId.serial!,
-        incoming: firmwareId.serial,
-      );
+      if (targetId.serial != null) {
+        serialNote = DeviceSpec.serialChangeNote(
+          target: targetId.serial!,
+          incoming: firmwareId.serial,
+        );
+      }
       if (serialNote != null) _log('== note: $serialNote ==');
       final targetMatch = DeviceSpec.checkTargetMatch(
         dump: dumpBytes,

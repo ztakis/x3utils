@@ -47,7 +47,7 @@ void main() {
     expect(result.identity!.tableOffsets, [0x120, 0x5100]);
   });
 
-  test('identifies MCU from agreeing tables with different part numbers', () {
+  test('identifies MCU from agreeing tables with different SN/MN values', () {
     final bytes = Uint8List(kAt32f415SramLength);
     _putTable(
       bytes,
@@ -71,6 +71,10 @@ void main() {
     expect(result.identity!.version.toString(), '1.5.2');
     expect(result.identity!.serial, isNull);
     expect(result.identity!.serialModel, isNull);
+    expect(result.identity!.controllerSnMnCandidates, [
+      'Z025000000000000',
+      'Z025B4G25BM30168',
+    ]);
   });
 
   test('rejects marker bytes without a valid identity table', () {

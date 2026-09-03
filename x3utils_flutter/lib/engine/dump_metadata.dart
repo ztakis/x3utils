@@ -21,9 +21,10 @@ import 'zp_extract.dart';
 class DumpMetadata {
   const DumpMetadata._();
 
-  /// Schema 2 adds [modelSource], so an MCU model selected by an operator can
-  /// never be presented as something the shared MCU banner detected.
-  static const int schemaVersion = 2;
+  /// Schema 3 separates the VCU scooter serial from the MCU controller SN/MN.
+  /// Schema 2 called the shared flash locations `serial` for both components,
+  /// which truncated MCU SN/MN values to the VCU's 14-character length.
+  static const int schemaVersion = 3;
   static const String _operatorDeclared = 'operatorDeclared';
   static const String _firmwareBanner = 'firmwareBanner';
 
@@ -60,6 +61,7 @@ class DumpMetadata {
     final identity = DeviceSpec.describeBin(dump, slotBin: false);
     final type = identity.bannerType;
     final model = type == 'VCU' ? identity.bannerModel : null;
+    final controllerSnMn = identity.controllerSnMn;
     final version = _version(dump, type: type, model: model);
     final uid = _uid(dump);
     final keyBytes = dump.sublist(
@@ -79,8 +81,12 @@ class DumpMetadata {
       'modelSource': model == null ? null : _firmwareBanner,
       'version': version.version,
       'versionVerdict': version.verdict,
-      'serial': identity.serial?.text,
-      'serialState': identity.serial?.state.name,
+      'scooterSerial': identity.serial?.text,
+      'scooterSerialState': identity.serial?.state.name,
+      'controllerSnMn': controllerSnMn?.value,
+      'controllerSnMnState': controllerSnMn?.state.name,
+      'controllerSnMnPrimary': controllerSnMn?.primary,
+      'controllerSnMnBackup': controllerSnMn?.backup,
       'uid': uid.value,
       'uidState': uid.state,
       'uidPrimary': uid.primary,
@@ -274,6 +280,8 @@ class DumpMetadata {
         metadata['uid'] == null && metadata['uidState'] == 'conflict';
     final zpKnown =
         metadata['zpPayloadLen'] != null && metadata['zpEncLen'] != null;
+    final scooterSerial = _scooterSerial(metadata);
+    final scooterSerialState = _scooterSerialState(metadata);
 
     return [
       InfoRow('Backup', infoText(metadata['backup'])),
@@ -292,21 +300,21 @@ class DumpMetadata {
           infoText(metadata['model']).toUpperCase(),
           state: 'operator-declared; MCU firmware does not encode it',
         ),
-      // State only where something was PROVEN: a serial on the known-generic
-      // list, an erased pair, an unreadable region. A shape-valid serial that
-      // matched nothing has been recognised by nothing, and `real` would claim
-      // it was checked against something.
-      InfoRow(
-        'Serial',
-        infoText(metadata['serial']),
-        state: switch (metadata['serialState']) {
-          'generic' => 'generic replacement serial',
-          'cleared' => 'cleared',
-          'none' => 'unreadable',
-          _ => null,
-        },
-        secret: true,
-      ),
+      // Scooter serial is a VCU identity and region indicator. MCU controller
+      // SN/MN is retained in JSON only; showing it here as Serial confused a
+      // controller manufacturing identifier with the scooter identity.
+      if (metadata['type'] == 'VCU')
+        InfoRow(
+          'Serial',
+          infoText(scooterSerial),
+          state: switch (scooterSerialState) {
+            'generic' => 'generic replacement serial',
+            'cleared' => 'cleared',
+            'none' => 'unreadable',
+            _ => null,
+          },
+          secret: true,
+        ),
       InfoRow(
         'UID',
         uidConflict
@@ -342,6 +350,18 @@ class DumpMetadata {
       ),
     ];
   }
+
+  /// Schema 2 compatibility for local VCU sidecars. MCU rows never call these
+  /// helpers because their old `serial` value was a truncated SN/MN.
+  static Object? _scooterSerial(Map<String, Object?> metadata) =>
+      metadata.containsKey('scooterSerial')
+      ? metadata['scooterSerial']
+      : metadata['serial'];
+
+  static Object? _scooterSerialState(Map<String, Object?> metadata) =>
+      metadata.containsKey('scooterSerialState')
+      ? metadata['scooterSerialState']
+      : metadata['serialState'];
 
   /// The stored key as grouped hex, whichever form the sidecar recorded.
   ///

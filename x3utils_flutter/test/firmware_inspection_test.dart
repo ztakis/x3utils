@@ -27,7 +27,7 @@ void main() {
       expect(report.findings, isEmpty);
     });
 
-    test('collects independent banner, serial, and ZP findings', () {
+    test('bannerless identity bytes are not classified as a serial', () {
       final report = FirmwareInspector.inspect(
         _fullImage(serial: '1K1E0000000001'),
         slotBin: false,
@@ -35,7 +35,11 @@ void main() {
 
       expect(
         report.findings.map((finding) => finding.code),
-        containsAll(['banner_missing', 'serial_generic', 'zp_unavailable']),
+        containsAll(['banner_missing', 'zp_unavailable']),
+      );
+      expect(
+        report.findings.map((finding) => finding.code),
+        isNot(contains('serial_generic')),
       );
       expect(
         report.findings
@@ -43,19 +47,26 @@ void main() {
             .message,
         'x3utils cannot identify this file as VCU or MCU firmware.',
       );
-      expect(report.findings, hasLength(3));
+      expect(report.findings, hasLength(2));
       expect(report.zp.state, ZpRecordState.unavailable);
       expect(report.zpValue, contains('No trustworthy'));
     });
 
-    test('unreadable full-image serial is included as a finding', () {
-      final report = FirmwareInspector.inspect(_fullImage(), slotBin: false);
+    test('unreadable serial on an identified VCU is a finding', () {
+      final report = FirmwareInspector.inspect(
+        _fullImage(banner: 'SCOOTER_VCU_xxU2'),
+        slotBin: false,
+      );
 
       expect(
         report.findings.map((finding) => finding.code),
-        containsAll(['banner_missing', 'serial_unreadable', 'zp_unavailable']),
+        containsAll(['serial_unreadable', 'zp_unavailable']),
       );
-      expect(report.findings, hasLength(3));
+      expect(
+        report.findings.map((finding) => finding.code),
+        isNot(contains('banner_missing')),
+      );
+      expect(report.findings, hasLength(2));
     });
 
     test('collects package allow-list and payload mismatch findings', () {

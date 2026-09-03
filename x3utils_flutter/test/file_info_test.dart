@@ -151,11 +151,15 @@ void main() {
       expect(initial.needsMcuModel, isTrue);
       expect(_value(initial.report.rows, 'Firmware'), startsWith('MCU'));
       expect(_has(initial.report.rows, 'Model'), isFalse);
+      expect(_has(initial.report.rows, 'Serial'), isFalse);
+      expect(_has(initial.report.rows, 'SN/MN'), isFalse);
+      expect(_has(initial.report.rows, 'Part Number'), isFalse);
 
       final declared = FileInfo.inspect(file.path, declaredMcuModel: 'g3');
       expect(declared.needsMcuModel, isFalse);
       expect(_value(declared.report.rows, 'Firmware'), startsWith('MCU 1.5.0'));
       expect(_value(declared.report.rows, 'Model'), startsWith('G3'));
+      expect(_has(declared.report.rows, 'Serial'), isFalse);
       expect(
         declared.report.rows.firstWhere((row) => row.label == 'Model').state,
         contains('operator-declared'),

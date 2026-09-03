@@ -118,8 +118,10 @@ void main() {
     expect(info['modelSource'], 'firmwareBanner');
     expect(info['version'], '1.6.1');
     expect(info['versionVerdict'], 'identified');
-    expect(info['serial'], serial);
-    expect(info['serialState'], 'real');
+    expect(info['scooterSerial'], serial);
+    expect(info['scooterSerialState'], 'real');
+    expect(info['controllerSnMn'], isNull);
+    expect(info.containsKey('serial'), isFalse);
     expect(info['uid'], 'C49B0DB900002193A70705E8');
     expect(info['uidState'], 'matched');
     // Hex even though these 16 bytes are printable ASCII ('7aoymhtysf886lb6').
@@ -136,6 +138,17 @@ void main() {
 
   test('does not infer an MCU model and records conflicting UID copies', () {
     final bytes = _dump('SCOOTER_MCU_0001');
+    const controllerSnMn = 'Z025B4G25BM30168';
+    bytes.setRange(
+      kControllerSnMnOffset,
+      kControllerSnMnOffset + kControllerSnMnLength,
+      controllerSnMn.codeUnits,
+    );
+    bytes.setRange(
+      kControllerSnMnBackupOffset,
+      kControllerSnMnBackupOffset + kControllerSnMnLength,
+      controllerSnMn.codeUnits,
+    );
     bytes.setRange(
       DumpMetadata.uidPrimaryOffset,
       DumpMetadata.uidPrimaryOffset + 12,
@@ -156,6 +169,13 @@ void main() {
     expect(info['model'], isNull);
     expect(info['version'], isNull);
     expect(info['versionVerdict'], 'modelRequired');
+    expect(info['scooterSerial'], isNull);
+    expect(info['scooterSerialState'], isNull);
+    expect(info['controllerSnMn'], controllerSnMn);
+    expect(info['controllerSnMnState'], 'matched');
+    expect(info['controllerSnMnPrimary'], controllerSnMn);
+    expect(info['controllerSnMnBackup'], controllerSnMn);
+    expect(info.containsKey('serial'), isFalse);
     expect(info['uid'], isNull);
     expect(info['uidState'], 'conflict');
     expect(info['uidPrimary'], '111111111111111111111111');
@@ -197,7 +217,7 @@ void main() {
     final sidecar = DumpMetadata.writeValidatedSidecar(dumpPath);
 
     final updated = DumpMetadata.declareMcuModel(dumpPath, sidecar, 'G3');
-    expect(updated['schema'], 2);
+    expect(updated['schema'], DumpMetadata.schemaVersion);
     expect(updated['model'], 'g3');
     expect(updated['modelSource'], 'operatorDeclared');
     expect(updated['version'], '1.5.0');
@@ -226,6 +246,7 @@ void main() {
       // chip. New sidecars are always `keyEncoding: hex`; this is the read-back
       // path for the old ones, which must keep working.
       final rows = DumpMetadata.rows({
+        'type': 'VCU',
         'backup': 'dump.bin',
         'key': 'OmZhXbB2MgUo2t3E',
         'keyEncoding': 'ascii',
@@ -239,10 +260,12 @@ void main() {
 
     test('states appear only where something was proven', () {
       final rows = DumpMetadata.rows({
+        'type': 'VCU',
         'backup': 'dump.bin',
         'dumpVerdict': 'ok',
-        'serial': '1K1UA2510P9900',
-        'serialState': 'real', // shape-valid only — recognised by nothing
+        'scooterSerial': '1K1UA2510P9900',
+        'scooterSerialState':
+            'real', // shape-valid only — recognised by nothing
         'key': 'aabb',
         'keyState': 'oem', // not the default key, and that is all we know
       });
@@ -254,6 +277,7 @@ void main() {
 
     test('a matched value and an observation keep their state', () {
       final rows = DumpMetadata.rows({
+        'type': 'VCU',
         'backup': 'dump.bin',
         'serialState': 'cleared',
         'key': 'fe801cb2',
@@ -261,6 +285,20 @@ void main() {
       });
       expect(value(rows, 'Serial'), '— (cleared)');
       expect(value(rows, 'Key'), 'FE 80 1C B2 (default key)');
+    });
+
+    test('MCU rows hide both scooter serial and controller SN/MN', () {
+      final rows = DumpMetadata.rows({
+        'type': 'MCU',
+        'backup': 'dump.bin',
+        'scooterSerial': null,
+        'controllerSnMn': 'Z025B4G25BM30168',
+        'controllerSnMnState': 'matched',
+      });
+
+      expect(rows.any((row) => row.label == 'Serial'), isFalse);
+      expect(rows.any((row) => row.label == 'SN/MN'), isFalse);
+      expect(rows.any((row) => row.label == 'Part Number'), isFalse);
     });
   });
 }

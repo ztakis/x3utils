@@ -75,6 +75,7 @@ class HardwareCapabilities {
     required this.flashSlot0,
     required this.protectionCheck,
     required this.protectionRescue,
+    this.extraBackup = false,
   });
 
   final Set<ConnectionMode> connectionModes;
@@ -84,6 +85,10 @@ class HardwareCapabilities {
   final bool flashSlot0;
   final bool protectionCheck;
   final bool protectionRescue;
+
+  /// Can capture SRAM, raw protection evidence, and two independent full
+  /// flash reads in one connected session for standalone Backup.
+  final bool extraBackup;
 
   bool supports(HardwareOperation operation, ConnectionMode mode) {
     if (!connectionModes.contains(mode)) return false;
@@ -115,6 +120,7 @@ class HardwareRequest {
     this.filePath,
     this.bytes,
     this.captureSram = false,
+    this.extraBackup = false,
   });
 
   final HardwareOperation operation;
@@ -132,6 +138,10 @@ class HardwareRequest {
   /// Ask a capable backend to take an SRAM snapshot during this same halted
   /// session. SHU Compat opts in; ordinary backups remain unchanged.
   final bool captureSram;
+
+  /// Opt in to the standalone Backup BETA evidence capture. Other actions
+  /// leave this false even when they also take a safety backup.
+  final bool extraBackup;
 }
 
 class HardwareEvidence {
@@ -160,6 +170,8 @@ class HardwareResult {
     this.evidence, {
     this.bytes,
     this.sramBytes,
+    this.comparisonBytes,
+    this.extraBackupEvidence,
   });
 
   final int exitCode;
@@ -172,7 +184,37 @@ class HardwareResult {
   /// as a full flash dump. It is never persisted as part of the backup.
   final Uint8List? sramBytes;
 
+  /// The second full flash read from an Extra backup. Product policy compares
+  /// it with [bytes] above the hardware boundary.
+  final Uint8List? comparisonBytes;
+
+  /// Raw, backend-observed context for an Extra backup certificate.
+  final ExtraBackupHardwareEvidence? extraBackupEvidence;
+
   bool get ok => exitCode == 0;
+}
+
+class ExtraBackupHardwareEvidence {
+  const ExtraBackupHardwareEvidence({
+    required this.targetName,
+    required this.targetFamily,
+    required this.idcode,
+    required this.flashKB,
+    required this.pageSize,
+    required this.sramBytes,
+    required this.usdWord,
+  });
+
+  final String targetName;
+  final String targetFamily;
+  final int idcode;
+  final int flashKB;
+  final int pageSize;
+  final int sramBytes;
+
+  /// Raw 32-bit option/USD word at 0x1FFFF800, or null when that evidence
+  /// could not be read. Null must remain inconclusive rather than protected.
+  final int? usdWord;
 }
 
 class HardwareCallbacks {

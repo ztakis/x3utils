@@ -14,19 +14,21 @@ class SramIdentity {
     this.serialModel,
     this.regionCode,
     this.regionLabel,
+    this.controllerSnMnCandidates = const [],
   });
 
   final String type;
   final FwVersion version;
   final List<int> tableOffsets;
 
-  /// VCU-only identity. MCU tables carry a controller part number instead,
-  /// which is useful for validating the table shape but not for naming the
-  /// scooter model.
+  /// VCU-only scooter identity. MCU tables carry controller SN/MN candidates
+  /// instead, which are useful for validating the table shape but are not the
+  /// scooter serial and do not name the scooter model.
   final String? serial;
   final String? serialModel;
   final String? regionCode;
   final String? regionLabel;
+  final List<String> controllerSnMnCandidates;
 
   String get displayModel => serialModel?.toUpperCase() ?? 'UNKNOWN MODEL';
 }
@@ -48,7 +50,7 @@ class SramIdentityParser {
   static const _mcuMarker = <int>[0x5c, 0x51];
   static const _idOffset = 0x20;
   static const _vcuSerialLength = 14;
-  static const _mcuPartNumberLength = 16;
+  static const _mcuSnMnLength = 16;
   static const _vcuVersionOffset = 0x2e; // table index 0x17
   static const _mcuVersionOffset = 0x32; // table index 0x19
 
@@ -102,19 +104,19 @@ class SramIdentityParser {
           );
         }
       } else if (_markerAt(bytes, offset, _mcuMarker)) {
-        final partNumber = _asciiAt(
+        final controllerSnMn = _asciiAt(
           bytes,
           offset + _idOffset,
-          _mcuPartNumberLength,
+          _mcuSnMnLength,
         );
         final version = _versionAt(bytes, offset + _mcuVersionOffset);
-        if (partNumber != null && version != null) {
+        if (controllerSnMn != null && version != null) {
           candidates.add(
             _SramCandidate(
               type: 'MCU',
               version: version,
               offset: offset,
-              identityText: partNumber,
+              identityText: controllerSnMn,
             ),
           );
         }
@@ -141,6 +143,7 @@ class SramIdentityParser {
 
     final type = types.single;
     String? serial;
+    var controllerSnMnCandidates = const <String>[];
     if (type == 'VCU') {
       final serials = candidates.map((c) => c.identityText).toSet();
       if (serials.length != 1) {
@@ -150,6 +153,11 @@ class SramIdentityParser {
         );
       }
       serial = serials.single;
+    } else {
+      controllerSnMnCandidates = candidates
+          .map((candidate) => candidate.identityText)
+          .toSet()
+          .toList(growable: false);
     }
 
     final prefix = serial?.substring(0, 3);
@@ -165,6 +173,7 @@ class SramIdentityParser {
         serialModel: prefix == null ? null : serialModels[prefix],
         regionCode: regionCode,
         regionLabel: regionKey == null ? null : regionLabels[regionKey],
+        controllerSnMnCandidates: controllerSnMnCandidates,
       ),
     );
   }

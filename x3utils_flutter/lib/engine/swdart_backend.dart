@@ -222,6 +222,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
         flashSlot0: true,
         protectionCheck: true,
         protectionRescue: true,
+        extraBackup: true,
       );
 
   swd.ConnectMode _connectMode(ConnectionMode mode) => switch (mode) {
@@ -239,6 +240,13 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
     if (!capabilities.supports(request.operation, request.mode)) {
       throw UnsupportedError(
         '$name does not support ${request.operation.name} in ${request.mode.title}',
+      );
+    }
+    if (request.extraBackup &&
+        (request.operation != HardwareOperation.dump ||
+            !capabilities.extraBackup)) {
+      throw UnsupportedError(
+        '$name does not support Extra backup for this request',
       );
     }
     final isFlash =
@@ -390,7 +398,8 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
         );
       }
       Uint8List? sramBytes;
-      if (request.captureSram) {
+      final captureSram = request.captureSram || request.extraBackup;
+      if (captureSram) {
         try {
           sramBytes = await session.readSram(
             address: kSramBase,
@@ -417,15 +426,50 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
           'swdart returned ${bytes.length} of $_backupLength backup bytes',
         );
       }
+      Uint8List? comparisonBytes;
+      if (request.extraBackup) {
+        comparisonBytes = await session.readFlash(
+          address: _flashBase,
+          length: _backupLength,
+        );
+        _throwIfCancelled();
+        if (comparisonBytes.length != _backupLength) {
+          throw StateError(
+            'swdart returned ${comparisonBytes.length} of $_backupLength '
+            'comparison bytes',
+          );
+        }
+      }
+      int? usdWord;
+      if (request.extraBackup) {
+        try {
+          final usd = await session.readFlash(address: _usdBase, length: 4);
+          if (usd.length >= 4) usdWord = _u32le(usd, 0);
+        } catch (error) {
+          callbacks.onLine('[extra] warning: option area read failed: $error');
+        }
+      }
       return HardwareResult(
         0,
         HardwareEvidence(
           caught: true,
           dumped: true,
-          sramAttempted: request.captureSram,
+          sramAttempted: captureSram,
         ),
         bytes: bytes,
         sramBytes: sramBytes,
+        comparisonBytes: comparisonBytes,
+        extraBackupEvidence: request.extraBackup
+            ? ExtraBackupHardwareEvidence(
+                targetName: target.name,
+                targetFamily: target.family,
+                idcode: target.idcode,
+                flashKB: target.flashKB,
+                pageSize: target.pageSize,
+                sramBytes: target.sramBytes,
+                usdWord: usdWord,
+              )
+            : null,
       );
     } on UsbAcquireException catch (error) {
       throw _toHardwareException(error);
