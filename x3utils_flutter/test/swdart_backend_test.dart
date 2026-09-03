@@ -1393,7 +1393,58 @@ void main() {
         (extra['backup'] as Map)['factoryConditionClaim'],
         'notProvenWithoutAnExternalReference',
       );
+      // JSON observations are for later analysis. They must not overload the
+      // completion screen when every required Extra artifact was saved.
+      expect((extra['findings'] as List), isNotEmpty);
+      expect(controller.resultNote, isNull);
+      expect(
+        controller.heroMessage,
+        'Backup verified. Extra data saved. No need to repeat.',
+      );
       expect(controller.console.join('\n'), contains('Extra comparison OK'));
+    },
+  );
+
+  test(
+    'controller Extra Backup keeps the backup green but marks missing Extra artifacts',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      final root = Directory.systemTemp.createTempSync(
+        'x3utils_extra_incomplete',
+      );
+      addTearDown(() {
+        Firmware.setRoot(null);
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final bytes = _identifiedCompatImage();
+      final session = _FakeSession(
+        bytes: bytes,
+        sramBytes: _identifiedVcuSram(),
+        onRead: (address, length) => address == 0x1ffff800
+            ? Uint8List.fromList([0xa5, 0x5a, 0xff, 0x00])
+            : bytes,
+      );
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        backupSecondCopy: (_) => null,
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+      controller.setX3utilsRoot(root.path);
+      controller.selectAction('dump');
+      controller.setExtraBackup(true);
+
+      await controller.start();
+
+      expect(controller.stage, StageState.ok);
+      expect(controller.heroMessage, 'Backup verified.');
+      expect(
+        controller.resultNote,
+        'The Extra record is incomplete. Repeat Extra Backup if you need it.',
+      );
+      expect(File(controller.resultPath!).existsSync(), isTrue);
     },
   );
 

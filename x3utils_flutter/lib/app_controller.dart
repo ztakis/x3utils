@@ -3154,6 +3154,7 @@ class AppController extends ChangeNotifier {
     _setInstruction('Backup validated. Keep this file safe.');
     var metadataPath = _writeDumpMetadata(outPath);
     String? outputNote;
+    var extraArtifactsComplete = false;
     if (useExtra) {
       metadataPath = await _maybeDeclareExtraMcuModel(outPath, metadataPath);
       final copy = _copyExtraBackup(outPath, r.bytes!);
@@ -3177,14 +3178,8 @@ class AppController extends ChangeNotifier {
         );
         extraPath = ExtraBackupMetadata.write(outPath, extra);
         _log('== Extra backup certificate → $extraPath ==');
-        final findings = (extra['findings'] as List).length;
-        if (findings != 0) {
-          outputNote =
-              'Extra backup completed with $findings recorded finding(s).';
-        }
       } catch (error) {
         _log('== Extra backup certificate was not written: $error ==');
-        outputNote = 'The backup is valid, but its Extra certificate failed.';
       }
       if (copy.verified) {
         for (final sidecar in [metadataPath, extraPath]) {
@@ -3193,10 +3188,16 @@ class AppController extends ChangeNotifier {
           if (copied != null) _log('== 2nd copy → $copied ==');
         }
       }
-      if (!copy.verified) {
+      extraArtifactsComplete =
+          copy.verified &&
+          metadataPath != null &&
+          File(metadataPath).existsSync() &&
+          extraPath != null &&
+          File(extraPath).existsSync();
+      if (!extraArtifactsComplete) {
         outputNote =
-            'The backup is valid, but its required secondary copy '
-            'could not be verified.';
+            'The Extra record is incomplete. Repeat Extra Backup if you '
+            'need it.';
       }
     } else {
       _maybeSecondCopy(outPath, sidecarPath: metadataPath);
@@ -3204,7 +3205,9 @@ class AppController extends ChangeNotifier {
     await _finishRealAfterHold(
       true,
       useExtra
-          ? 'Backed up, double-read verified, and certified.'
+          ? extraArtifactsComplete
+                ? 'Backup verified. Extra data saved. No need to repeat.'
+                : 'Backup verified.'
           : 'Backed up and verified.',
       '',
       outputPath: outPath,
