@@ -61,7 +61,6 @@ class DumpMetadata {
     final identity = DeviceSpec.describeBin(dump, slotBin: false);
     final type = identity.bannerType;
     final model = type == 'VCU' ? identity.bannerModel : null;
-    final controllerSnMn = identity.controllerSnMn;
     final version = _version(dump, type: type, model: model);
     final uid = _uid(dump);
     final keyBytes = dump.sublist(
@@ -82,11 +81,10 @@ class DumpMetadata {
       'version': version.version,
       'versionVerdict': version.verdict,
       'scooterSerial': identity.serial?.text,
-      'scooterSerialState': identity.serial?.state.name,
-      'controllerSnMn': controllerSnMn?.value,
-      'controllerSnMnState': controllerSnMn?.state.name,
-      'controllerSnMnPrimary': controllerSnMn?.primary,
-      'controllerSnMnBackup': controllerSnMn?.backup,
+      // Only record serial state when it is worth noting — 'real' is the
+      // boring default and just clutters the sidecar.
+      if (identity.serial != null && identity.serial!.state.name != 'real')
+        'scooterSerialState': identity.serial!.state.name,
       'uid': uid.value,
       'uidState': uid.state,
       'uidPrimary': uid.primary,

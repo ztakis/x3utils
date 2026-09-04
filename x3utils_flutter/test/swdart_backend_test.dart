@@ -1421,19 +1421,18 @@ void main() {
       expect((extra['capture'] as Map)['match'], isTrue);
       expect((extra['capture'] as Map)['flashReads'], 2);
       expect((extra['secondaryCopy'] as Map)['verified'], isTrue);
-      expect((extra['firmware'] as Map)['version'], '1.5.5');
-      expect((extra['firmware'] as Map)['blacklisted'], isFalse);
-      expect((extra['firmware'] as Map)['blacklistFrom'], '1.6.3');
-      expect(
-        (extra['firmware'] as Map)['shuCompatibilityAtCapture'],
-        'eligibleByCurrentPolicy',
-      );
-      expect((extra['runtime'] as Map)['version'], '1.5.5');
+      final rom = (extra['rom'] as Map)['firmware'] as Map;
+      expect(rom['version'], '1.5.5');
+      expect(rom['blacklisted'], isFalse);
+      expect(rom['blacklistFrom'], '1.6.3');
+      expect(rom['shuCompatibilityAtCapture'], 'eligibleByCurrentPolicy');
+      expect((extra['ram'] as Map)['version'], '1.5.5');
       expect((extra['protection'] as Map)['verdict'], 'notProtected');
       expect((extra['protection'] as Map)['rdpOn'], isFalse);
       expect((extra['protection'] as Map)['fapUnlocked'], isTrue);
-      expect((extra['compatibilityFields'] as Map)['teaAt0x1420'], isNotNull);
-      expect((extra['compatibilityFields'] as Map)['xteaAt0x1440'], isNotNull);
+      final keyFields = (extra['rom'] as Map)['keyFields'] as Map;
+      expect(keyFields['teaAt0x1420'], isNotNull);
+      expect(keyFields['xteaAt0x1440'], isNotNull);
       expect(
         (extra['backup'] as Map)['factoryConditionClaim'],
         'notProvenWithoutAnExternalReference',
@@ -1617,9 +1616,11 @@ void main() {
       final capture = certificate['capture']! as Map<String, Object?>;
       expect(capture['flashReads'], 0);
       expect(capture['sramFile'], endsWith('_RAM.bin'));
+      // No flash was read, so there is no ROM evidence.
+      expect(certificate['rom'], isNull);
       // The SRAM identity is the payload this record exists to preserve.
-      final runtime = certificate['runtime']! as Map<String, Object?>;
-      expect(runtime['component'], 'VCU');
+      final ram = certificate['ram']! as Map<String, Object?>;
+      expect(ram['component'], 'VCU');
     },
   );
 
@@ -1750,19 +1751,18 @@ void main() {
                 ).readAsStringSync(),
               )
               as Map;
-      expect((extra['firmware'] as Map)['model'], 'g3');
-      expect((extra['firmware'] as Map)['modelSource'], 'operatorDeclared');
-      expect((extra['firmware'] as Map)['mcuModelUserProvided'], isTrue);
-      expect((extra['firmware'] as Map)['version'], '1.5.7');
-      expect((extra['runtime'] as Map)['controllerSnMnCandidates'], [
-        controllerSnMn,
-      ]);
-      final identity = extra['identity'] as Map;
+      final firmware = (extra['rom'] as Map)['firmware'] as Map;
+      expect(firmware['model'], 'g3');
+      expect(firmware['modelSource'], 'operatorDeclared');
+      expect(firmware['mcuModelUserProvided'], isTrue);
+      expect(firmware['version'], '1.5.7');
+      // SN/MN is no longer emitted anywhere — not the flash controllerSnMn in
+      // rom.identity, and not the RAM candidates in the ram section.
+      final ram = extra['ram'] as Map;
+      expect(ram.containsKey('controllerSnMnCandidates'), isFalse);
+      final identity = (extra['rom'] as Map)['identity'] as Map;
       expect(identity['scooterSerial'], isNull);
-      expect(identity['controllerSnMn'], controllerSnMn);
-      expect(identity['controllerSnMnState'], 'matched');
-      expect(identity['controllerSnMnPrimary'], controllerSnMn);
-      expect(identity['controllerSnMnBackup'], controllerSnMn);
+      expect(identity.containsKey('controllerSnMn'), isFalse);
     },
   );
 

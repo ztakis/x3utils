@@ -23,7 +23,12 @@ import 'swdart_backend.dart';
 class ExtraBackupMetadata {
   const ExtraBackupMetadata._();
 
-  static const int schemaVersion = 2;
+  // Schema 3 groups evidence by SOURCE: `rom` (flash-derived, solid),
+  // `ram` (SRAM-derived, decoder is work-in-progress and anchored rather than
+  // fixed-offset), and `findings` (cross-checks and oddities — grain of salt).
+  // The envelope (backup/capture/target/protection/secondaryCopy) holds the
+  // hard session facts that are neither interpretation nor grain of salt.
+  static const int schemaVersion = 3;
 
   static String sidecarPath(String dumpPath) {
     final extension = p.extension(dumpPath);
@@ -150,10 +155,9 @@ class ExtraBackupMetadata {
     if (backupMetadata['uidState'] == 'conflict') {
       findings.add('uidCopiesConflict');
     }
-    if (tea == FwKeyState.defaultKey) findings.add('teaDefaultShuKey');
-    if (tea == FwKeyState.blank) findings.add('teaFieldCleared');
+    // Plain key-field STATE is not an oddity — it lives in rom.keyFields. Only
+    // the notable/unexpected states are worth a grain-of-salt finding.
     if (xtea == FwXteaState.present) findings.add('xteaFieldPresent');
-    if (xtea == FwXteaState.cleared) findings.add('xteaFieldCleared');
     if (!secondaryVerified) findings.add('secondaryCopyNotVerified');
 
     final runtime = sram.identity;
@@ -251,59 +255,51 @@ class ExtraBackupMetadata {
             ? null
             : (hardware.usdWord! & 0xff) == 0xa5,
       },
-      'vectorTable': <String, Object?>{
-        'initialSp': _hex(initialSp, 8),
-        'resetVector': _hex(resetVector, 8),
-        'plausible': vectorPlausible,
-      },
-      'firmware': <String, Object?>{
-        'romBanner': rom.banner,
-        'bannerSupported': rom.bannerSupported,
-        'type': type,
-        'model': model,
-        'modelSource': backupMetadata['modelSource'],
-        'mcuModelUserProvided':
-            type == 'MCU' &&
-            backupMetadata['modelSource'] == 'operatorDeclared',
-        'version': backupMetadata['version'],
-        'versionVerdict': versionVerdict,
-        'blacklistFrom': blacklistFrom,
-        'blacklisted': blacklisted,
-        'blacklistedVersion': blacklisted ? romVersion : null,
-        'shuCompatibilityAtCapture': shuCompatibility,
-        'policyToolVersion': kAppVersion,
-      },
-      'compatibilityFields': <String, Object?>{
-        'teaAt0x1420': tea.name,
-        'xteaAt0x1440': xtea.name,
-      },
-      'runtime': <String, Object?>{
-        'verdict': sram.verdict.name,
-        'reason': sram.reason.isEmpty ? null : sram.reason,
-        'component': runtime?.type,
-        'version': runtime?.version.toString(),
-        'tableOffsets': runtime?.tableOffsets.map(_hexOffset).toList(),
-        'scooterSerial': runtime?.serial,
-        'scooterModelFromSerial': runtime?.serialModel,
-        'regionCode': runtime?.regionCode,
-        'controllerSnMnCandidates': runtime?.controllerSnMnCandidates,
-      },
-      'identity': <String, Object?>{
-        'scooterSerial': scooterSerial,
-        'scooterSerialState': scooterSerialState,
-        'controllerSnMn': backupMetadata['controllerSnMn'],
-        'controllerSnMnState': backupMetadata['controllerSnMnState'],
-        'controllerSnMnPrimary': backupMetadata['controllerSnMnPrimary'],
-        'controllerSnMnBackup': backupMetadata['controllerSnMnBackup'],
-        'uidState': backupMetadata['uidState'],
-        'zpState': backupMetadata['zpState'],
-      },
       'secondaryCopy': <String, Object?>{
         'required': true,
         'created': secondaryCreated,
         'verified': secondaryVerified,
         'file': secondaryPath == null ? null : p.basename(secondaryPath),
       },
+      // Flash-derived facts. Solid, like the ordinary sidecar.
+      'rom': <String, Object?>{
+        'firmware': <String, Object?>{
+          'romBanner': rom.banner,
+          'bannerSupported': rom.bannerSupported,
+          'type': type,
+          'model': model,
+          'modelSource': backupMetadata['modelSource'],
+          'mcuModelUserProvided':
+              type == 'MCU' &&
+              backupMetadata['modelSource'] == 'operatorDeclared',
+          'version': backupMetadata['version'],
+          'versionVerdict': versionVerdict,
+          'blacklistFrom': blacklistFrom,
+          'blacklisted': blacklisted,
+          'blacklistedVersion': blacklisted ? romVersion : null,
+          'shuCompatibilityAtCapture': shuCompatibility,
+          'policyToolVersion': kAppVersion,
+        },
+        'vectorTable': <String, Object?>{
+          'initialSp': _hex(initialSp, 8),
+          'resetVector': _hex(resetVector, 8),
+          'plausible': vectorPlausible,
+        },
+        'keyFields': <String, Object?>{
+          'teaAt0x1420': tea.name,
+          'xteaAt0x1440': xtea.name,
+        },
+        'identity': <String, Object?>{
+          'scooterSerial': scooterSerial,
+          if (scooterSerialState != null && scooterSerialState != 'real')
+            'scooterSerialState': scooterSerialState,
+          'uidState': backupMetadata['uidState'],
+          'zpState': backupMetadata['zpState'],
+        },
+      },
+      // SRAM-derived facts. Anchored by runtime-table markers, not fixed
+      // offsets; the decoder is work in progress, so treat as softer than rom.
+      'ram': _runtimeMap(sram),
       'findings': findings,
       'captureVerdict': differenceCount == 0 && findings.isEmpty
           ? 'complete'
@@ -328,12 +324,6 @@ class ExtraBackupMetadata {
     String? sramPath,
   }) {
     final sram = SramIdentityParser.parse(sramBytes);
-    final protection = classifySwdartProtection(
-      usdWord: hardware.usdWord,
-      flashWords: null,
-    ).verdict;
-    final runtime = sram.identity;
-
     final findings = <String>['flashReadProtected'];
     if (sram.verdict == SramIdentityVerdict.notFound) {
       findings.add('sramIdentityNotFound');
@@ -371,46 +361,11 @@ class ExtraBackupMetadata {
         'connectionMode': connectionMode,
         'hostPlatform': Platform.operatingSystem,
       },
-      'target': <String, Object?>{
-        'name': hardware.targetName,
-        'family': hardware.targetFamily,
-        'idcode': _hex(hardware.idcode, 8),
-        'flashKB': hardware.flashKB,
-        'pageSize': hardware.pageSize,
-        'sramBytes': hardware.sramBytes,
-      },
-      'protection': <String, Object?>{
-        'usdAddress': '0x1FFFF800',
-        'usdReadAttempted': true,
-        'usdWord': hardware.usdWord == null ? null : _hex(hardware.usdWord!, 8),
-        'fap': hardware.usdWord == null
-            ? null
-            : _hex(hardware.usdWord! & 0xff, 2),
-        'fapComplement': hardware.usdWord == null
-            ? null
-            : _hex((hardware.usdWord! >> 8) & 0xff, 2),
-        'complementConsistent': hardware.usdWord == null
-            ? null
-            : ((hardware.usdWord! & 0xff) ^
-                      ((hardware.usdWord! >> 8) & 0xff)) ==
-                  0xff,
-        'verdict': protection.name,
-        'rdpOn': protection == HardwareProtectionVerdict.protected,
-        'fapUnlocked': hardware.usdWord == null
-            ? null
-            : (hardware.usdWord! & 0xff) == 0xa5,
-      },
-      'runtime': <String, Object?>{
-        'verdict': sram.verdict.name,
-        'reason': sram.reason.isEmpty ? null : sram.reason,
-        'component': runtime?.type,
-        'version': runtime?.version.toString(),
-        'tableOffsets': runtime?.tableOffsets.map(_hexOffset).toList(),
-        'scooterSerial': runtime?.serial,
-        'scooterModelFromSerial': runtime?.serialModel,
-        'regionCode': runtime?.regionCode,
-        'controllerSnMnCandidates': runtime?.controllerSnMnCandidates,
-      },
+      'target': _targetMap(hardware),
+      'protection': _protectionMap(hardware, null),
+      // No flash was read, so there is no ROM evidence at all.
+      'rom': null,
+      'ram': _runtimeMap(sram),
       'findings': findings,
       'captureVerdict': 'protectedNoBackup',
     };
@@ -475,7 +430,9 @@ class ExtraBackupMetadata {
       },
       'target': _targetMap(hardware),
       'protection': _protectionMap(hardware, flashWords),
-      'runtime': _runtimeMap(sram),
+      // The flash read back empty (blank/masked), so no ROM firmware facts.
+      'rom': null,
+      'ram': _runtimeMap(sram),
       'findings': findings,
       'captureVerdict': 'chipFindingNoBackup',
     };
@@ -520,6 +477,10 @@ class ExtraBackupMetadata {
 
   static Map<String, Object?> _runtimeMap(SramIdentityResult sram) {
     final runtime = sram.identity;
+    // Deliberately lean: model-from-serial (redundant with the ROM banner),
+    // region (not a designed/validated feature), and SN/MN candidates
+    // (low-value) are NOT emitted. The SramIdentity class still carries them
+    // for internal use; they just do not belong in this record.
     return <String, Object?>{
       'verdict': sram.verdict.name,
       'reason': sram.reason.isEmpty ? null : sram.reason,
@@ -527,9 +488,6 @@ class ExtraBackupMetadata {
       'version': runtime?.version.toString(),
       'tableOffsets': runtime?.tableOffsets.map(_hexOffset).toList(),
       'scooterSerial': runtime?.serial,
-      'scooterModelFromSerial': runtime?.serialModel,
-      'regionCode': runtime?.regionCode,
-      'controllerSnMnCandidates': runtime?.controllerSnMnCandidates,
     };
   }
 

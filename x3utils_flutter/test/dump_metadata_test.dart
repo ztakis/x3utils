@@ -119,8 +119,9 @@ void main() {
     expect(info['version'], '1.6.1');
     expect(info['versionVerdict'], 'identified');
     expect(info['scooterSerial'], serial);
-    expect(info['scooterSerialState'], 'real');
-    expect(info['controllerSnMn'], isNull);
+    // 'real' is the boring default and is intentionally not emitted.
+    expect(info.containsKey('scooterSerialState'), isFalse);
+    expect(info.containsKey('controllerSnMn'), isFalse);
     expect(info.containsKey('serial'), isFalse);
     expect(info['uid'], 'C49B0DB900002193A70705E8');
     expect(info['uidState'], 'matched');
@@ -171,10 +172,8 @@ void main() {
     expect(info['versionVerdict'], 'modelRequired');
     expect(info['scooterSerial'], isNull);
     expect(info['scooterSerialState'], isNull);
-    expect(info['controllerSnMn'], controllerSnMn);
-    expect(info['controllerSnMnState'], 'matched');
-    expect(info['controllerSnMnPrimary'], controllerSnMn);
-    expect(info['controllerSnMnBackup'], controllerSnMn);
+    // controllerSnMn is intentionally not emitted (dropped as low-value).
+    expect(info.containsKey('controllerSnMn'), isFalse);
     expect(info.containsKey('serial'), isFalse);
     expect(info['uid'], isNull);
     expect(info['uidState'], 'conflict');
