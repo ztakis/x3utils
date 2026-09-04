@@ -416,6 +416,13 @@ class Firmware {
 
   static bool isStagedDump(String path) => path.endsWith(partSuffix);
 
+  /// The backup name a staged path would be promoted to, as pure path math —
+  /// no file has to exist. Used when a run ends before any dump was written
+  /// but still has adjacent artifacts to name consistently.
+  static String finalDumpPath(String stagedPath) => isStagedDump(stagedPath)
+      ? stagedPath.substring(0, stagedPath.length - partSuffix.length)
+      : stagedPath;
+
   /// Give a validated dump its real backup name. Returns the new path, or the
   /// staged path unchanged if the rename fails — the caller then reports where
   /// the file really is rather than a name that does not exist.

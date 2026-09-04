@@ -3053,6 +3053,10 @@ class AppController extends ChangeNotifier {
       }
       return;
     }
+    if (useExtra && (r.extraBackupEvidence?.flashReadSkipped ?? false)) {
+      await _finishProtectedExtra(r, staged!);
+      return;
+    }
     _showOpenOcdProgress(eyebrow: 'Validating');
     if (!_dumpConfirmed(r)) {
       await _finishRealAfterHold(
@@ -3116,7 +3120,17 @@ class AppController extends ChangeNotifier {
         );
         return;
       }
-      _log('== Extra comparison OK: both 128 KiB reads are identical ==');
+      // Two identical reads only evidence good contact when there was real
+      // content to read. All-0x00/0xFF/uniform images match each other
+      // trivially, so say so rather than let a vacuous pass read as assurance.
+      final content = Firmware.inspectDumpBytes(first);
+      _log(
+        content.ok
+            ? '== Extra comparison OK: both 128 KiB reads are identical =='
+            : '== Extra comparison: both reads are identical, but the content '
+                  'is not real firmware (${content.verdict.name}); the match '
+                  'is not contact evidence ==',
+      );
     }
     final nativeStaged = staged!;
     final stageError = await _stageReturnedDumpBytes(r, nativeStaged);
@@ -3233,6 +3247,73 @@ class AppController extends ChangeNotifier {
       outputPath: outPath,
       outputNote: outputNote,
       outputMetadataPath: metadataPath,
+    );
+  }
+
+  /// Extra backup found the controller read-protected, so no flash was read
+  /// and there is no backup to promote. The SRAM snapshot IS real evidence and
+  /// is the only identity obtainable on such a unit — and a rescue/unlock mass
+  /// erases it — so it is saved together with a diagnostic certificate.
+  ///
+  /// This is deliberately NOT a green result: nothing restorable was produced.
+  Future<void> _finishProtectedExtra(HardwareResult r, String staged) async {
+    final finalPath = Firmware.finalDumpPath(staged);
+    final hardware = r.extraBackupEvidence!;
+    _log('== Extra: target is read-protected; no backup bytes were read ==');
+
+    String? ramPath;
+    if (r.sramBytes != null) {
+      try {
+        ramPath = ExtraBackupMetadata.writeSramBin(finalPath, r.sramBytes!);
+        _log('== Extra SRAM snapshot (${r.sramBytes!.length} B) → $ramPath ==');
+      } catch (error) {
+        _log('== Extra SRAM snapshot was not saved: $error ==');
+      }
+    }
+
+    String? extraPath;
+    try {
+      final extra = ExtraBackupMetadata.inspectProtected(
+        sramBytes: r.sramBytes,
+        sramPath: ramPath,
+        hardware: hardware,
+        backendName: backendName,
+        connectionMode: mode.name,
+      );
+      extraPath = ExtraBackupMetadata.write(finalPath, extra);
+      _log('== Extra protected-capture record → $extraPath ==');
+    } catch (error) {
+      _log('== Extra protected-capture record was not written: $error ==');
+    }
+    for (final artifact in [ramPath, extraPath]) {
+      if (artifact == null) continue;
+      final copied = _backupSecondCopy(artifact);
+      if (copied != null) _log('== 2nd copy → $copied ==');
+    }
+
+    // Only state an identity when one was actually parsed. RAM layout is not
+    // fully mapped yet, so a null result means "not decoded here", not "the
+    // RAM is empty" — keep the wording generic until that is understood.
+    final ram = SramIdentityParser.parse(r.sramBytes).identity;
+    final identityLine = ram == null
+        ? null
+        : 'Live RAM identity: ${ram.type} · ${ram.displayModel} · '
+              '${ram.version}.';
+    if (identityLine != null) _log('== SRAM identity: $identityLine ==');
+
+    await _finishRealAfterHold(
+      false,
+      '',
+      'This controller is read-protected, so its flash cannot be read and no '
+          'backup is possible.'
+          '${identityLine == null ? '' : ' $identityLine'}',
+      reseat: false,
+      finding: true,
+      outputPath: ramPath,
+      outputNote: ramPath == null
+          ? null
+          : 'The RAM snapshot and a diagnostic record were saved. They are '
+                'evidence about this controller, not a restorable backup.',
     );
   }
 

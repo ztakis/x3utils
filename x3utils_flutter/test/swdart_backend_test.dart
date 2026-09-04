@@ -437,8 +437,53 @@ void main() {
       expect(result.sramBytes, same(session.sramBytes));
       expect(result.extraBackupEvidence?.usdWord, 0x00ff5aa5);
       expect(result.extraBackupEvidence?.idcode, 0x700301c5);
-      expect(session.readAddresses, [0x08000000, 0x08000000, 0x1ffff800]);
-      expect(events, ['sram', 'read', 'read', 'read']);
+      expect(result.extraBackupEvidence?.flashReadSkipped, isFalse);
+      // Protection is probed FIRST (option word, then a short flash read), so
+      // a protected target never pays for two 128 KiB reads. An accessible
+      // target falls through to the normal SRAM + double-read capture.
+      expect(session.readAddresses, [
+        0x1ffff800,
+        0x08000000,
+        0x08000000,
+        0x08000000,
+      ]);
+      expect(events, ['read', 'read', 'sram', 'read', 'read']);
+      expect(session.disconnects, 1);
+    },
+  );
+
+  test(
+    'Extra Backup skips both 128 KiB reads when the target is protected',
+    () async {
+      final events = <String>[];
+      final session = _FakeSession(
+        sramBytes: _identifiedVcuSram(),
+        events: events,
+        // FAP locked and flash masked to 0x00 — the readout-protection shape.
+        onRead: (address, length) => address == 0x1ffff800
+            ? Uint8List.fromList([0x00, 0xff, 0xff, 0xff])
+            : Uint8List(length),
+      );
+      final backend = SwdartBackend(sessionFactory: () => session);
+
+      final result = await backend.run(
+        const HardwareRequest(
+          operation: HardwareOperation.dump,
+          mode: ConnectionMode.defaultSwd,
+          countdown: 3,
+          extraBackup: true,
+        ),
+        _callbacks(),
+      );
+
+      expect(result.extraBackupEvidence?.flashReadSkipped, isTrue);
+      expect(result.bytes, isNull);
+      expect(result.comparisonBytes, isNull);
+      // SRAM is still captured: on a protected controller it is the only
+      // identity evidence obtainable, and a rescue would destroy it.
+      expect(result.sramBytes, same(session.sramBytes));
+      expect(session.readAddresses, [0x1ffff800, 0x08000000]);
+      expect(events, ['read', 'read', 'sram']);
       expect(session.disconnects, 1);
     },
   );
@@ -1470,6 +1515,9 @@ void main() {
           if (address == 0x1ffff800) {
             return Uint8List.fromList([0xa5, 0x5a, 0xff, 0x00]);
           }
+          // The short pre-read protection probe must not consume one of the
+          // two full reads this test is comparing.
+          if (length < first.length) return first;
           return flashRead++ == 0 ? first : second;
         },
       );
@@ -1492,6 +1540,86 @@ void main() {
         isEmpty,
       );
       expect(controller.console.join('\n'), contains('1 differing bytes'));
+    },
+  );
+
+  test(
+    'controller Extra Backup on a protected target saves RAM evidence only',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      final root = Directory.systemTemp.createTempSync(
+        'x3utils_extra_protected',
+      );
+      final secondary = Directory(p.join(root.path, 'secondary'))..createSync();
+      addTearDown(() {
+        Firmware.setRoot(null);
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final session = _FakeSession(
+        sramBytes: _identifiedVcuSram(),
+        onRead: (address, length) => address == 0x1ffff800
+            ? Uint8List.fromList([0x00, 0xff, 0xff, 0xff])
+            : Uint8List(length),
+      );
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        backupSecondCopy: (src) {
+          final dest = p.join(secondary.path, p.basename(src));
+          File(src).copySync(dest);
+          return dest;
+        },
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+      controller.setX3utilsRoot(root.path);
+      controller.selectAction('dump');
+      controller.setExtraBackup(true);
+
+      await controller.start();
+
+      // No backup exists, so the run must not read as success.
+      expect(controller.stage, StageState.fail);
+
+      final produced = Directory(
+        p.join(root.path, 'backup'),
+      ).listSync().whereType<File>().map((f) => p.basename(f.path)).toList();
+      // The RAM snapshot and the diagnostic record, and nothing that could be
+      // mistaken for a restorable backup — no .bin, and no orphan .bin.part.
+      expect(produced.where((n) => n.endsWith('_RAM.bin')), hasLength(1));
+      expect(produced.where((n) => n.endsWith('.extra.json')), hasLength(1));
+      expect(produced.any((n) => n.endsWith('.bin.part')), isFalse);
+      expect(
+        produced.any((n) => n.endsWith('.bin') && !n.endsWith('_RAM.bin')),
+        isFalse,
+      );
+
+      final certificate =
+          jsonDecode(
+                File(
+                  p.join(
+                    root.path,
+                    'backup',
+                    produced.firstWhere((n) => n.endsWith('.extra.json')),
+                  ),
+                ).readAsStringSync(),
+              )
+              as Map<String, Object?>;
+      expect(certificate['captureVerdict'], 'protectedNoBackup');
+      expect(
+        (certificate['findings']! as List).contains('flashReadProtected'),
+        isTrue,
+      );
+      final backupSection = certificate['backup']! as Map<String, Object?>;
+      expect(backupSection['file'], isNull);
+      expect(backupSection['role'], 'diagnosticNoRestorableBackup');
+      final capture = certificate['capture']! as Map<String, Object?>;
+      expect(capture['flashReads'], 0);
+      expect(capture['sramFile'], endsWith('_RAM.bin'));
+      // The SRAM identity is the payload this record exists to preserve.
+      final runtime = certificate['runtime']! as Map<String, Object?>;
+      expect(runtime['component'], 'VCU');
     },
   );
 

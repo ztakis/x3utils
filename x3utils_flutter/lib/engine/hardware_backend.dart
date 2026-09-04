@@ -203,6 +203,7 @@ class ExtraBackupHardwareEvidence {
     required this.pageSize,
     required this.sramBytes,
     required this.usdWord,
+    this.flashReadSkipped = false,
   });
 
   final String targetName;
@@ -215,6 +216,12 @@ class ExtraBackupHardwareEvidence {
   /// Raw 32-bit option/USD word at 0x1FFFF800, or null when that evidence
   /// could not be read. Null must remain inconclusive rather than protected.
   final int? usdWord;
+
+  /// Extra backup only: the pre-read protection probe classified the target as
+  /// protected, so the two 128 KiB reads were skipped and no backup bytes
+  /// exist. Only a `protected` verdict sets this — an inconclusive probe falls
+  /// through to the normal full read, so this can never deny a backup.
+  final bool flashReadSkipped;
 }
 
 class HardwareCallbacks {

@@ -397,6 +397,45 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
           'x3utils Backup requires a 128 KiB AT32F415; detected ${target.flashKB} KiB',
         );
       }
+      // Extra backup only: classify readout protection BEFORE the expensive
+      // reads. A protected AT32F415 masks flash to 0x00, so the two 128 KiB
+      // reads would return a pair of zero images that compare equal — a
+      // vacuous "match" costing 256 KiB to learn nothing. This probe is 20
+      // bytes. It may only SKIP work: solely a `protected` verdict short-
+      // circuits, while inconclusive falls through to the normal full read, so
+      // a 4-byte option read can never deny anyone a backup.
+      int? usdWord;
+      var protectedNoRead = false;
+      if (request.extraBackup) {
+        try {
+          final usd = await session.readFlash(address: _usdBase, length: 4);
+          if (usd.length >= 4) usdWord = _u32le(usd, 0);
+        } catch (error) {
+          callbacks.onLine('[extra] warning: option area read failed: $error');
+        }
+        List<int>? probeWords;
+        try {
+          final head = await session.readFlash(address: _flashBase, length: 16);
+          if (head.length >= 16) {
+            probeWords = <int>[for (var i = 0; i < 16; i += 4) _u32le(head, i)];
+          }
+        } catch (error) {
+          callbacks.onLine('[extra] warning: flash probe read failed: $error');
+        }
+        final early = classifySwdartProtection(
+          usdWord: usdWord,
+          flashWords: probeWords,
+        );
+        callbacks.onLine('[extra] protection probe: ${early.verdict.name}');
+        protectedNoRead = early.verdict == HardwareProtectionVerdict.protected;
+        if (protectedNoRead) {
+          callbacks.onLine(
+            '[extra] flash is read-protected — skipping the 128 KiB reads; '
+            'capturing SRAM only',
+          );
+        }
+        _throwIfCancelled();
+      }
       Uint8List? sramBytes;
       final captureSram = request.captureSram || request.extraBackup;
       if (captureSram) {
@@ -415,6 +454,30 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
         } catch (error) {
           callbacks.onLine('[sram] warning: snapshot failed: $error');
         }
+      }
+      if (protectedNoRead) {
+        // Read-only diagnostic outcome: no backup bytes exist, but the SRAM
+        // snapshot and protection evidence do. The controller decides what to
+        // save; this stays evidence, never a green result.
+        return HardwareResult(
+          0,
+          HardwareEvidence(
+            caught: true,
+            dumped: false,
+            sramAttempted: captureSram,
+          ),
+          sramBytes: sramBytes,
+          extraBackupEvidence: ExtraBackupHardwareEvidence(
+            targetName: target.name,
+            targetFamily: target.family,
+            idcode: target.idcode,
+            flashKB: target.flashKB,
+            pageSize: target.pageSize,
+            sramBytes: target.sramBytes,
+            usdWord: usdWord,
+            flashReadSkipped: true,
+          ),
+        );
       }
       final bytes = await session.readFlash(
         address: _flashBase,
@@ -438,15 +501,6 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
             'swdart returned ${comparisonBytes.length} of $_backupLength '
             'comparison bytes',
           );
-        }
-      }
-      int? usdWord;
-      if (request.extraBackup) {
-        try {
-          final usd = await session.readFlash(address: _usdBase, length: 4);
-          if (usd.length >= 4) usdWord = _u32le(usd, 0);
-        } catch (error) {
-          callbacks.onLine('[extra] warning: option area read failed: $error');
         }
       }
       return HardwareResult(

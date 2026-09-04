@@ -311,6 +311,111 @@ class ExtraBackupMetadata {
     };
   }
 
+  /// Certificate for an Extra run that found the target read-protected.
+  ///
+  /// No flash was read, so every flash-derived fact is absent rather than
+  /// guessed: no ROM banner, no ROM version, no TEA/XTEA state, no vector
+  /// table, no flash identity. What remains is real evidence — live SRAM
+  /// runtime identity, the protection reading, and target geometry.
+  ///
+  /// `backup.file` is null and the role is explicitly not a restore candidate:
+  /// this run produced no backup and the record must never imply otherwise.
+  static Map<String, Object?> inspectProtected({
+    required List<int>? sramBytes,
+    required ExtraBackupHardwareEvidence hardware,
+    required String backendName,
+    required String connectionMode,
+    String? sramPath,
+  }) {
+    final sram = SramIdentityParser.parse(sramBytes);
+    final protection = classifySwdartProtection(
+      usdWord: hardware.usdWord,
+      flashWords: null,
+    ).verdict;
+    final runtime = sram.identity;
+
+    final findings = <String>['flashReadProtected'];
+    if (sram.verdict == SramIdentityVerdict.notFound) {
+      findings.add('sramIdentityNotFound');
+    } else if (sram.verdict == SramIdentityVerdict.conflicting) {
+      findings.add('sramIdentityConflicting');
+    }
+    if (sramBytes == null) findings.add('sramSnapshotMissing');
+
+    return <String, Object?>{
+      'schema': schemaVersion,
+      'kind': 'x3utilsExtraBackup',
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'tool': <String, Object?>{'version': kAppVersion, 'stage': kAppStage},
+      'backup': <String, Object?>{
+        'file': null,
+        'bytes': null,
+        'normalSidecar': null,
+        'role': 'diagnosticNoRestorableBackup',
+        'factoryConditionClaim': 'notApplicableNoBackupWasRead',
+      },
+      'capture': <String, Object?>{
+        'probeSessions': 1,
+        'flashReads': 0,
+        'flashReadSkippedReason': 'targetReadProtected',
+        'match': null,
+        'differenceCount': null,
+        'firstDifferenceOffset': null,
+        'sha256Read1': null,
+        'sha256Read2': null,
+        'sramAttempted': true,
+        'sramBytesReturned': sramBytes?.length,
+        'sramSha256': sramBytes == null ? null : digest(sramBytes),
+        'sramFile': sramPath == null ? null : p.basename(sramPath),
+        'backend': backendName,
+        'connectionMode': connectionMode,
+        'hostPlatform': Platform.operatingSystem,
+      },
+      'target': <String, Object?>{
+        'name': hardware.targetName,
+        'family': hardware.targetFamily,
+        'idcode': _hex(hardware.idcode, 8),
+        'flashKB': hardware.flashKB,
+        'pageSize': hardware.pageSize,
+        'sramBytes': hardware.sramBytes,
+      },
+      'protection': <String, Object?>{
+        'usdAddress': '0x1FFFF800',
+        'usdReadAttempted': true,
+        'usdWord': hardware.usdWord == null ? null : _hex(hardware.usdWord!, 8),
+        'fap': hardware.usdWord == null
+            ? null
+            : _hex(hardware.usdWord! & 0xff, 2),
+        'fapComplement': hardware.usdWord == null
+            ? null
+            : _hex((hardware.usdWord! >> 8) & 0xff, 2),
+        'complementConsistent': hardware.usdWord == null
+            ? null
+            : ((hardware.usdWord! & 0xff) ^
+                      ((hardware.usdWord! >> 8) & 0xff)) ==
+                  0xff,
+        'verdict': protection.name,
+        'rdpOn': protection == HardwareProtectionVerdict.protected,
+        'fapUnlocked': hardware.usdWord == null
+            ? null
+            : (hardware.usdWord! & 0xff) == 0xa5,
+      },
+      'runtime': <String, Object?>{
+        'verdict': sram.verdict.name,
+        'reason': sram.reason.isEmpty ? null : sram.reason,
+        'component': runtime?.type,
+        'version': runtime?.version.toString(),
+        'tableOffsets': runtime?.tableOffsets.map(_hexOffset).toList(),
+        'scooterSerial': runtime?.serial,
+        'scooterModelFromSerial': runtime?.serialModel,
+        'regionCode': runtime?.regionCode,
+        'controllerSnMnCandidates': runtime?.controllerSnMnCandidates,
+      },
+      'findings': findings,
+      'captureVerdict': 'protectedNoBackup',
+    };
+  }
+
   static String write(String dumpPath, Map<String, Object?> metadata) {
     final sidecar = sidecarPath(dumpPath);
     final target = File(sidecar);
