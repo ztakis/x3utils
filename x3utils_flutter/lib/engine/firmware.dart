@@ -789,6 +789,17 @@ class CompatXtea {
     if (cleared) return FwXteaState.cleared;
     return FwXteaState.notDetected;
   }
+
+  /// Sidecar wording for the 0x1440 state. `present` is reported as
+  /// `asciiAlphanumeric`: the state names the byte SHAPE that was observed,
+  /// not a claim that the field is in use. Shared with the Extra certificate
+  /// so one set of bytes cannot get two descriptions.
+  static String keyStateLabel(List<int> image, {int at = offset}) =>
+      switch (keyState(image, at: at)) {
+        FwXteaState.present => 'asciiAlphanumeric',
+        FwXteaState.cleared => 'cleared',
+        FwXteaState.notDetected => 'notDetected',
+      };
 }
 
 /// The SHU-compatible patch (flash_compat step 2): inject a fixed 16-byte
@@ -818,6 +829,37 @@ class CompatPatch {
     if (isKey) return FwKeyState.defaultKey;
     if (isBlank) return FwKeyState.blank;
     return FwKeyState.other;
+  }
+
+  /// Sidecar wording for the 0x1420 state, refining [FwKeyState.other] into
+  /// `asciiAlphanumeric` when the bytes carry the observed OEM shape.
+  ///
+  /// Shared so the ordinary `.json` and the Extra certificate can never
+  /// describe the same bytes with different words — they did, until schema 4.
+  static String keyStateLabel(List<int> image, {int at = offset}) {
+    final state = keyState(image, at: at);
+    if (state == FwKeyState.other &&
+        asciiAlphanumeric(image, at, signature.length)) {
+      return 'asciiAlphanumeric';
+    }
+    return switch (state) {
+      FwKeyState.defaultKey => 'defaultKey',
+      FwKeyState.blank => 'blank',
+      FwKeyState.other => 'other',
+    };
+  }
+
+  /// True when [length] bytes at [at] are all ASCII letters or digits.
+  static bool asciiAlphanumeric(List<int> image, int at, int length) {
+    if (image.length < at + length) return false;
+    for (var i = 0; i < length; i++) {
+      final byte = image[at + i];
+      final digit = byte >= 0x30 && byte <= 0x39;
+      final upper = byte >= 0x41 && byte <= 0x5A;
+      final lower = byte >= 0x61 && byte <= 0x7A;
+      if (!digit && !upper && !lower) return false;
+    }
+    return true;
   }
 
   /// Read [srcPath], write the signature at [offset], verify, save [dstPath].

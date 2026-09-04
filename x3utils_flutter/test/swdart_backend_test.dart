@@ -1430,9 +1430,16 @@ void main() {
       expect((extra['protection'] as Map)['verdict'], 'notProtected');
       expect((extra['protection'] as Map)['rdpOn'], isFalse);
       expect((extra['protection'] as Map)['fapUnlocked'], isTrue);
+      // Schema 4: the certificate must describe the key fields with the SAME
+      // words as the ordinary sidecar. Before this, one capture's two files
+      // called the same bytes `other`/`present` and `asciiAlphanumeric`.
       final keyFields = (extra['rom'] as Map)['keyFields'] as Map;
+      final normal = jsonDecode(normalSidecar.readAsStringSync()) as Map;
       expect(keyFields['teaAt0x1420'], isNotNull);
       expect(keyFields['xteaAt0x1440'], isNotNull);
+      expect(keyFields['teaAt0x1420'], normal['keyState']);
+      expect(keyFields['xteaAt0x1440'], normal['xteaState']);
+      expect(extra['schema'], 4);
       expect(
         (extra['backup'] as Map)['factoryConditionClaim'],
         'notProvenWithoutAnExternalReference',
@@ -1587,7 +1594,7 @@ void main() {
       // The RAM snapshot and the diagnostic record, and nothing that could be
       // mistaken for a restorable backup — no .bin, and no orphan .bin.part.
       expect(produced.where((n) => n.endsWith('_RAM.bin')), hasLength(1));
-      expect(produced.where((n) => n.endsWith('.extra.json')), hasLength(1));
+      expect(produced.where((n) => n.endsWith('_EXTRA.json')), hasLength(1));
       expect(produced.any((n) => n.endsWith('.bin.part')), isFalse);
       expect(
         produced.any((n) => n.endsWith('.bin') && !n.endsWith('_RAM.bin')),
@@ -1600,7 +1607,7 @@ void main() {
                   p.join(
                     root.path,
                     'backup',
-                    produced.firstWhere((n) => n.endsWith('.extra.json')),
+                    produced.firstWhere((n) => n.endsWith('_EXTRA.json')),
                   ),
                 ).readAsStringSync(),
               )
@@ -1668,7 +1675,7 @@ void main() {
       // The RAM snapshot and the diagnostic record survive the blank verdict;
       // no promoted .bin is produced.
       expect(produced.where((n) => n.endsWith('_RAM.bin')), hasLength(1));
-      expect(produced.where((n) => n.endsWith('.extra.json')), hasLength(1));
+      expect(produced.where((n) => n.endsWith('_EXTRA.json')), hasLength(1));
       expect(
         produced.any((n) => n.endsWith('.bin') && !n.endsWith('_RAM.bin')),
         isFalse,
@@ -1680,7 +1687,7 @@ void main() {
                   p.join(
                     root.path,
                     'backup',
-                    produced.firstWhere((n) => n.endsWith('.extra.json')),
+                    produced.firstWhere((n) => n.endsWith('_EXTRA.json')),
                   ),
                 ).readAsStringSync(),
               )

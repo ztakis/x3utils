@@ -3107,7 +3107,7 @@ class _ExtraBackupToggle extends StatelessWidget {
                   const SizedBox(height: 2),
                   const Text(
                     'Capture SRAM, read flash twice, compare every byte, and '
-                    'save a verified secondary copy plus .extra.json.',
+                    'save a verified secondary copy plus _EXTRA.json.',
                     style: TextStyle(color: AppColors.mut, fontSize: 11),
                   ),
                 ],

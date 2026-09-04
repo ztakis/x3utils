@@ -67,8 +67,6 @@ class DumpMetadata {
       CompatPatch.offset,
       CompatPatch.offset + CompatPatch.signature.length,
     );
-    final keyAlphanumeric = _isAsciiAlphanumeric(keyBytes);
-    final keyState = CompatPatch.keyState(dump);
     final xteaState = CompatXtea.keyState(dump);
     final xteaBytes = xteaState == FwXteaState.present
         ? dump.sublist(CompatXtea.offset, CompatXtea.offset + CompatXtea.length)
@@ -103,20 +101,11 @@ class DumpMetadata {
       // `ascii`, and [_keyHex] needs it to read them back.
       'key': _hex(keyBytes),
       'keyEncoding': 'hex',
-      'keyState': switch (keyState) {
-        FwKeyState.defaultKey => 'defaultKey',
-        FwKeyState.blank => 'blank',
-        FwKeyState.other when keyAlphanumeric => 'asciiAlphanumeric',
-        FwKeyState.other => 'other',
-      },
+      'keyState': CompatPatch.keyStateLabel(dump),
       'rand': _hex(dump.sublist(randOffset, randOffset + randLength)),
       'xtea': xteaBytes == null ? null : _hex(xteaBytes),
       'xteaEncoding': 'hex',
-      'xteaState': switch (xteaState) {
-        FwXteaState.present => 'asciiAlphanumeric',
-        FwXteaState.cleared => 'cleared',
-        FwXteaState.notDetected => 'notDetected',
-      },
+      'xteaState': CompatXtea.keyStateLabel(dump),
       'zpEncLen': zp.state == ZpRecordState.readable
           ? zp.payloadLength! + 4
           : null,

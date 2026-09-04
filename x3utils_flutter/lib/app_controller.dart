@@ -4457,6 +4457,10 @@ class AppController extends ChangeNotifier {
       return;
     }
     final raw = Firmware.promoteDump(staged);
+    // Same evidence line the Backup path logs. Compat erases and rewrites the
+    // chip a few steps later, so the console must state that the ONLY copy of
+    // the original firmware was validated and promoted before any patching.
+    _log('== validated OK → $raw ==');
 
     _setInstruction('Original backup saved. Preparing the patch...');
     final rawMetadataPath = _writeDumpMetadata(raw);

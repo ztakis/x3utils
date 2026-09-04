@@ -1,7 +1,7 @@
 /// Evidence certificate for the opt-in standalone Backup BETA path.
 ///
 /// The ordinary `.json` sidecar remains the canonical local identity record.
-/// This adjacent `.extra.json` records how the backup was captured and the
+/// This adjacent `_EXTRA.json` records how the backup was captured and the
 /// anomaly checks applied to it. It is observational: only the controller may
 /// decide whether a capture is accepted.
 library;
@@ -28,14 +28,25 @@ class ExtraBackupMetadata {
   // fixed-offset), and `findings` (cross-checks and oddities — grain of salt).
   // The envelope (backup/capture/target/protection/secondaryCopy) holds the
   // hard session facts that are neither interpretation nor grain of salt.
-  static const int schemaVersion = 3;
+  //
+  // Schema 4 changes what `rom.keyFields` VALUES mean: they now use the same
+  // words as the ordinary sidecar's `keyState`/`xteaState` instead of raw enum
+  // names. A reader that matched on `present` or a bare `other` must be
+  // updated — hence a major bump rather than an additive field.
+  static const int schemaVersion = 4;
 
+  /// Path of the evidence certificate beside a dump: `dump_<ts>_EXTRA.json`.
+  ///
+  /// The qualifier is an underscore inside the stem, matching [sramBinPath]'s
+  /// `_RAM.bin`, so every artifact this capture adds beyond the ordinary
+  /// sidecar is marked the same way. Captures written before 2026-09-04 used
+  /// `.extra.json`; nothing reads either name back, so those files keep theirs.
   static String sidecarPath(String dumpPath) {
     final extension = p.extension(dumpPath);
     final stem = extension.isEmpty
         ? dumpPath
         : dumpPath.substring(0, dumpPath.length - extension.length);
-    return '$stem.extra.json';
+    return '${stem}_EXTRA.json';
   }
 
   /// Path of the raw SRAM snapshot beside a dump: `dump_<ts>_RAM.bin`.
@@ -115,7 +126,6 @@ class ExtraBackupMetadata {
       usdWord: hardware.usdWord,
       flashWords: flashWords,
     ).verdict;
-    final tea = CompatPatch.keyState(firstRead);
     final xtea = CompatXtea.keyState(firstRead);
     final model = backupMetadata['model'] as String?;
     final type = backupMetadata['type'] as String?;
@@ -285,9 +295,13 @@ class ExtraBackupMetadata {
           'resetVector': _hex(resetVector, 8),
           'plausible': vectorPlausible,
         },
+        // Schema 4: the shared labels. These previously wrote the raw enum
+        // names, so one capture's two sidecars described the same bytes
+        // differently — `other`/`present` here against
+        // `asciiAlphanumeric` in the ordinary `.json`.
         'keyFields': <String, Object?>{
-          'teaAt0x1420': tea.name,
-          'xteaAt0x1440': xtea.name,
+          'teaAt0x1420': CompatPatch.keyStateLabel(firstRead),
+          'xteaAt0x1440': CompatXtea.keyStateLabel(firstRead),
         },
         'identity': <String, Object?>{
           'scooterSerial': scooterSerial,
