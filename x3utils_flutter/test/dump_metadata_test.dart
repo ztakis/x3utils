@@ -125,16 +125,54 @@ void main() {
     expect(info.containsKey('serial'), isFalse);
     expect(info['uid'], 'C49B0DB900002193A70705E8');
     expect(info['uidState'], 'matched');
-    // Hex even though these 16 bytes are printable ASCII ('7aoymhtysf886lb6').
-    // keyState still reports 'oem', which is what printability was signalling.
+    // Raw bytes stay canonical hex; the state records the narrower OEM shape.
     expect(info['key'], '37616f796d68747973663838366c6236');
     expect(info['keyEncoding'], 'hex');
-    expect(info['keyState'], 'oem');
+    expect(info['keyState'], 'asciiAlphanumeric');
     expect(info['rand'], 'ffffffffffff');
+    expect(info['xtea'], isNull);
+    expect(info['xteaEncoding'], 'hex');
+    expect(info['xteaState'], 'notDetected');
     expect(info['zpEncLen'], 59032);
     expect(info['zpPayloadLen'], 59028);
     expect(info['zpState'], 'readable');
     expect(info['dumpVerdict'], 'ok');
+  });
+
+  test('records only ASCII-alphanumeric key shapes as such', () {
+    final bytes = _dump('SCOOTER_VCU_xxU2');
+    bytes.setRange(
+      CompatPatch.offset,
+      CompatPatch.offset + CompatPatch.signature.length,
+      'Abcd1234-Efgh!56'.codeUnits,
+    );
+
+    final info = DumpMetadata.inspect(bytes, backupPath: 'dump.bin');
+    expect(info['keyState'], 'other');
+  });
+
+  test('records XTEA as hex only for the ASCII-alphanumeric field shape', () {
+    final present = _dump('SCOOTER_VCU_xxU2');
+    present.setRange(
+      CompatXtea.offset,
+      CompatXtea.offset + CompatXtea.length,
+      'Xtea1234Key56789'.codeUnits,
+    );
+    final presentInfo = DumpMetadata.inspect(present, backupPath: 'dump.bin');
+    expect(presentInfo['xtea'], '58746561313233344b65793536373839');
+    expect(presentInfo['xteaEncoding'], 'hex');
+    expect(presentInfo['xteaState'], 'asciiAlphanumeric');
+
+    final cleared = _dump('SCOOTER_VCU_xxU2');
+    cleared.setRange(
+      CompatXtea.offset,
+      CompatXtea.offset + CompatXtea.length,
+      List<int>.filled(CompatXtea.length, 0xFF),
+    );
+    final clearedInfo = DumpMetadata.inspect(cleared, backupPath: 'dump.bin');
+    expect(clearedInfo['xtea'], isNull);
+    expect(clearedInfo['xteaEncoding'], 'hex');
+    expect(clearedInfo['xteaState'], 'cleared');
   });
 
   test('does not infer an MCU model and records conflicting UID copies', () {
@@ -185,7 +223,13 @@ void main() {
     final dir = Directory.systemTemp.createTempSync('x3utils_dump_metadata_');
     addTearDown(() => dir.deleteSync(recursive: true));
     final dumpPath = p.join(dir.path, 'dump_2026-08-09_02-06-52.bin');
-    File(dumpPath).writeAsBytesSync(_dump('SCOOTER_VCU_xxG3'));
+    final bytes = _dump('SCOOTER_VCU_xxG3');
+    bytes.setRange(
+      CompatXtea.offset,
+      CompatXtea.offset + CompatXtea.length,
+      'Xtea1234Key56789'.codeUnits,
+    );
+    File(dumpPath).writeAsBytesSync(bytes);
 
     final sidecar = DumpMetadata.writeValidatedSidecar(dumpPath);
     final json =
@@ -194,6 +238,9 @@ void main() {
     expect(sidecar, p.join(dir.path, 'dump_2026-08-09_02-06-52.json'));
     expect(json['backup'], p.basename(dumpPath));
     expect(json['dumpVerdict'], 'ok');
+    expect(json['xtea'], '58746561313233344b65793536373839');
+    expect(json['xteaEncoding'], 'hex');
+    expect(json['xteaState'], 'asciiAlphanumeric');
     expect(File('$sidecar.part').existsSync(), isFalse);
     expect(
       () => DumpMetadata.writeValidatedSidecar(dumpPath),
@@ -238,7 +285,7 @@ void main() {
     String value(List<InfoRow> rows, String label) =>
         rows.firstWhere((row) => row.label == label).display(revealed: true);
 
-    test('a legacy ascii key is rendered as hex, with its case recoverable', () {
+    test('a legacy ascii key keeps its text and renders canonical hex', () {
       // Sidecars written before the hex switch stored printable key bytes as
       // TEXT. Grouping that text read as 8 bytes for a 16-byte key and
       // uppercased it, so the value shown — and copied — was not the key on the
@@ -252,9 +299,10 @@ void main() {
         'keyState': 'other',
       });
       expect(
-        value(rows, 'Key'),
+        value(rows, 'Key hex'),
         '4F 6D 5A 68 58 62 42 32 4D 67 55 6F 32 74 33 45',
       );
+      expect(value(rows, 'Key ASCII'), 'OmZhXbB2MgUo2t3E');
     });
 
     test('states appear only where something was proven', () {
@@ -266,12 +314,12 @@ void main() {
         'scooterSerialState':
             'real', // shape-valid only — recognised by nothing
         'key': 'aabb',
-        'keyState': 'oem', // not the default key, and that is all we know
+        'keyState': 'oem', // legacy sidecars remain readable
       });
 
       expect(rows.any((row) => row.label == 'Verdict'), isFalse);
       expect(rows.firstWhere((row) => row.label == 'Serial').state, isNull);
-      expect(rows.firstWhere((row) => row.label == 'Key').state, isNull);
+      expect(rows.firstWhere((row) => row.label == 'Key hex').state, isNull);
     });
 
     test('a matched value and an observation keep their state', () {
@@ -283,7 +331,31 @@ void main() {
         'keyState': 'defaultKey',
       });
       expect(value(rows, 'Serial'), '— (cleared)');
-      expect(value(rows, 'Key'), 'FE 80 1C B2 (default key)');
+      expect(value(rows, 'Key hex'), 'FE 80 1C B2 (default key)');
+    });
+
+    test('XTEA renders as ASCII and hex, or as an explicit absent state', () {
+      final present = DumpMetadata.rows({
+        'type': 'VCU',
+        'backup': 'dump.bin',
+        'xtea': '58746561313233344b65793536373839',
+        'xteaEncoding': 'hex',
+        'xteaState': 'asciiAlphanumeric',
+      });
+      expect(value(present, 'XTEA ASCII'), 'Xtea1234Key56789');
+      expect(
+        value(present, 'XTEA hex'),
+        '58 74 65 61 31 32 33 34 4B 65 79 35 36 37 38 39',
+      );
+
+      final absent = DumpMetadata.rows({
+        'type': 'VCU',
+        'backup': 'dump.bin',
+        'xtea': null,
+        'xteaEncoding': 'hex',
+        'xteaState': 'notDetected',
+      });
+      expect(value(absent, 'XTEA'), '— (not detected)');
     });
 
     test('MCU rows hide both scooter serial and controller SN/MN', () {

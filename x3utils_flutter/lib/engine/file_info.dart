@@ -263,13 +263,13 @@ class FileInfo {
           state: uidConflict ? 'copies conflict' : infoText(facts['uidState']),
           secret: true,
         ),
-        // Read from the bytes, not from `facts`: the sidecar stores the key as
-        // TEXT when it happens to be printable, and the inspector always shows
-        // hex.
+        // Read from the bytes, not from `facts`: this view describes the
+        // selected file now, while Backup info describes the saved sidecar.
         ..._keyRows(
           bytes,
           keyAt: CompatPatch.offset,
           randAt: DumpMetadata.randOffset,
+          xteaAt: CompatXtea.offset,
         ),
         InfoRow(
           'ZP',
@@ -302,15 +302,13 @@ class FileInfo {
   /// `0x430`. Derived rather than written out so the two views cannot drift.
   static int get _payloadKeyOffset => CompatPatch.offset - Zp.slot0Offset;
   static int get _payloadRandOffset => DumpMetadata.randOffset - Zp.slot0Offset;
+  static int get _payloadXteaOffset => CompatXtea.offset - Zp.slot0Offset;
 
-  /// Key and rand rows, from a full image or from a slot-0 payload.
+  /// Key, rand, and XTEA rows from a full image or slot-0 payload.
   ///
-  /// BOTH ARE ALWAYS HEX. They are raw bytes and a key is read as hex, so the
-  /// display never asks whether the bytes happen to be printable: that sniff
-  /// rendered a text key as 8 uppercase pairs when it is 16 bytes, and
-  /// uppercasing can change the key that Copy all hands over. The state
-  /// follows: `defaultKey` / `blank` / `other` come from the bytes themselves,
-  /// never from how they look.
+  /// Raw values remain exact uppercase hex. A second ASCII row appears only
+  /// for the observed 16-byte alphanumeric shape, preserving case while making
+  /// the classifier evidence visible. Rand remains hex-only.
   ///
   /// Reported for VCU and MCU alike on the maintainer's read that the region
   /// is the same on both — a REPORTED fact, not one measured here, and the
@@ -320,13 +318,22 @@ class FileInfo {
     List<int> image, {
     required int keyAt,
     required int randAt,
+    required int xteaAt,
   }) {
-    if (image.length < randAt + DumpMetadata.randLength) {
+    if (image.length < xteaAt + CompatXtea.length) {
       return const <InfoRow>[];
     }
+    final keyBytes = image.sublist(keyAt, keyAt + CompatPatch.signature.length);
+    final keyAscii = _asciiAlphanumeric(keyBytes);
+    final xteaState = CompatXtea.keyState(image, at: xteaAt);
+    final xteaBytes = image.sublist(xteaAt, xteaAt + CompatXtea.length);
+    final xteaAscii = xteaState == FwXteaState.present
+        ? String.fromCharCodes(xteaBytes)
+        : null;
     return [
+      if (keyAscii != null) InfoRow('Key ASCII', keyAscii, secret: true),
       InfoRow(
-        'Key',
+        'Key hex',
         _hexBytes(image, keyAt, CompatPatch.signature.length),
         // Only what can be PROVEN about these bytes: they equal the known
         // default key, or they are erased. A key we do not recognise is a key
@@ -344,7 +351,34 @@ class FileInfo {
         _hexBytes(image, randAt, DumpMetadata.randLength),
         secret: true,
       ),
+      if (xteaAscii != null) ...[
+        InfoRow('XTEA ASCII', xteaAscii, secret: true),
+        InfoRow(
+          'XTEA hex',
+          _hexBytes(image, xteaAt, CompatXtea.length),
+          secret: true,
+        ),
+      ] else
+        InfoRow(
+          'XTEA',
+          '—',
+          state: switch (xteaState) {
+            FwXteaState.cleared => 'cleared',
+            FwXteaState.notDetected => 'not detected',
+            FwXteaState.present => 'ASCII alphanumeric',
+          },
+        ),
     ];
+  }
+
+  static String? _asciiAlphanumeric(List<int> bytes) {
+    for (final byte in bytes) {
+      final digit = byte >= 0x30 && byte <= 0x39;
+      final upper = byte >= 0x41 && byte <= 0x5A;
+      final lower = byte >= 0x61 && byte <= 0x7A;
+      if (!digit && !upper && !lower) return null;
+    }
+    return String.fromCharCodes(bytes);
   }
 
   static String _hexBytes(List<int> image, int at, int length) => infoGrouped(
@@ -395,6 +429,7 @@ class FileInfo {
             bytes,
             keyAt: _payloadKeyOffset,
             randAt: _payloadRandOffset,
+            xteaAt: _payloadXteaOffset,
           ),
         if (inspection.hasFindings)
           InfoRow(
@@ -460,6 +495,7 @@ class FileInfo {
             package.firmware,
             keyAt: _payloadKeyOffset,
             randAt: _payloadRandOffset,
+            xteaAt: _payloadXteaOffset,
           ),
         ],
       ],

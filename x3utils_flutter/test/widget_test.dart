@@ -13,14 +13,7 @@ import 'package:flutter/material.dart'
         SelectableText;
 import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter/widgets.dart'
-    show
-        Axis,
-        BuildContext,
-        Builder,
-        NeverScrollableScrollPhysics,
-        PageView,
-        SizedBox,
-        ValueKey;
+    show Axis, NeverScrollableScrollPhysics, PageView, ValueKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:x3utils_flutter/app_controller.dart';
@@ -170,90 +163,6 @@ class _GuidedBackend implements HardwareBackend {
 }
 
 void main() {
-  testWidgets('SHU compat SRAM modal shows evidence and choices', (
-    WidgetTester tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1024, 768);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    late BuildContext context;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (ctx) {
-            context = ctx;
-            return const SizedBox();
-          },
-        ),
-      ),
-    );
-    final future = showCompatRamConfirm(
-      context,
-      const CompatRamReport(
-        backupIdentity: 'G3 VCU 1.5.5',
-        romIdentity: 'TEA: non-default · XTEA: not detected',
-        sramIdentity: 'VCU 1.5.5 (1 matching table)',
-        finding: 'The saved backup and live SRAM identity agree.',
-        status: CompatRamStatus.matched,
-        canProceed: true,
-        serial: '1CGC1234567890',
-        modelNote: 'G3',
-      ),
-    );
-    await tester.pump();
-
-    expect(find.byKey(const ValueKey('compat-ram-dialog')), findsOneWidget);
-    expect(find.text('ROM and RAM check'), findsOneWidget);
-    expect(find.text('G3 VCU 1.5.5'), findsOneWidget);
-    expect(find.text('TEA: non-default · XTEA: not detected'), findsOneWidget);
-    expect(find.text('VCU 1.5.5 (1 matching table)'), findsOneWidget);
-    expect(find.text('G3'), findsOneWidget);
-    expect(find.text('Serial model: G3'), findsNothing);
-    expect(find.text('Region'), findsNothing);
-    expect(find.text('code C'), findsNothing);
-    expect(find.text('Proceed'), findsOneWidget);
-    expect(find.text('Quit'), findsOneWidget);
-
-    await tester.tap(find.text('Quit'));
-    await tester.pump();
-    expect(await future, isFalse);
-  });
-
-  testWidgets('blocked SRAM modal offers Quit only', (
-    WidgetTester tester,
-  ) async {
-    late BuildContext context;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (ctx) {
-            context = ctx;
-            return const SizedBox();
-          },
-        ),
-      ),
-    );
-    final future = showCompatRamConfirm(
-      context,
-      const CompatRamReport(
-        backupIdentity: 'G3 VCU 1.5.5',
-        romIdentity: 'TEA: non-default · XTEA: present',
-        sramIdentity: 'VCU 1.5.8 (1 matching table)',
-        finding: 'Firmware-version mismatch.',
-        status: CompatRamStatus.blocked,
-        canProceed: false,
-      ),
-    );
-    await tester.pump();
-
-    expect(find.text('Proceed'), findsNothing);
-    expect(find.text('Quit'), findsOneWidget);
-    await tester.tap(find.text('Quit'));
-    await tester.pump();
-    expect(await future, isFalse);
-  });
-
   testWidgets('App boots and shows the default action', (
     WidgetTester tester,
   ) async {
@@ -1461,9 +1370,13 @@ void main() {
   "serialState": "real",
   "uid": "C49B0DB900002193A70705E8",
   "uidState": "matched",
-  "key": "fe801cb2d1ef41a6",
-  "keyState": "defaultKey",
+  "key": "4f6d5a68586242324d67556f32743345",
+  "keyEncoding": "hex",
+  "keyState": "asciiAlphanumeric",
   "rand": "ffffffffffff",
+  "xtea": "58746561313233344b65793536373839",
+  "xteaEncoding": "hex",
+  "xteaState": "asciiAlphanumeric",
   "zpPayloadLen": 59028,
   "zpEncLen": 59032,
   "zpState": "readable"
@@ -1498,10 +1411,14 @@ void main() {
     await tester.pump();
     expect(find.text('Backup info'), findsOneWidget);
     expect(find.text('UID'), findsOneWidget);
-    // Seven rows, not eight: a sidecar only exists for a dump that already
+    // Ten rows, not eleven: a sidecar only exists for a dump that already
     // validated, so a Verdict row could only ever say `ok`.
-    expect(find.byType(SelectableText), findsNWidgets(7));
+    expect(find.byType(SelectableText), findsNWidgets(10));
     expect(find.text('Verdict'), findsNothing);
+    expect(find.text('Key ASCII'), findsOneWidget);
+    expect(find.text('Key hex'), findsOneWidget);
+    expect(find.text('XTEA ASCII'), findsOneWidget);
+    expect(find.text('XTEA hex'), findsOneWidget);
 
     // Opening the dialog reveals nothing per-unit: the identity rows keep
     // their shape and their state, but not their value.
@@ -1511,7 +1428,11 @@ void main() {
         .toList();
     expect(shownValues(), contains('•••• •••• •••• •••• •••• •••• (matched)'));
     expect(shownValues(), contains('••••••••••••••'));
-    expect(shownValues(), contains('•• •• •• •• •• •• •• •• (default key)'));
+    expect(shownValues(), contains('••••••••••••••••'));
+    expect(
+      shownValues(),
+      contains('•• •• •• •• •• •• •• •• •• •• •• •• •• •• •• ••'),
+    );
     expect(shownValues(), contains('•• •• •• •• •• ••'));
     // Non-identity rows are never masked.
     expect(shownValues(), contains('G3 VCU 1.6.1 (identified)'));
@@ -1521,8 +1442,17 @@ void main() {
     await tester.pump();
     expect(shownValues(), contains('C49B 0DB9 0000 2193 A707 05E8 (matched)'));
     expect(shownValues(), contains('1CGCC9926C8115'));
-    expect(shownValues(), contains('FE 80 1C B2 D1 EF 41 A6 (default key)'));
+    expect(shownValues(), contains('OmZhXbB2MgUo2t3E'));
+    expect(
+      shownValues(),
+      contains('4F 6D 5A 68 58 62 42 32 4D 67 55 6F 32 74 33 45'),
+    );
     expect(shownValues(), contains('FF FF FF FF FF FF'));
+    expect(shownValues(), contains('Xtea1234Key56789'));
+    expect(
+      shownValues(),
+      contains('58 74 65 61 31 32 33 34 4B 65 79 35 36 37 38 39'),
+    );
 
     await tester.tap(find.text('Hide'));
     await tester.pump();
@@ -1538,13 +1468,16 @@ void main() {
     expect(
       copied.single,
       '''
-Backup    dump.bin
-Firmware  G3 VCU 1.6.1 (identified)
-Serial    1CGCC9926C8115
-UID       C49B 0DB9 0000 2193 A707 05E8 (matched)
-Key       FE 80 1C B2 D1 EF 41 A6 (default key)
-Rand      FF FF FF FF FF FF
-ZP        59028 payload / 59032 encoded (readable)'''
+Backup      dump.bin
+Firmware    G3 VCU 1.6.1 (identified)
+Serial      1CGCC9926C8115
+UID         C49B 0DB9 0000 2193 A707 05E8 (matched)
+Key ASCII   OmZhXbB2MgUo2t3E
+Key hex     4F 6D 5A 68 58 62 42 32 4D 67 55 6F 32 74 33 45
+Rand        FF FF FF FF FF FF
+XTEA ASCII  Xtea1234Key56789
+XTEA hex    58 74 65 61 31 32 33 34 4B 65 79 35 36 37 38 39
+ZP          59028 payload / 59032 encoded (readable)'''
           .trim(),
     );
     expect(find.text('Copied'), findsOneWidget);

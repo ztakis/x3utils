@@ -67,8 +67,12 @@ class DumpMetadata {
       CompatPatch.offset,
       CompatPatch.offset + CompatPatch.signature.length,
     );
-    final keyAscii = _isPrintableAscii(keyBytes);
+    final keyAlphanumeric = _isAsciiAlphanumeric(keyBytes);
     final keyState = CompatPatch.keyState(dump);
+    final xteaState = CompatXtea.keyState(dump);
+    final xteaBytes = xteaState == FwXteaState.present
+        ? dump.sublist(CompatXtea.offset, CompatXtea.offset + CompatXtea.length)
+        : null;
     final zp = Zp.inspect(dump);
 
     return <String, Object?>{
@@ -89,12 +93,11 @@ class DumpMetadata {
       'uidState': uid.state,
       'uidPrimary': uid.primary,
       'uidBackup': uid.backup,
-      // ALWAYS HEX, matching what Backup info displays. An OEM key is printable
-      // ASCII, and storing it as text put the only copy of an irreplaceable
-      // value into the one form a human or an editor can silently alter — case,
-      // trailing whitespace, re-encoding. Hex is unambiguous. Nothing is lost:
-      // [keyState] already records that the bytes were printable, which is all
-      // the text form was still signalling.
+      // ALWAYS HEX. The observed OEM shape is ASCII alphanumeric, but storing
+      // it as text put the only copy of an irreplaceable value into the one
+      // form a human or an editor can silently alter — case, trailing
+      // whitespace, re-encoding. Hex is unambiguous. Nothing is lost:
+      // [keyState] records the byte shape and the info views derive ASCII.
       //
       // `keyEncoding` stays because sidecars written before this change say
       // `ascii`, and [_keyHex] needs it to read them back.
@@ -103,10 +106,17 @@ class DumpMetadata {
       'keyState': switch (keyState) {
         FwKeyState.defaultKey => 'defaultKey',
         FwKeyState.blank => 'blank',
-        FwKeyState.other when keyAscii => 'oem',
+        FwKeyState.other when keyAlphanumeric => 'asciiAlphanumeric',
         FwKeyState.other => 'other',
       },
       'rand': _hex(dump.sublist(randOffset, randOffset + randLength)),
+      'xtea': xteaBytes == null ? null : _hex(xteaBytes),
+      'xteaEncoding': 'hex',
+      'xteaState': switch (xteaState) {
+        FwXteaState.present => 'asciiAlphanumeric',
+        FwXteaState.cleared => 'cleared',
+        FwXteaState.notDetected => 'notDetected',
+      },
       'zpEncLen': zp.state == ZpRecordState.readable
           ? zp.payloadLength! + 4
           : null,
@@ -280,6 +290,11 @@ class DumpMetadata {
         metadata['zpPayloadLen'] != null && metadata['zpEncLen'] != null;
     final scooterSerial = _scooterSerial(metadata);
     final scooterSerialState = _scooterSerialState(metadata);
+    final keyAscii = _keyAscii(metadata);
+    final xteaState = metadata['xteaState'];
+    final xteaAscii = xteaState == 'asciiAlphanumeric'
+        ? _hexAscii(metadata['xtea'])
+        : null;
 
     return [
       InfoRow('Backup', infoText(metadata['backup'])),
@@ -322,13 +337,9 @@ class DumpMetadata {
         state: uidConflict ? 'copies conflict' : infoText(metadata['uidState']),
         secret: true,
       ),
-      // ALWAYS HEX, even though the JSON stores the key as text when its bytes
-      // happen to be printable. Pairing text reads as 8 bytes for a 16-byte
-      // key, and uppercasing it changes the value — which is what Copy all
-      // would then hand over, from the dialog attached to the only copy of the
-      // original key. `oem`/`other` go the same way as `real` above.
+      if (keyAscii != null) InfoRow('Key ASCII', keyAscii, secret: true),
       InfoRow(
-        'Key',
+        'Key hex',
         _keyHex(metadata),
         state: switch (metadata['keyState']) {
           'defaultKey' => 'default key',
@@ -338,6 +349,19 @@ class DumpMetadata {
         secret: true,
       ),
       InfoRow('Rand', infoGrouped(metadata['rand'], 2), secret: true),
+      if (xteaState != null && xteaAscii != null) ...[
+        InfoRow('XTEA ASCII', xteaAscii, secret: true),
+        InfoRow('XTEA hex', infoGrouped(metadata['xtea'], 2), secret: true),
+      ] else if (xteaState != null)
+        InfoRow(
+          'XTEA',
+          '—',
+          state: switch (xteaState) {
+            'cleared' => 'cleared',
+            'notDetected' => 'not detected',
+            _ => infoText(xteaState),
+          },
+        ),
       InfoRow(
         'ZP',
         zpKnown
@@ -378,6 +402,39 @@ class DumpMetadata {
           : raw,
       2,
     );
+  }
+
+  /// The stored key as text only when its 16 bytes match the OEM-observed
+  /// ASCII-alphanumeric shape. Old `ascii` sidecars and current hex sidecars
+  /// both take this path, so Backup info presents them identically.
+  static String? _keyAscii(Map<String, Object?> metadata) {
+    final raw = metadata['key'];
+    if (raw is! String) return null;
+    final bytes = metadata['keyEncoding'] == 'ascii'
+        ? raw.codeUnits
+        : _decodeHex(raw);
+    if (bytes == null || bytes.length != CompatPatch.signature.length) {
+      return null;
+    }
+    return _isAsciiAlphanumeric(bytes) ? String.fromCharCodes(bytes) : null;
+  }
+
+  static String? _hexAscii(Object? value) {
+    if (value is! String) return null;
+    final bytes = _decodeHex(value);
+    if (bytes == null || bytes.length != CompatXtea.length) return null;
+    return _isAsciiAlphanumeric(bytes) ? String.fromCharCodes(bytes) : null;
+  }
+
+  static List<int>? _decodeHex(String value) {
+    final compact = value.replaceAll(RegExp(r'\s+'), '');
+    if (compact.length.isOdd || !RegExp(r'^[0-9A-Fa-f]*$').hasMatch(compact)) {
+      return null;
+    }
+    return [
+      for (var i = 0; i < compact.length; i += 2)
+        int.parse(compact.substring(i, i + 2), radix: 16),
+    ];
   }
 
   /// Reads a sidecar produced by [writeValidatedSidecar].
@@ -457,8 +514,12 @@ class DumpMetadata {
     return i < 0 ? path : path.substring(i + 1);
   }
 
-  static bool _isPrintableAscii(List<int> bytes) =>
-      bytes.every((byte) => byte >= 0x20 && byte <= 0x7E);
+  static bool _isAsciiAlphanumeric(List<int> bytes) => bytes.every((byte) {
+    final digit = byte >= 0x30 && byte <= 0x39;
+    final upper = byte >= 0x41 && byte <= 0x5A;
+    final lower = byte >= 0x61 && byte <= 0x7A;
+    return digit || upper || lower;
+  });
 
   static String _hex(List<int> bytes) =>
       bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();

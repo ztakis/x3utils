@@ -68,7 +68,7 @@ void main() {
       expect(_value(report.rows, 'Read'), 'Readable firmware image');
       expect(_value(report.rows, 'Firmware'), startsWith('G3 VCU'));
       // Identity rows are present and marked secret so the view masks them.
-      for (final label in ['Serial', 'UID', 'Key', 'Rand']) {
+      for (final label in ['Serial', 'UID', 'Key hex', 'Rand']) {
         expect(_has(report.rows, label), isTrue, reason: label);
         expect(
           report.rows.firstWhere((row) => row.label == label).secret,
@@ -89,23 +89,24 @@ void main() {
       );
     });
 
-    test('a printable key is still shown as 16 hex bytes, never as text', () {
-      // A real OEM key can be 16 printable characters. Rendering it as text
-      // showed 8 uppercased pairs for a 16-byte value, and uppercasing can
-      // change the key that Copy all hands over.
-      final bytes = _fullImage('SCOOTER_VCU_xxU2');
-      bytes.setRange(0x1420, 0x1430, 'OmZhXbB2MgUo2t3E'.codeUnits);
-      bytes.setRange(0x1430, 0x1436, [0x34, 0x71, 0x7A, 0x6A, 0x73, 0x6E]);
-      final rows = FileInfo.describe(write('oemkey.bin', bytes).path).rows;
+    test(
+      'an ASCII-alphanumeric key is shown as both text and 16 hex bytes',
+      () {
+        final bytes = _fullImage('SCOOTER_VCU_xxU2');
+        bytes.setRange(0x1420, 0x1430, 'OmZhXbB2MgUo2t3E'.codeUnits);
+        bytes.setRange(0x1430, 0x1436, [0x34, 0x71, 0x7A, 0x6A, 0x73, 0x6E]);
+        final rows = FileInfo.describe(write('oemkey.bin', bytes).path).rows;
 
-      expect(
-        _value(rows, 'Key'),
-        '4F 6D 5A 68 58 62 42 32 4D 67 55 6F 32 74 33 45',
-      );
-      expect(_value(rows, 'Rand'), '34 71 7A 6A 73 6E');
-      // 16 bytes must read as 16 groups, whatever the bytes happen to be.
-      expect(_value(rows, 'Key').split(' ').length, 16);
-    });
+        expect(
+          _value(rows, 'Key hex'),
+          '4F 6D 5A 68 58 62 42 32 4D 67 55 6F 32 74 33 45',
+        );
+        expect(_value(rows, 'Key ASCII'), 'OmZhXbB2MgUo2t3E');
+        expect(_value(rows, 'Rand'), '34 71 7A 6A 73 6E');
+        // 16 bytes must read as 16 groups, whatever the bytes happen to be.
+        expect(_value(rows, 'Key hex').split(' ').length, 16);
+      },
+    );
 
     test('an unrecognised serial and key claim nothing', () {
       // Failing to match a known value is not a finding. `real` would claim
@@ -123,7 +124,8 @@ void main() {
 
       expect(_value(rows, 'Serial'), '1K1UA2510P9900');
       expect(rows.firstWhere((row) => row.label == 'Serial').state, isNull);
-      expect(rows.firstWhere((row) => row.label == 'Key').state, isNull);
+      expect(_has(rows, 'Key ASCII'), isFalse);
+      expect(rows.firstWhere((row) => row.label == 'Key hex').state, isNull);
       expect(_value(rows, 'Serial'), isNot(contains('real')));
     });
 
@@ -200,11 +202,15 @@ void main() {
           write('compat_$banner.bin', payload).path,
         ).rows;
 
-        expect(_value(rows, 'Key'), endsWith('(default key)'), reason: banner);
+        expect(
+          _value(rows, 'Key hex'),
+          endsWith('(default key)'),
+          reason: banner,
+        );
         expect(_value(rows, 'Rand'), '01 02 03 04 05 06', reason: banner);
         // Identity material: masked until revealed, but the state that
         // answers "is this patched?" stays readable.
-        final key = rows.firstWhere((row) => row.label == 'Key');
+        final key = rows.firstWhere((row) => row.label == 'Key hex');
         expect(key.secret, isTrue);
         expect(key.display(revealed: false), endsWith('(default key)'));
         expect(key.display(revealed: false), isNot(contains('FE')));
@@ -215,7 +221,7 @@ void main() {
       final payload = _slotPayload('SCOOTER_VCU_xxG3');
       payload.setRange(0x420, 0x420 + 16, List<int>.filled(16, 0xFF));
       final rows = FileInfo.describe(write('blank_key.bin', payload).path).rows;
-      expect(_value(rows, 'Key'), endsWith('(blank)'));
+      expect(_value(rows, 'Key hex'), endsWith('(blank)'));
     });
 
     test('an unidentified file gets no key row at all', () {
@@ -223,8 +229,21 @@ void main() {
       final rows = FileInfo.describe(
         write('noise2.bin', List<int>.generate(4096, (i) => i % 251)).path,
       ).rows;
-      expect(_has(rows, 'Key'), isFalse);
+      expect(_has(rows, 'Key ASCII'), isFalse);
+      expect(_has(rows, 'Key hex'), isFalse);
       expect(_has(rows, 'Rand'), isFalse);
+    });
+
+    test('XTEA uses the shifted payload offset and shows both forms', () {
+      final payload = _slotPayload('SCOOTER_VCU_xxU2');
+      payload.setRange(0x440, 0x450, 'Xtea1234Key56789'.codeUnits);
+      final rows = FileInfo.describe(write('xtea.bin', payload).path).rows;
+
+      expect(_value(rows, 'XTEA ASCII'), 'Xtea1234Key56789');
+      expect(
+        _value(rows, 'XTEA hex'),
+        '58 74 65 61 31 32 33 34 4B 65 79 35 36 37 38 39',
+      );
     });
 
     test('a bin with no readable banner still describes, and says so', () {

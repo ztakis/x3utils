@@ -1839,10 +1839,11 @@ void main() {
       controller.selectAction('flash_compat');
 
       expect(controller.canStart, isTrue);
-      await controller.start(confirmCompatRam: (_) async => true);
+      await controller.start();
 
       expect(controller.stage, StageState.ok);
-      expect(events, ['sram', 'read', 'program', 'reset']);
+      expect(events, ['read', 'program', 'reset']);
+      expect(session.sramAddress, isNull);
       expect(session.programAddress, 0x08000000);
       final programmed = session.programBytes!;
       expect(programmed, hasLength(Firmware.expectedSize));
@@ -2031,10 +2032,11 @@ void main() {
     expect(controller.isActionAvailable('flash_compat'), isTrue);
     controller.selectAction('flash_compat');
     expect(controller.canStart, isTrue);
-    await controller.start(confirmCompatRam: (_) async => true);
+    await controller.start();
 
     expect(controller.stage, StageState.ok);
-    expect(events, ['sram', 'read', 'publish', 'program', 'reset']);
+    expect(events, ['read', 'publish', 'program', 'reset']);
+    expect(session.sramAddress, isNull);
     expect(published, backup);
     expect(session.programAddress, 0x08000000);
     final expected = Uint8List.fromList(backup)
@@ -2049,18 +2051,20 @@ void main() {
     expect(controller.resultNote, contains('Android backup only'));
   });
 
-  test('Android SHU blocks XTEA before asking for an MCU model', () async {
+  test('Android SHU blocks XTEA before ROM identity or model checks', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'defaultAutoRetry': 0,
     });
     final events = <String>[];
     final backup =
-        _identifiedCompatImage(versionValue: 0x160, banner: 'SCOOTER_MCU_0001')
-          ..setRange(
-            CompatXtea.offset,
-            CompatXtea.offset + CompatXtea.length,
-            'xtea1234key56789'.codeUnits,
-          );
+        _identifiedCompatImage(
+          versionValue: 0x160,
+          banner: 'UNRECOGNISED_FIRMWARE',
+        )..setRange(
+          CompatXtea.offset,
+          CompatXtea.offset + CompatXtea.length,
+          'xtea1234key56789'.codeUnits,
+        );
     final session = _FakeSession(
       bytes: backup,
       sramBytes: _identifiedMcuSram(versionValue: 0x160),
@@ -2084,71 +2088,20 @@ void main() {
         modelPrompts++;
         return 'zt3';
       },
-      confirmCompatRam: (report) async {
-        expect(report.status, CompatRamStatus.blocked);
-        expect(report.canProceed, isFalse);
-        expect(report.romIdentity, contains('XTEA: present'));
-        expect(report.finding, contains('ROM and SRAM agree on MCU 1.6.0'));
-        expect(report.modelNote, contains('selection was skipped'));
-        return true; // A blocked report cannot be overridden.
-      },
     );
 
     expect(modelPrompts, 0);
     expect(controller.stage, StageState.fail);
-    expect(events, ['sram', 'read', 'publish']);
+    expect(events, ['read', 'publish']);
+    expect(session.sramAddress, isNull);
     expect(session.programBytes, isNull);
     expect(controller.sub, contains('XTEA key is present'));
-  });
-
-  test('Android SHU reports an XTEA versus SRAM version conflict', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'defaultAutoRetry': 0,
-    });
-    final events = <String>[];
-    final backup =
-        _identifiedCompatImage(versionValue: 0x152, banner: 'SCOOTER_MCU_0001')
-          ..setRange(
-            CompatXtea.offset,
-            CompatXtea.offset + CompatXtea.length,
-            'xtea1234key56789'.codeUnits,
-          );
-    final session = _FakeSession(
-      bytes: backup,
-      sramBytes: _identifiedMcuSram(versionValue: 0x160),
-      events: events,
+    expect(
+      controller.console.any(
+        (line) => line.contains('ROM XTEA field: present'),
+      ),
+      isTrue,
     );
-    var modelPrompts = 0;
-    final controller = AppController(
-      backend: SwdartBackend(sessionFactory: () => session),
-      androidMode: true,
-      androidBackupPublisher: (_, fileName) async {
-        events.add('publish');
-        return '$androidBackupDirectoryLabel/$fileName';
-      },
-    );
-    addTearDown(controller.dispose);
-    await Future<void>.delayed(Duration.zero);
-
-    controller.selectAction('flash_compat');
-    await controller.start(
-      askMcuModel: (_) async {
-        modelPrompts++;
-        return 'zt3';
-      },
-      confirmCompatRam: (report) async {
-        expect(report.status, CompatRamStatus.blocked);
-        expect(report.canProceed, isFalse);
-        expect(report.finding, contains('does not contain the SRAM-reported'));
-        expect(report.finding, contains('evidence conflicts'));
-        return true;
-      },
-    );
-
-    expect(modelPrompts, 0);
-    expect(controller.stage, StageState.fail);
-    expect(events, ['sram', 'read', 'publish']);
-    expect(session.programBytes, isNull);
   });
 
   test(
@@ -2185,43 +2138,32 @@ void main() {
           modelPrompts++;
           return 'zt3';
         },
-        confirmCompatRam: (report) async {
-          expect(report.status, CompatRamStatus.matched);
-          expect(report.romIdentity, contains('XTEA: not detected'));
-          return true;
-        },
       );
 
       expect(modelPrompts, 1);
       expect(controller.stage, StageState.ok);
-      expect(events, ['sram', 'read', 'publish', 'program', 'reset']);
+      expect(events, ['read', 'publish', 'program', 'reset']);
+      expect(session.sramAddress, isNull);
     },
   );
 
   test(
-    'Android SHU reports default and cleared key fields as warnings',
+    'Android SHU lets ROM version policy handle non-present XTEA layouts',
     () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'defaultAutoRetry': 0,
       });
-      for (final entry in <(String, int, List<int>, String)>[
-        (
-          'default TEA',
-          CompatPatch.offset,
-          CompatPatch.signature,
-          'TEA: default SHU key',
-        ),
+      for (final entry in <(String, int, List<int>)>[
+        ('default TEA', CompatPatch.offset, CompatPatch.signature),
         (
           'cleared TEA',
           CompatPatch.offset,
           List<int>.filled(CompatPatch.signature.length, 0xFF),
-          'TEA: cleared (FF)',
         ),
         (
           'cleared XTEA',
           CompatXtea.offset,
           List<int>.filled(CompatXtea.length, 0xFF),
-          'XTEA: cleared (FF)',
         ),
       ]) {
         final backup = _identifiedCompatImage()
@@ -2240,17 +2182,11 @@ void main() {
         await Future<void>.delayed(Duration.zero);
 
         controller.selectAction('flash_compat');
-        await controller.start(
-          confirmCompatRam: (report) async {
-            expect(report.status, CompatRamStatus.warning, reason: entry.$1);
-            expect(report.canProceed, isTrue, reason: entry.$1);
-            expect(report.romIdentity, contains(entry.$4));
-            return true;
-          },
-        );
+        await controller.start();
 
         expect(controller.stage, StageState.ok, reason: entry.$1);
         expect(session.programBytes, isNotNull, reason: entry.$1);
+        expect(session.sramAddress, isNull, reason: entry.$1);
       }
     },
   );
@@ -2279,7 +2215,8 @@ void main() {
     await controller.start();
 
     expect(controller.stage, StageState.fail);
-    expect(events, ['sram', 'read', 'publish']);
+    expect(events, ['read', 'publish']);
+    expect(session.sramAddress, isNull);
     expect(session.programBytes, isNull);
     expect(controller.sub, contains('Nothing was written'));
   });
@@ -2306,91 +2243,48 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     controller.selectAction('flash_compat');
-    await controller.start(confirmCompatRam: (_) async => true);
+    await controller.start();
 
     expect(controller.stage, StageState.fail);
-    expect(events, ['sram', 'read', 'publish']);
+    expect(events, ['read', 'publish']);
+    expect(session.sramAddress, isNull);
     expect(session.programBytes, isNull);
     expect(controller.resultPath, startsWith(androidBackupDirectoryLabel));
-    expect(controller.sub, contains('unsupported SHU compatibility boundary'));
+    expect(controller.sub, contains('does not work on that firmware'));
   });
 
-  test('Android SHU modal may quit after the backup is saved', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'defaultAutoRetry': 0,
-    });
-    final events = <String>[];
-    final backup = _identifiedCompatImage();
-    final session = _FakeSession(
-      bytes: backup,
-      sramBytes: _identifiedVcuSram(),
-      events: events,
-    );
-    final controller = AppController(
-      backend: SwdartBackend(sessionFactory: () => session),
-      androidMode: true,
-      androidBackupPublisher: (_, fileName) async {
-        events.add('publish');
-        return '$androidBackupDirectoryLabel/$fileName';
-      },
-    );
-    addTearDown(controller.dispose);
-    await Future<void>.delayed(Duration.zero);
+  test(
+    'Android SHU ignores SRAM and uses the identified ROM version',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      final events = <String>[];
+      final session = _FakeSession(
+        bytes: _identifiedCompatImage(),
+        sramBytes: _identifiedVcuSram(versionValue: 0x158),
+        events: events,
+      );
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        androidMode: true,
+        androidBackupPublisher: (_, fileName) async {
+          events.add('publish');
+          return '$androidBackupDirectoryLabel/$fileName';
+        },
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
 
-    controller.selectAction('flash_compat');
-    await controller.start(
-      confirmCompatRam: (report) async {
-        expect(report.status, CompatRamStatus.matched);
-        expect(report.canProceed, isTrue);
-        expect(report.backupIdentity, 'G3 VCU 1.5.5');
-        expect(report.sramIdentity, contains('VCU 1.5.5'));
-        expect(report.modelNote, 'G3');
-        return false;
-      },
-    );
+      controller.selectAction('flash_compat');
+      await controller.start();
 
-    expect(controller.stage, StageState.fail);
-    expect(events, ['sram', 'read', 'publish']);
-    expect(session.programBytes, isNull);
-    expect(controller.resultPath, startsWith(androidBackupDirectoryLabel));
-  });
-
-  test('Android SHU blocks a flash versus SRAM version mismatch', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'defaultAutoRetry': 0,
-    });
-    final events = <String>[];
-    final session = _FakeSession(
-      bytes: _identifiedCompatImage(),
-      sramBytes: _identifiedVcuSram(versionValue: 0x158),
-      events: events,
-    );
-    final controller = AppController(
-      backend: SwdartBackend(sessionFactory: () => session),
-      androidMode: true,
-      androidBackupPublisher: (_, fileName) async {
-        events.add('publish');
-        return '$androidBackupDirectoryLabel/$fileName';
-      },
-    );
-    addTearDown(controller.dispose);
-    await Future<void>.delayed(Duration.zero);
-
-    controller.selectAction('flash_compat');
-    await controller.start(
-      confirmCompatRam: (report) async {
-        expect(report.status, CompatRamStatus.blocked);
-        expect(report.canProceed, isFalse);
-        expect(report.finding, contains('Firmware-version mismatch'));
-        return true; // A blocked report cannot be overridden.
-      },
-    );
-
-    expect(controller.stage, StageState.fail);
-    expect(events, ['sram', 'read', 'publish']);
-    expect(session.programBytes, isNull);
-    expect(controller.sub, contains('Firmware-version mismatch'));
-  });
+      expect(controller.stage, StageState.ok);
+      expect(events, ['read', 'publish', 'program', 'reset']);
+      expect(session.sramAddress, isNull);
+      expect(session.programBytes, isNotNull);
+    },
+  );
 
   test('ZT3 MCU 1.6.0 is blocked after operator model selection', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -2417,20 +2311,13 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     controller.selectAction('flash_compat');
-    await controller.start(
-      askMcuModel: (_) async => 'zt3',
-      confirmCompatRam: (report) async {
-        expect(report.status, CompatRamStatus.blocked);
-        expect(report.modelNote, contains('selected by you'));
-        expect(report.serial, isNull);
-        expect(report.finding, contains('boundary 1.6.0'));
-        return true;
-      },
-    );
+    await controller.start(askMcuModel: (_) async => 'zt3');
 
     expect(controller.stage, StageState.fail);
-    expect(events, ['sram', 'read', 'publish']);
+    expect(events, ['read', 'publish']);
+    expect(session.sramAddress, isNull);
     expect(session.programBytes, isNull);
+    expect(controller.sub, contains('does not work on that firmware'));
   });
 
   test('Android slot-0 Backup + Flash accepts a matching ZIP3.2', () async {

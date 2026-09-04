@@ -172,6 +172,26 @@ void main() {
     },
   );
 
+  test('XTEA aborts before ROM identity while keeping the backup', () async {
+    final bytes = _dump(banner: 'UNKNOWN_FIRMWARE');
+    bytes.setRange(
+      CompatXtea.offset,
+      CompatXtea.offset + CompatXtea.length,
+      'xtea1234key56789'.codeUnits,
+    );
+    final runner = _RecordingRunner(bytes);
+    final c = await compatRunner(runner);
+
+    await c.start();
+
+    expect(c.stage, StageState.fail);
+    expect(c.sub, contains('XTEA key is present'));
+    expect(c.sub, contains('Nothing was written'));
+    expect(runner.wroteFlash, isFalse, reason: 'must refuse before erasing');
+    expect(compatFiles('.bin'), isNotEmpty, reason: 'backup must survive');
+    expect(compatFiles('.json'), hasLength(1));
+  });
+
   test('an unrecognised version fails closed with no way to ask', () async {
     // A supported banner, but no version constant we can place — and no
     // confirmation callback, so there is no way to obtain consent. Refusing is
@@ -419,7 +439,8 @@ void main() {
     );
 
     test('the declared MCU model selects its compatibility floor', () async {
-      // SRAM cannot name the MCU model, so the declaration selects the policy.
+      // MCU firmware cannot name the scooter model, so the declaration selects
+      // the ROM version policy.
       // ZT3 MCU 1.6.0 and newer is the current protective boundary.
       final runner = _RecordingRunner(_dump(banner: 'SCOOTER_MCU_0001'));
       final c = await compatRunner(runner);
