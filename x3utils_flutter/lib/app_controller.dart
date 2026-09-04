@@ -3149,6 +3149,12 @@ class AppController extends ChangeNotifier {
     final v = Firmware.inspectDump(nativeStaged);
     if (!v.ok) {
       _log('== validation FAILED: ${v.message} ==');
+      // A complete read of a chip with nothing to save (blank/masked) still
+      // captured the SRAM snapshot this session. Keep it plus a diagnostic
+      // record as evidence; only the empty flash read is offered for cleanup.
+      final keptNote = useExtra && v.isEvidence
+          ? await _saveExtraChipFinding(r, nativeStaged)
+          : null;
       await _finishRealAfterHold(
         false,
         '',
@@ -3159,6 +3165,7 @@ class AppController extends ChangeNotifier {
         reseat: v.verdict == DumpVerdict.incomplete,
         finding: v.isEvidence,
         outputPath: _existingOrNull(nativeStaged),
+        outputNote: keptNote,
       );
       await _offerDumpCleanup(nativeStaged);
       return;
@@ -3315,6 +3322,55 @@ class AppController extends ChangeNotifier {
           : 'The RAM snapshot and a diagnostic record were saved. They are '
                 'evidence about this controller, not a restorable backup.',
     );
+  }
+
+  /// Extra read completed but the chip had nothing to back up (blank/masked).
+  /// The flash `.bin.part` is handled by the caller's cleanup offer; here we
+  /// keep the SRAM snapshot and a diagnostic record, which are evidence the
+  /// empty flash read is not. Returns a note for the result screen, or null if
+  /// nothing was saved.
+  Future<String?> _saveExtraChipFinding(HardwareResult r, String staged) async {
+    final hardware = r.extraBackupEvidence;
+    final first = r.bytes;
+    if (hardware == null || first == null) return null;
+    final finalPath = Firmware.finalDumpPath(staged);
+
+    String? ramPath;
+    if (r.sramBytes != null) {
+      try {
+        ramPath = ExtraBackupMetadata.writeSramBin(finalPath, r.sramBytes!);
+        _log('== Extra SRAM snapshot (${r.sramBytes!.length} B) → $ramPath ==');
+      } catch (error) {
+        _log('== Extra SRAM snapshot was not saved: $error ==');
+      }
+    }
+
+    String? extraPath;
+    try {
+      final extra = ExtraBackupMetadata.inspectChipFinding(
+        dumpVerdict: Firmware.inspectDumpBytes(first).verdict.name,
+        firstRead: first,
+        sramBytes: r.sramBytes,
+        sramPath: ramPath,
+        hardware: hardware,
+        backendName: backendName,
+        connectionMode: mode.name,
+      );
+      extraPath = ExtraBackupMetadata.write(finalPath, extra);
+      _log('== Extra chip-finding record → $extraPath ==');
+    } catch (error) {
+      _log('== Extra chip-finding record was not written: $error ==');
+    }
+    for (final artifact in [ramPath, extraPath]) {
+      if (artifact == null) continue;
+      final copied = _backupSecondCopy(artifact);
+      if (copied != null) _log('== 2nd copy → $copied ==');
+    }
+
+    if (ramPath == null && extraPath == null) return null;
+    return 'The chip has no firmware to back up, but the RAM snapshot and a '
+        'diagnostic record were saved as evidence. Only the empty flash read '
+        'can be discarded below.';
   }
 
   Future<String?> _maybeDeclareExtraMcuModel(
@@ -3561,6 +3617,10 @@ class AppController extends ChangeNotifier {
     if (autoRetryArmed) return;
     final confirm = _confirmTrash;
     if (confirm == null) return;
+    // A note set before the cleanup (e.g. "the RAM snapshot was kept") must
+    // survive the trash outcome, not be overwritten by it — the whole point of
+    // the finding path is that some artifacts were kept while this one was not.
+    final priorNote = resultNote;
     final title = check.isEvidence
         ? 'This read is a finding, not a backup'
         : 'This file is not a backup';
@@ -3568,6 +3628,8 @@ class AppController extends ChangeNotifier {
       _log('== kept → $staged ==');
       return;
     }
+    String withPrior(String note) =>
+        priorNote == null ? note : '$priorNote $note';
     final result = await Trash.move(staged);
     final where = Trash.label;
     if (result.ok) {
@@ -3581,14 +3643,15 @@ class AppController extends ChangeNotifier {
             : '== $staged → moved to $dest ==',
       );
       resultPath = null;
-      resultNote = 'The dump was moved to the $where.';
+      resultNote = withPrior('The dump was moved to the $where.');
     } else {
       // Fail closed: never a hard delete, and never a silent one either.
       _log('== could not move to the $where: ${result.message} ==');
       resultPath = staged;
-      resultNote =
-          'It could not be moved to the $where (${result.message}) — it is '
-          'still at the path above.';
+      resultNote = withPrior(
+        'It could not be moved to the $where (${result.message}) — it is '
+        'still at the path above.',
+      );
     }
     notifyListeners();
   }

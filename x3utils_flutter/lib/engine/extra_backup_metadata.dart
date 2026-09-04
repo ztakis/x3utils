@@ -416,6 +416,123 @@ class ExtraBackupMetadata {
     };
   }
 
+  /// Certificate for an Extra run where the flash WAS read but held nothing to
+  /// back up — a blank/erased chip, or a masked read the pre-probe did not
+  /// catch. Unlike [inspectProtected] the flash was accessible, so protection
+  /// is classified from the real read; unlike [inspect] there is no restorable
+  /// backup. The point of keeping this at all is the SRAM snapshot: it was
+  /// captured in the same session and is evidence (and RAM-mapping material)
+  /// that would otherwise be discarded with the empty flash read.
+  static Map<String, Object?> inspectChipFinding({
+    required String dumpVerdict,
+    required List<int> firstRead,
+    required List<int>? sramBytes,
+    required ExtraBackupHardwareEvidence hardware,
+    required String backendName,
+    required String connectionMode,
+    String? sramPath,
+  }) {
+    final sram = SramIdentityParser.parse(sramBytes);
+    final flashWords = <int>[
+      for (var i = 0; i < 16; i += 4) _u32le(firstRead, i),
+    ];
+    final findings = <String>['chipFinding_$dumpVerdict'];
+    if (sram.verdict == SramIdentityVerdict.notFound) {
+      findings.add('sramIdentityNotFound');
+    } else if (sram.verdict == SramIdentityVerdict.conflicting) {
+      findings.add('sramIdentityConflicting');
+    }
+    if (sramBytes == null) findings.add('sramSnapshotMissing');
+
+    return <String, Object?>{
+      'schema': schemaVersion,
+      'kind': 'x3utilsExtraBackup',
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'tool': <String, Object?>{'version': kAppVersion, 'stage': kAppStage},
+      'backup': <String, Object?>{
+        'file': null,
+        'bytes': null,
+        'normalSidecar': null,
+        'role': 'diagnosticNoRestorableBackup',
+        'factoryConditionClaim': 'notApplicableNoBackupWasRead',
+      },
+      'capture': <String, Object?>{
+        'probeSessions': 1,
+        'flashReads': 2,
+        'noBackupReason': 'chip_$dumpVerdict',
+        'match': null,
+        'differenceCount': null,
+        'firstDifferenceOffset': null,
+        'sha256Read1': digest(firstRead),
+        'sha256Read2': null,
+        'sramAttempted': true,
+        'sramBytesReturned': sramBytes?.length,
+        'sramSha256': sramBytes == null ? null : digest(sramBytes),
+        'sramFile': sramPath == null ? null : p.basename(sramPath),
+        'backend': backendName,
+        'connectionMode': connectionMode,
+        'hostPlatform': Platform.operatingSystem,
+      },
+      'target': _targetMap(hardware),
+      'protection': _protectionMap(hardware, flashWords),
+      'runtime': _runtimeMap(sram),
+      'findings': findings,
+      'captureVerdict': 'chipFindingNoBackup',
+    };
+  }
+
+  // Shared blocks for the no-backup certificate variants. [inspectProtected]
+  // predates these and keeps its own inline copy; the two should merge when the
+  // metadata architecture is unified.
+  static Map<String, Object?> _targetMap(ExtraBackupHardwareEvidence h) =>
+      <String, Object?>{
+        'name': h.targetName,
+        'family': h.targetFamily,
+        'idcode': _hex(h.idcode, 8),
+        'flashKB': h.flashKB,
+        'pageSize': h.pageSize,
+        'sramBytes': h.sramBytes,
+      };
+
+  static Map<String, Object?> _protectionMap(
+    ExtraBackupHardwareEvidence hardware,
+    List<int>? flashWords,
+  ) {
+    final verdict = classifySwdartProtection(
+      usdWord: hardware.usdWord,
+      flashWords: flashWords,
+    ).verdict;
+    final usd = hardware.usdWord;
+    return <String, Object?>{
+      'usdAddress': '0x1FFFF800',
+      'usdReadAttempted': true,
+      'usdWord': usd == null ? null : _hex(usd, 8),
+      'fap': usd == null ? null : _hex(usd & 0xff, 2),
+      'fapComplement': usd == null ? null : _hex((usd >> 8) & 0xff, 2),
+      'complementConsistent': usd == null
+          ? null
+          : ((usd & 0xff) ^ ((usd >> 8) & 0xff)) == 0xff,
+      'verdict': verdict.name,
+      'rdpOn': verdict == HardwareProtectionVerdict.protected,
+      'fapUnlocked': usd == null ? null : (usd & 0xff) == 0xa5,
+    };
+  }
+
+  static Map<String, Object?> _runtimeMap(SramIdentityResult sram) {
+    final runtime = sram.identity;
+    return <String, Object?>{
+      'verdict': sram.verdict.name,
+      'reason': sram.reason.isEmpty ? null : sram.reason,
+      'component': runtime?.type,
+      'version': runtime?.version.toString(),
+      'tableOffsets': runtime?.tableOffsets.map(_hexOffset).toList(),
+      'scooterSerial': runtime?.serial,
+      'scooterModelFromSerial': runtime?.serialModel,
+      'regionCode': runtime?.regionCode,
+      'controllerSnMnCandidates': runtime?.controllerSnMnCandidates,
+    };
+  }
+
   static String write(String dumpPath, Map<String, Object?> metadata) {
     final sidecar = sidecarPath(dumpPath);
     final target = File(sidecar);

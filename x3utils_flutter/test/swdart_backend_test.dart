@@ -1624,6 +1624,77 @@ void main() {
   );
 
   test(
+    'controller Extra Backup on a blank chip keeps RAM evidence, not a backup',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      final root = Directory.systemTemp.createTempSync('x3utils_extra_blank');
+      final secondary = Directory(p.join(root.path, 'secondary'))..createSync();
+      addTearDown(() {
+        Firmware.setRoot(null);
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+      final blank = Uint8List(0x20000)..fillRange(0, 0x20000, 0xff);
+      final session = _FakeSession(
+        sramBytes: _identifiedVcuSram(),
+        // FAP unlocked and flash readable-but-blank: probe says notProtected,
+        // so the full double-read runs and validation finds an erased chip.
+        onRead: (address, length) => address == 0x1ffff800
+            ? Uint8List.fromList([0xa5, 0x5a, 0xff, 0xff])
+            : Uint8List.sublistView(blank, 0, length),
+      );
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        backupSecondCopy: (src) {
+          final dest = p.join(secondary.path, p.basename(src));
+          File(src).copySync(dest);
+          return dest;
+        },
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+      controller.setX3utilsRoot(root.path);
+      controller.selectAction('dump');
+      controller.setExtraBackup(true);
+
+      await controller.start();
+
+      expect(controller.stage, StageState.fail);
+      final produced = Directory(
+        p.join(root.path, 'backup'),
+      ).listSync().whereType<File>().map((f) => p.basename(f.path)).toList();
+      // The RAM snapshot and the diagnostic record survive the blank verdict;
+      // no promoted .bin is produced.
+      expect(produced.where((n) => n.endsWith('_RAM.bin')), hasLength(1));
+      expect(produced.where((n) => n.endsWith('.extra.json')), hasLength(1));
+      expect(
+        produced.any((n) => n.endsWith('.bin') && !n.endsWith('_RAM.bin')),
+        isFalse,
+      );
+
+      final certificate =
+          jsonDecode(
+                File(
+                  p.join(
+                    root.path,
+                    'backup',
+                    produced.firstWhere((n) => n.endsWith('.extra.json')),
+                  ),
+                ).readAsStringSync(),
+              )
+              as Map<String, Object?>;
+      expect(certificate['captureVerdict'], 'chipFindingNoBackup');
+      expect((certificate['backup']! as Map)['file'], isNull);
+      final capture = certificate['capture']! as Map<String, Object?>;
+      expect(capture['flashReads'], 2);
+      expect(capture['noBackupReason'], 'chip_blank');
+      expect(capture['sramFile'], endsWith('_RAM.bin'));
+      expect((certificate['protection']! as Map)['verdict'], 'notProtected');
+    },
+  );
+
+  test(
     'controller Extra Backup records an operator-declared MCU model',
     () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
