@@ -3221,7 +3221,7 @@ class AppController extends ChangeNotifier {
     final identityLine = ram == null
         ? null
         : 'Live RAM identity: ${ram.type} · ${ram.displayModel} · '
-              '${ram.version}.';
+              '${ram.version ?? 'version not decoded'}.';
     if (identityLine != null) _log('== SRAM identity: $identityLine ==');
 
     await _finishRealAfterHold(

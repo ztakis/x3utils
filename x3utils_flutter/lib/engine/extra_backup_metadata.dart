@@ -174,9 +174,9 @@ class ExtraBackupMetadata {
     if (runtime != null && type != null && runtime.type != type) {
       findings.add('romSramComponentConflict');
     }
-    if (runtime != null &&
+    if (runtime?.version != null &&
         romVersion != null &&
-        runtime.version.toString() != romVersion) {
+        runtime!.version.toString() != romVersion) {
       findings.add('romSramVersionConflict');
     }
     if (runtime?.serial != null &&
@@ -499,7 +499,7 @@ class ExtraBackupMetadata {
       'verdict': sram.verdict.name,
       'reason': sram.reason.isEmpty ? null : sram.reason,
       'component': runtime?.type,
-      'version': runtime?.version.toString(),
+      'version': runtime?.version?.toString(),
       'tableOffsets': runtime?.tableOffsets.map(_hexOffset).toList(),
       'scooterSerial': runtime?.serial,
     };

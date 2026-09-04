@@ -75,9 +75,10 @@ Uint8List _identifiedVcuSram({int versionValue = 0x155}) {
   bytes[offset] = 0x5c;
   bytes[offset + 1] = 0x50;
   bytes.setRange(offset + 0x20, offset + 0x2e, '1CGC1234567890'.codeUnits);
-  final raw = versionValue < 0x200 ? versionValue & 0xff : versionValue;
-  bytes[offset + 0x2e] = raw & 0xff;
-  bytes[offset + 0x2f] = raw >> 8;
+  // Real firmware stores the whole nibble-packed `0xMmp`, major nibble
+  // included; the parser no longer invents a major 1 for a sub-0x100 halfword.
+  bytes[offset + 0x2e] = versionValue & 0xff;
+  bytes[offset + 0x2f] = versionValue >> 8;
   return bytes;
 }
 
@@ -87,9 +88,8 @@ Uint8List _identifiedMcuSram({required int versionValue}) {
   bytes[offset] = 0x5c;
   bytes[offset + 1] = 0x51;
   bytes.setRange(offset + 0x20, offset + 0x30, 'Z025B4G25BM30168'.codeUnits);
-  final raw = versionValue < 0x200 ? versionValue & 0xff : versionValue;
-  bytes[offset + 0x32] = raw & 0xff;
-  bytes[offset + 0x33] = raw >> 8;
+  bytes[offset + 0x32] = versionValue & 0xff;
+  bytes[offset + 0x33] = versionValue >> 8;
   return bytes;
 }
 
