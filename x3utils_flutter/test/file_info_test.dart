@@ -117,12 +117,12 @@ void main() {
       bytes.setRange(
         kSerialOffset,
         kSerialOffset + 14,
-        '1K1UA2510P9900'.codeUnits,
+        '1K1UA000000000'.codeUnits,
       );
       bytes.setRange(0x1420, 0x1430, List<int>.generate(16, (i) => 0x40 + i));
       final rows = FileInfo.describe(write('unknown.bin', bytes).path).rows;
 
-      expect(_value(rows, 'Serial'), '1K1UA2510P9900');
+      expect(_value(rows, 'Serial'), '1K1UA000000000');
       expect(rows.firstWhere((row) => row.label == 'Serial').state, isNull);
       expect(_has(rows, 'Key ASCII'), isFalse);
       expect(rows.firstWhere((row) => row.label == 'Key hex').state, isNull);

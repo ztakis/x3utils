@@ -325,7 +325,7 @@ void main() {
         'type': 'VCU',
         'backup': 'dump.bin',
         'dumpVerdict': 'ok',
-        'scooterSerial': '1K1UA2510P9900',
+        'scooterSerial': '1K1UA000000000',
         'scooterSerialState':
             'real', // shape-valid only — recognised by nothing
         'key': 'aabb',
