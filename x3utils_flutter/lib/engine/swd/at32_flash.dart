@@ -40,6 +40,18 @@ const _stsEpperr = 1 << 4;
 
 const _crmCtrl = 0x40021000;
 const _crmCtrlsts = 0x40021024;
+
+// DMA controllers. Halting the core stops the CPU, not the DMA engines: a
+// firmware that had already started an ADC ring buffer keeps writing SRAM while
+// we stage the loader's chunk there, and the loader then programs whatever DMA
+// left behind. These are chip constants, so quiescing them needs no knowledge
+// of which firmware or which board role is on the other end of the cable.
+const _dma1Base = 0x40020000;
+const _dma2Base = 0x40020400;
+const _dmaChannels = 7;
+const _dmaChannelStride = 0x14;
+const _dmaChannelCtrl = 0x08;
+const _dmaChannelEnable = 1 << 0;
 const _crmHicken = 1 << 0;
 const _crmHickstbl = 1 << 1;
 const _dbgmcuCr = 0xe0042004;
@@ -115,6 +127,43 @@ class At32Flash implements FlashDriver {
     );
   }
 
+  /// Stop every DMA channel before anything is staged in SRAM.
+  ///
+  /// Halting the core does not stop the DMA engines. A motor-controller
+  /// firmware that reached its ADC setup keeps writing its ring buffer while
+  /// halted, and if that buffer overlaps [_bufferAddr] the loader programs the
+  /// samples into flash instead of the image. Measured on a ZT3 MCU: a ring at
+  /// `0x20000FA8` corrupted the same ~390 bytes of every 8 KiB chunk.
+  ///
+  /// Nothing re-enables the channels afterwards — the core is halted and the
+  /// only code it runs from here is our own loader.
+  ///
+  /// Best-effort per channel: a part that does not implement DMA2, or a
+  /// register that faults, must not sink a flash run that would otherwise
+  /// succeed. The staged-buffer check in [_programViaLoader] is what actually
+  /// guarantees the bytes.
+  Future<void> quiesceBusMasters() async {
+    var stopped = 0;
+    for (final base in const [_dma1Base, _dma2Base]) {
+      for (var channel = 0; channel < _dmaChannels; channel++) {
+        final ctrl = base + _dmaChannelCtrl + channel * _dmaChannelStride;
+        try {
+          final value = await _probe.readDebugReg(ctrl);
+          if (value & _dmaChannelEnable == 0) continue;
+          await _probe.writeDebugReg(ctrl, value & ~_dmaChannelEnable);
+          stopped++;
+        } catch (_) {
+          // Absent controller or unreadable register — nothing to stop.
+        }
+      }
+    }
+    if (stopped != 0) {
+      onLog?.call(
+        '[flash] stopped $stopped active DMA channel(s) before staging',
+      );
+    }
+  }
+
   Future<void> _reloadWatchdog(String context) async {
     // DBGMCU_CR freezes WDT only while the core is halted. Give every
     // target-side loader run a full watchdog period before resuming it.
@@ -173,6 +222,9 @@ class At32Flash implements FlashDriver {
       return;
     }
     if (loaderDiagnostics) await _captureLoaderBaseline();
+    // Before the preflight, not after: the preflight itself stages and runs
+    // from SRAM.
+    await quiesceBusMasters();
     try {
       await preflightProgram();
       _usePreparedLoader = true;
@@ -405,6 +457,45 @@ class At32Flash implements FlashDriver {
     }
   }
 
+  /// Write one chunk into the SRAM staging buffer and prove it is still there.
+  ///
+  /// The loader programs whatever these bytes are, so a silent SRAM write from
+  /// anything else on the bus becomes flash content with no error raised
+  /// anywhere. The readback turns that into a caught failure, and it does so
+  /// without needing to know what did the writing — DMA, another bus master, or
+  /// a short USB transfer all look the same here.
+  ///
+  /// One retry, because the plausible causes are transient. [quiesceBusMasters]
+  /// has already stopped the engines we know about, so a second corruption
+  /// means something is still running and the run must not continue.
+  Future<void> _stageChunk(Uint8List chunk, int index, int total) async {
+    for (var attempt = 1; ; attempt++) {
+      await _probe.writeMem32(_bufferAddr, chunk);
+      final staged = await _probe.readMem32(_bufferAddr, chunk.length);
+      var bad = -1;
+      for (var i = 0; i < chunk.length; i++) {
+        if (staged[i] != chunk[i]) {
+          bad = i;
+          break;
+        }
+      }
+      if (bad < 0) return;
+      final detail =
+          'chunk $index/$total staging corrupted at SRAM '
+          '${hex(_bufferAddr + bad)} (wrote '
+          '0x${chunk[bad].toRadixString(16).padLeft(2, "0")}, read back '
+          '0x${staged[bad].toRadixString(16).padLeft(2, "0")})';
+      if (attempt >= 2) {
+        throw SwdException(
+          '$detail after $attempt attempts. Something is still writing SRAM '
+          'while the core is halted — flash was NOT completed.',
+        );
+      }
+      onLog?.call('[flash:loader] $detail — restaging');
+      await quiesceBusMasters();
+    }
+  }
+
   Future<void> _programViaLoader(
     int address,
     Uint8List padded,
@@ -433,10 +524,8 @@ class At32Flash implements FlashDriver {
             'elapsed=${totalStopwatch.elapsedMilliseconds} ms',
           );
         }
-        await _probe.writeMem32(
-          _bufferAddr,
-          Uint8List.sublistView(padded, done, done + chunkLen),
-        );
+        final chunk = Uint8List.sublistView(padded, done, done + chunkLen);
+        await _stageChunk(chunk, chunkIndex, chunks);
         await _probe.writeDebugReg(_atCtrl, _ctrlFprgm);
         try {
           await _reloadWatchdog('chunk $chunkIndex/$chunks');

@@ -249,13 +249,20 @@ class _ResetClearsWatchdogsProbe extends _RecordingProbe {
 
   @override
   Future<void> resetSys() async {
-    resetEvents.add('system reset');
+    resetEvents.add('nrst reset');
     registers[0xe0042004] = 0;
   }
 
   @override
   Future<void> writeDebugReg(int address, int value) async {
     await super.writeDebugReg(address, value);
+    // SYSRESETREQ is the route resetHalt takes now, so the fake has to model it
+    // as a real reset: it clears DBGMCU_CR the same way the pin reset did.
+    if (address == 0xe000ed0c && value == 0x05fa0004) {
+      resetEvents.add('system reset');
+      registers[0xe0042004] = 0;
+      return;
+    }
     if (address == 0xe0042004) resetEvents.add('watchdog freeze');
   }
 }

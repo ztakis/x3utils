@@ -66,11 +66,34 @@ class CortexM {
     throw SwdException('core did not halt within $timeoutMs ms');
   }
 
+  /// Reset the core and catch it at the reset vector, before a single firmware
+  /// instruction runs.
+  ///
+  /// Uses `AIRCR.SYSRESETREQ` rather than the probe's own reset command. The
+  /// ST-Link's reset drives **nRST**, and a pin reset also resets the Cortex-M
+  /// debug block — which wipes the `VC_CORERESET` armed on the line above. The
+  /// core then runs free and [waitHalted] catches it wherever it happens to be,
+  /// which is how firmware got far enough to start ADC/DMA into SRAM and
+  /// corrupt the flash loader's staging buffer (see `quiesceBusMasters`).
+  ///
+  /// SYSRESETREQ leaves the debug block alone, so the vector catch survives and
+  /// the halt is deterministic. The nRST path stays as a fallback for targets
+  /// that ignore SYSRESETREQ; it is the racy one, so it is only used when the
+  /// clean route produced no halt.
   Future<void> resetHalt() async {
     await halt();
     await _probe.writeDebugReg(demcr, _vcCorereset);
-    await _probe.resetSys();
-    await waitHalted();
+    try {
+      await _probe.writeDebugReg(dhcsr, _dbgkey | _cDebugen);
+      await _probe.writeDebugReg(aircr, _aircrSysresetreq);
+      await waitHalted(1000);
+    } catch (_) {
+      // Re-arm before the fallback: if SYSRESETREQ did reset the debug block on
+      // this part, the catch is already gone.
+      await _probe.writeDebugReg(demcr, _vcCorereset);
+      await _probe.resetSys();
+      await waitHalted();
+    }
     await _probe.writeDebugReg(demcr, 0);
   }
 
