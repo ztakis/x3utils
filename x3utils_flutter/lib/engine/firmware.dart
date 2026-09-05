@@ -808,6 +808,30 @@ class CompatPatch {
   static const int offset = 0x1420;
   static final List<int> signature = _hex('FE801CB2D1EF41A6A41731F5A06824F0');
 
+  /// Prove that the full output preserves every byte except the SHU field.
+  static FirmwareCheck validateChange(List<int> original, List<int> patched) {
+    if (original.length != Firmware.expectedSize ||
+        patched.length != Firmware.expectedSize) {
+      return FirmwareCheck.fail(
+        'SHU patch requires two complete 128 KiB images.',
+      );
+    }
+    if (keyState(patched) != FwKeyState.defaultKey) {
+      return FirmwareCheck.fail(
+        'The SHU compatibility signature is missing at 0x1420.',
+      );
+    }
+    for (var i = 0; i < original.length; i++) {
+      if (i >= offset && i < offset + signature.length) continue;
+      if (original[i] != patched[i]) {
+        return FirmwareCheck.fail(
+          'SHU patch changed a byte outside its field at 0x${i.toRadixString(16)}.',
+        );
+      }
+    }
+    return FirmwareCheck.valid;
+  }
+
   static List<int> _hex(String s) => [
     for (var i = 0; i < s.length; i += 2)
       int.parse(s.substring(i, i + 2), radix: 16),

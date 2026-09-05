@@ -34,16 +34,31 @@ import 'engine/zp_extract.dart';
 /// this is a DECLARATION we cannot verify, not a check. Returning null cancels.
 typedef AskMcuModel = Future<String?> Function(List<String> models);
 
-/// Asks whether to continue when the installed firmware could not be
-/// identified — the one outcome that is the operator's call rather than the
-/// tool's. Blacklisted builds never reach it, and a missing callback fails
-/// closed.
-///
-/// [ceiling] arrives separately from [finding] so the view can weight it: it
-/// carries the number that would have decided this, and it is the sentence the
-/// operator most needs to read before choosing.
-typedef ConfirmUnidentified =
-    Future<bool> Function(String finding, String ceiling);
+enum _CompatStatus {
+  prepared,
+  flashing,
+  recoveryRequired,
+  verifiedResetUnconfirmed,
+}
+
+/// Session-local recovery material, independent of the current result screen.
+/// A backup is evidence of the pre-write contents, not proof of healthy firmware.
+class _CompatAttempt {
+  _CompatAttempt(List<int> bytes, this.backupPath, this.metadataPath, this.note)
+    : original = Uint8List.fromList(bytes).asUnmodifiableView(),
+      originalDigest = crypto.sha256.convert(bytes).toString();
+
+  final Uint8List original;
+  final String originalDigest;
+  final String backupPath;
+  final String? metadataPath;
+  final String? note;
+  String? patchedDigest;
+  String? failure;
+  _CompatStatus status = _CompatStatus.prepared;
+
+  bool get unresolved => status != _CompatStatus.prepared;
+}
 
 typedef BackupDownloader =
     Future<void> Function(Uint8List bytes, String fileName);
@@ -65,9 +80,7 @@ const bool kAndroidEnableGenuineC45ForTesting = false;
 /// forward so the packaging step names its output from evidence gathered
 /// before the write rather than re-deriving it from the image afterwards.
 ///
-/// [version] is null only when the operator chose to continue past a build
-/// x3utils could not place — the one case where a package cannot claim a
-/// version and must not look as though it does.
+/// [version] carries the identified ROM version into optional package names.
 ///
 /// [modelDeclared] records that the model was picked by the operator (MCU
 /// firmware carries no model identity) rather than read from the banner. It is
@@ -86,7 +99,7 @@ class CompatIdentity {
   final bool modelDeclared;
 
   /// The identity stem both packages of a run share: `zt3_vcu_v1.5.5`, or
-  /// `zt3_vcu_unknownfw` when the operator waved an unplaceable build through.
+  /// `zt3_vcu_unknownfw` if a caller has no version metadata.
   /// Only the trailing `_stock` / `_compat` tells the two apart.
   String get nameStem {
     final v = version == null ? 'unknownfw' : 'v$version';
@@ -867,6 +880,7 @@ class AppController extends ChangeNotifier {
   /// actions need a loaded file; Make zip3 additionally needs both dropdowns
   /// chosen (an MCU dump can't preselect its model).
   bool get canStart {
+    if (running || _compatWorkflowActive) return false;
     if (actionId == 'make_zip3' &&
         zip3WorkspacePage == Zip3WorkspacePage.unpack) {
       return _unpackZip3Path != null &&
@@ -1186,6 +1200,14 @@ class AppController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _startId++;
+    _compatRunId++;
+    _token++;
+    if (_compatWorkflowActive) {
+      _backend?.cancel();
+      _compatWorkflowActive = false;
+    }
+    _capturing = false;
     _elapsedTicker?.cancel();
     _elapsedTicker = null;
     _cancelAutoRetry();
@@ -1616,7 +1638,11 @@ class AppController extends ChangeNotifier {
   String actionId = 'check';
   int countdownSeconds = 3;
   int autoRetrySeconds = 3;
-  bool running = false;
+  bool _running = false;
+  // Compat owns one workflow across multiple backend calls and dialogs.
+  // Keep navigation locked between the dump and the flash as well.
+  bool get running => _running || _compatWorkflowActive;
+  set running(bool value) => _running = value;
   int raceAttempts =
       0; // power-race respawn: attempts so far (drives the indicator)
   HardwareRaceTier raceTier = HardwareRaceTier.searching;
@@ -1639,6 +1665,127 @@ class AppController extends ChangeNotifier {
   bool _failureIsFinding = false; // a chip verdict, not a rejected input
   bool _rdpRetryPending = false;
   HardwareFailureKind? _hardwareFailureKind;
+  _CompatAttempt? _compatAttempt;
+  bool _compatWorkflowActive = false;
+  int _compatRunId = 0;
+  int _startId = 0;
+  bool _showingCompatRecovery = false;
+
+  bool get compatRecoveryPending => _compatAttempt?.unresolved ?? false;
+  bool get showingCompatRecovery =>
+      stage == StageState.fail && _showingCompatRecovery;
+  String? get resultPathLabel =>
+      showingCompatRecovery ? 'Backup saved before this flash attempt' : null;
+
+  void _finishCompatRecovery({String? detail, bool verified = false}) {
+    final attempt = _compatAttempt;
+    if (attempt == null || !attempt.unresolved) return;
+    if (detail != null) attempt.failure = detail;
+    if (verified) {
+      attempt.status = _CompatStatus.verifiedResetUnconfirmed;
+    } else if (attempt.status == _CompatStatus.flashing) {
+      attempt.status = _CompatStatus.recoveryRequired;
+    }
+    _cancelAutoRetry();
+    _showingCompatRecovery = true;
+    _failureNeedsInput = true;
+    _failureIsFinding = false;
+    running = false;
+    _realRun = false;
+    resultPath = attempt.backupPath;
+    resultMetadataPath = attempt.metadataPath;
+    resultNote = attempt.note;
+    lastConnect = 'FAIL';
+    final resetFailed =
+        attempt.status == _CompatStatus.verifiedResetUnconfirmed;
+    final guidance = resetFailed
+        ? 'The image was written and verified, but reset to running was not confirmed. '
+              'Check the connection and restart the controller before assessing '
+              'its operation. Do not repeat SHU compatibility to fix a reset failure.'
+        : 'Flashing did not complete and verify. The controller may contain '
+              'incomplete firmware. Restore a known-good full image using '
+              'Flash Only before running SHU compatibility again.';
+    _set(
+      StageState.fail,
+      'Recovery',
+      resetFailed
+          ? 'Image verified; reset unconfirmed'
+          : 'SHU compatibility was not completed',
+      attempt.failure == null ? guidance : '$guidance\n${attempt.failure}',
+    );
+    messageTone = MessageTone.danger;
+    notifyListeners();
+  }
+
+  /// Prepare a deliberate full-image write; never dispatch hardware here.
+  void prepareCompatRecovery() {
+    final attempt = _compatAttempt;
+    if (attempt == null ||
+        !attempt.unresolved ||
+        running ||
+        _compatWorkflowActive) {
+      return;
+    }
+    selectAction('flash_only');
+    advancedOpen = true;
+    try {
+      final bytes = _browserMode || _androidMode
+          ? attempt.original
+          : File(attempt.backupPath).readAsBytesSync();
+      if (crypto.sha256.convert(bytes).toString() != attempt.originalDigest) {
+        throw StateError('The original backup has changed since capture.');
+      }
+      final check = _browserMode || _androidMode
+          ? selectFirmwareBytes(
+              attempt.backupPath.split(RegExp(r'[/\\]')).last,
+              bytes,
+            )
+          : selectFirmwareBin(attempt.backupPath);
+      if (!check.ok) throw StateError(check.message);
+      // Keep the captured digest as the Start-time guard even if the desktop
+      // file changed between the check above and firmware selection.
+      _firmwareSelectedDigest = attempt.originalDigest;
+      _firmwareNote =
+          'Backup saved before the interrupted Compat attempt. '
+          'Use it only if that firmware was working, or select another known-good full image.';
+      _firmwareNoteWarn = true;
+      _setInstruction('Review the full image, then press Start to restore it.');
+    } catch (error) {
+      _clearFirmwareSelection();
+      _setInstruction(
+        'The original backup could not be prepared: $error '
+        'Select a known-good full image for recovery.',
+        tone: MessageTone.danger,
+      );
+    }
+    notifyListeners();
+  }
+
+  void _completeCompatRecovery(
+    bool flashOk, {
+    required bool backup,
+    required bool slot0,
+  }) {
+    if (flashOk &&
+        !backup &&
+        !slot0 &&
+        actionId == 'flash_only' &&
+        compatRecoveryPending) {
+      _log(
+        '== full-image Flash Only verified; pending Compat recovery cleared ==',
+      );
+      _compatAttempt = null;
+    }
+  }
+
+  String _compatFlashFailure(HardwareResult result) {
+    for (final line in _runLog.reversed) {
+      if (line.startsWith('[flash] failed:')) return line;
+    }
+    return _diagnosis ??
+        _runIssue ??
+        'Flash outcome unconfirmed (exit ${result.exitCode}). Check the console.';
+  }
 
   /// A validation or policy failure must return to setup instead of repeating
   /// the same run. Connection failures retain the existing re-seat retry loop.
@@ -1668,6 +1815,7 @@ class AppController extends ChangeNotifier {
   bool get _autoRetryEligible =>
       autoRetrySeconds > 0 &&
       stage == StageState.fail &&
+      !showingCompatRecovery &&
       !_failureNeedsInput && // policy failure: needs the user, not a retry
       !_cannotRun && // a broken bundle is not a loose wire
       !_sawTargetProgress && // connected/progressed → never auto-repeat
@@ -1703,6 +1851,7 @@ class AppController extends ChangeNotifier {
   }
 
   String get failurePrimaryLabel {
+    if (showingCompatRecovery) return 'Open recovery setup';
     if (!failureNeedsInput) return 'Retry';
     if (failureNeedsDeviceProbe) return deviceProbeActionLabel;
     // A chip verdict is not a rejected input: there is nothing in setup to
@@ -1799,7 +1948,7 @@ class AppController extends ChangeNotifier {
   }
 
   void selectAction(String id) {
-    if (running) return;
+    if (running || _compatWorkflowActive) return;
     actionId = id;
     zip3WorkspacePage = Zip3WorkspacePage.slice;
     flashScope =
@@ -1873,12 +2022,21 @@ class AppController extends ChangeNotifier {
   }
 
   void cancel() {
+    _compatRunId++;
+    _compatWorkflowActive = false;
     _token++;
     running = false;
     _realRun = false;
     _backend?.cancel();
     _log('-- cancelled --');
     lastConnect = '—';
+    if (_compatAttempt?.status == _CompatStatus.flashing) {
+      _stopRunClock(null);
+      _finishCompatRecovery(
+        detail: 'The flash attempt was cancelled; its outcome is unconfirmed.',
+      );
+      return;
+    }
     _goIdle();
   }
 
@@ -1899,6 +2057,14 @@ class AppController extends ChangeNotifier {
   /// user. A real press is a fresh intent, so it restarts the attempt budget.
   Future<void> retry({bool auto = false}) async {
     _cancelAutoRetry();
+    if (showingCompatRecovery) {
+      if (!auto) prepareCompatRecovery();
+      return;
+    }
+    if (actionId == 'flash_compat' && compatRecoveryPending) {
+      _finishCompatRecovery();
+      return;
+    }
     if (!auto) autoRetryAttempt = 0;
     if (_rdpRetryPending) {
       _rdpRetryPending = false;
@@ -1948,6 +2114,7 @@ class AppController extends ChangeNotifier {
     resultMetadataPath = null;
     _failureNeedsInput = false;
     _failureIsFinding = false;
+    _showingCompatRecovery = false;
     _rdpRetryPending = false;
     _hardwareFailureKind = null;
     stage = StageState.idle;
@@ -1990,10 +2157,10 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _flushLog() {
+  void _flushLog(String runAction) {
     if (_runLog.isEmpty) return;
     try {
-      final path = Firmware.writeLog(actionId, _runLog.join('\n'));
+      final path = Firmware.writeLog(runAction, _runLog.join('\n'));
       _log('== log saved → $path ==');
     } catch (e) {
       _log('== could not save log: $e ==');
@@ -2055,17 +2222,22 @@ class AppController extends ChangeNotifier {
   /// must still be able to offer its cleanup.
   ConfirmTrash? _confirmTrash;
   AskMcuModel? _askMcuModel;
-  ConfirmUnidentified? _confirmUnidentified;
 
   Future<void> start({
     ConfirmFileReplace? confirmFileReplace,
     ConfirmTrash? confirmTrash,
     AskMcuModel? askMcuModel,
-    ConfirmUnidentified? confirmUnidentified,
   }) async {
+    if (running || _compatWorkflowActive) return;
+    if (actionId == 'flash_compat' && compatRecoveryPending) {
+      _finishCompatRecovery();
+      return;
+    }
+    final startId = ++_startId;
+    final runAction = actionId;
+    _showingCompatRecovery = false;
     if (confirmTrash != null) _confirmTrash = confirmTrash;
     if (askMcuModel != null) _askMcuModel = askMcuModel;
-    if (confirmUnidentified != null) _confirmUnidentified = confirmUnidentified;
     _runIssue = null;
     _runIssuePriority = 0;
     messageTone = MessageTone.normal;
@@ -2099,8 +2271,11 @@ class AppController extends ChangeNotifier {
     try {
       await _dispatch(confirmFileReplace: confirmFileReplace);
     } finally {
-      _capturing = false;
-      if (logToFile) _flushLog();
+      if (startId == _startId) {
+        final shouldFlush = _capturing;
+        _capturing = false;
+        if (logToFile && shouldFlush) _flushLog(runAction);
+      }
     }
   }
 
@@ -2535,12 +2710,13 @@ class AppController extends ChangeNotifier {
       // the first native transfer; OpenOCD already yields through Process I/O.
       if (useSwdartDesktop) {
         await Future<void>.delayed(Duration.zero);
-        if (my != _token) return null;
       }
+      if (my != _token) return null;
       result = await backend.run(
         request,
         HardwareCallbacks(
           onLine: (line) {
+            if (my != _token) return;
             _onRealLine(line, driveOpenOcdProgress: false);
           },
           onProgress: (progress) {
@@ -2582,6 +2758,10 @@ class AppController extends ChangeNotifier {
       _realRun = false;
       running = false;
       _stopRunClock(null);
+      if (actionId == 'flash_compat' && compatRecoveryPending) {
+        _finishCompatRecovery(detail: 'Backend error: $e');
+        return null;
+      }
       _set(
         StageState.fail,
         'Failed',
@@ -2661,7 +2841,7 @@ class AppController extends ChangeNotifier {
     if (priority < _runIssuePriority) return;
     _runIssue = issue;
     _runIssuePriority = priority;
-    if (stage == StageState.fail) {
+    if (stage == StageState.fail && !showingCompatRecovery) {
       _setInstruction(
         _rdpRetryPending ? '$issue\n$_reseatHint' : issue,
         tone: MessageTone.danger,
@@ -3754,9 +3934,9 @@ class AppController extends ChangeNotifier {
       if (tm.note != null) _log('== ${tm.note} ==');
     }
 
-    // Flash Only deliberately has no stored-digest or target-identity gate,
-    // but native-library backends still need a stable snapshot of the bytes
-    // selected for this individual write.
+    // Ordinary Flash Only has no stored-digest or target-identity gate.
+    // Recovery additionally pins the selected image below; all native-library
+    // writes use this snapshot.
     try {
       programBytes ??= File(fw).readAsBytesSync();
     } catch (e) {
@@ -3765,6 +3945,20 @@ class AppController extends ChangeNotifier {
         'Could not read the firmware',
         'The selected firmware could not be read immediately before writing: '
             '$e',
+      );
+      return;
+    }
+
+    if (actionId == 'flash_only' &&
+        !slot0 &&
+        compatRecoveryPending &&
+        (selectedDigest == null ||
+            crypto.sha256.convert(programBytes).toString() != selectedDigest)) {
+      _setInputFailure(
+        'Firmware changed',
+        'Review recovery firmware',
+        'The recovery image changed after selection. Select a known-good '
+            'full image again before starting recovery.',
       );
       return;
     }
@@ -3796,6 +3990,7 @@ class AppController extends ChangeNotifier {
     // instead of falling back to the stale "Flashing" phase label.
     _showOpenOcdProgress(eyebrow: 'Validating');
     final flashOk = _flashConfirmed(r);
+    _completeCompatRecovery(flashOk, backup: backup, slot0: slot0);
     if (flashOk) {
       _setInstruction(
         slot0
@@ -4034,6 +4229,7 @@ class AppController extends ChangeNotifier {
     _showOpenOcdProgress(eyebrow: 'Validating');
     final flashOk =
         _flashConfirmed(flashResult) && flashResult.evidence.resetRunning;
+    _completeCompatRecovery(flashOk, backup: backup, slot0: slot0);
     if (flashOk) {
       _setInstruction('Flash verified and target reset to running.');
     }
@@ -4068,7 +4264,7 @@ class AppController extends ChangeNotifier {
   /// Memory-backed SHU-compat: dump → save the original backup → patch in
   /// memory → flash back. Browser downloads the backup; Android publishes it
   /// through MediaStore before anything is patched or written.
-  Future<void> _runMemoryCompat(bool guided) async {
+  Future<void> _runMemoryCompat(bool guided, int runId) async {
     _showOpenOcdProgress(eyebrow: 'Backing up');
     _setInstruction('Reading the chip before patching...');
 
@@ -4081,7 +4277,7 @@ class AppController extends ChangeNotifier {
       guided: guided,
       title: 'Reading current firmware…',
     );
-    if (dumpResult == null) return;
+    if (dumpResult == null || runId != _compatRunId) return;
     if (!_dumpConfirmed(dumpResult)) {
       await _finishRealAfterHold(
         false,
@@ -4133,6 +4329,7 @@ class AppController extends ChangeNotifier {
         await _backupDownloader(backup, backupName);
       }
     } catch (e) {
+      if (runId != _compatRunId) return;
       final destination = _androidMode
           ? 'Android backup save'
           : 'browser download';
@@ -4146,21 +4343,25 @@ class AppController extends ChangeNotifier {
       );
       return;
     }
+    if (runId != _compatRunId) return;
+    final attempt = _CompatAttempt(dumpBytes, backupPath, null, backupNote);
+    _compatAttempt = attempt;
     _log('== backup ok → $backupPath ==');
+    _log('== Compat original SHA-256: ${attempt.originalDigest} ==');
 
     final identity = await _compatIdentityGateBytes(
-      dumpBytes,
+      attempt.original,
       backupResultText: backupResultText,
       backupPath: backupPath,
       backupNote: backupNote,
     );
-    if (identity == null) return;
+    if (identity == null || runId != _compatRunId) return;
 
     _showOpenOcdProgress(eyebrow: 'Patching');
     _setInstruction('Patching the SHU compatibility signature...');
     _log('== patching SHU-compat signature @ 0x1420 ==');
     final (patchCheck, patchedBytes) = CompatPatch.applyBytes(
-      Uint8List.fromList(dumpBytes),
+      Uint8List.fromList(attempt.original),
     );
     if (!patchCheck.ok || patchedBytes == null) {
       _log('== patch FAILED: ${patchCheck.message} ==');
@@ -4174,13 +4375,20 @@ class AppController extends ChangeNotifier {
       );
       return;
     }
+    _showOpenOcdProgress(eyebrow: 'Patching');
+    _setInstruction('SHU patch applied. Ready to flash...');
+    await Future.delayed(const Duration(milliseconds: 900));
+    if (runId != _compatRunId) return;
+
     final programCheck = Firmware.validateFullImageBytes(patchedBytes);
-    final signatureOk =
-        CompatPatch.keyState(patchedBytes) == FwKeyState.defaultKey;
-    if (!programCheck.ok || !signatureOk) {
+    final changeCheck = CompatPatch.validateChange(
+      attempt.original,
+      patchedBytes,
+    );
+    if (!programCheck.ok || !changeCheck.ok) {
       final reason = !programCheck.ok
           ? programCheck.message
-          : 'The SHU compatibility signature is missing at 0x1420.';
+          : changeCheck.message;
       _log('== patch validation FAILED: $reason ==');
       await _finishRealAfterHold(
         false,
@@ -4192,12 +4400,12 @@ class AppController extends ChangeNotifier {
       );
       return;
     }
-    _showOpenOcdProgress(eyebrow: 'Patching');
-    _setInstruction('SHU patch applied. Ready to flash...');
-    await Future.delayed(const Duration(milliseconds: 900));
-
     _showOpenOcdProgress(eyebrow: 'Flashing');
     _setInstruction('Flashing it back to the chip...');
+    attempt.patchedDigest = crypto.sha256.convert(patchedBytes).toString();
+    attempt.status = _CompatStatus.flashing;
+    _log('== Compat patched SHA-256: ${attempt.patchedDigest} ==');
+    if (runId != _compatRunId) return;
     final f = await _runRealCore(
       HardwareRequest(
         operation: HardwareOperation.flashFull,
@@ -4208,9 +4416,17 @@ class AppController extends ChangeNotifier {
       guided: guided,
       title: 'Flashing SHU-compatible firmware…',
     );
-    if (f == null) return;
+    if (f == null || runId != _compatRunId) return;
     _showOpenOcdProgress(eyebrow: 'Validating');
     final flashOk = _flashConfirmed(f) && f.evidence.resetRunning;
+    if (!flashOk) {
+      _finishCompatRecovery(
+        detail: _compatFlashFailure(f),
+        verified: f.evidence.wrote && f.evidence.verified,
+      );
+      return;
+    }
+    _compatAttempt = null;
     if (flashOk) {
       _setInstruction('SHU-compatible firmware verified and target reset.');
     }
@@ -4237,6 +4453,7 @@ class AppController extends ChangeNotifier {
     required String backupPath,
     required String backupNote,
   }) async {
+    final runId = _compatRunId;
     _setInstruction('Identifying the installed firmware...');
 
     final xtea = CompatXtea.keyState(bytes);
@@ -4288,6 +4505,7 @@ class AppController extends ChangeNotifier {
             ..sort();
       final ask = _askMcuModel;
       final picked = ask == null ? null : await ask(models);
+      if (runId != _compatRunId) return null;
       if (picked == null) {
         await _finishRealAfterHold(
           false,
@@ -4345,39 +4563,19 @@ class AppController extends ChangeNotifier {
     }
 
     if (fw.uncertain) {
-      final finding = fw.verdict == FwVerdict.ambiguous
-          ? 'The installed firmware gave contradictory version evidence '
-                '(${fw.matches.join(', ')}).'
-          : 'x3utils does not recognise the installed firmware version'
-                '${modelDeclared ? ' for the $model MCU you selected' : ''}.';
-      final floor = FwVersionMatrix.refusedFrom(model, type);
-      final ceiling = floor == null
-          ? ' x3utils has no $type version ceiling recorded at all, so it '
-                'cannot tell you whether this build is affected.'
-          : ' On ${model.toUpperCase()} $type, $floor and newer are known not '
-                'to work.';
-      final ask = _confirmUnidentified;
-      final proceed = ask != null && await ask(finding, ceiling.trim());
-      if (!proceed) {
-        await _finishRealAfterHold(
-          false,
-          '',
-          'Nothing was written — $finding$ceiling It stopped rather than patch '
-              'a build it cannot place. $backupResultText',
-          reseat: false,
-          finding: true,
-          outputPath: backupPath,
-          outputNote: backupNote,
-        );
-        return null;
-      }
-      _log('== operator continued past an unidentified firmware version ==');
-      return CompatIdentity(
-        model: model,
-        type: type,
-        version: null,
-        modelDeclared: modelDeclared,
+      await _finishRealAfterHold(
+        false,
+        '',
+        'This attempt did not write to the controller. SHU compatibility '
+            'requires an identified, supported firmware version. '
+            'A dump of the current contents was saved; this does not establish '
+            'that the firmware works.',
+        reseat: false,
+        finding: true,
+        outputPath: backupPath,
+        outputNote: backupNote,
       );
+      return null;
     }
 
     _setInstruction(
@@ -4394,10 +4592,38 @@ class AppController extends ChangeNotifier {
   /// SHU-compat: dump the chip → patch its own firmware → flash it back
   /// (mirrors flash_compat.bat; no user .bin — uses the chip's own image).
   Future<void> _runCompat(bool guided) async {
-    if (_browserMode || _androidMode) {
-      await _runMemoryCompat(guided);
-      return;
+    final runId = ++_compatRunId;
+    _compatAttempt = null;
+    _compatWorkflowActive = true;
+    try {
+      if (_browserMode || _androidMode) {
+        await _runMemoryCompat(guided, runId);
+      } else {
+        await _runDesktopCompat(guided, runId);
+      }
+    } catch (error) {
+      if (runId != _compatRunId) return;
+      if (compatRecoveryPending) {
+        _finishCompatRecovery(detail: 'Compat error: $error');
+      } else {
+        _finishReal(
+          false,
+          '',
+          'Compat stopped before flashing: $error',
+          reseat: false,
+          outputPath: _compatAttempt?.backupPath,
+          outputMetadataPath: _compatAttempt?.metadataPath,
+        );
+      }
+    } finally {
+      if (runId == _compatRunId) {
+        _compatWorkflowActive = false;
+        notifyListeners();
+      }
     }
+  }
+
+  Future<void> _runDesktopCompat(bool guided, int runId) async {
     final (rawFinal, patched) = Firmware.newCompatPaths(prefix: backupPrefix);
     final staged = _stagedDumpPath(explicitPath: rawFinal);
     if (staged == null) return;
@@ -4415,6 +4641,7 @@ class AppController extends ChangeNotifier {
       guided: guided,
       title: 'Reading current firmware…',
     );
+    if (runId != _compatRunId) return;
     if (d == null) {
       _noteStagedFile(staged);
       return;
@@ -4430,6 +4657,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     final stageError = await _stageReturnedDumpBytes(d, staged);
+    if (runId != _compatRunId) return;
     if (stageError != null) {
       _log('== backup staging FAILED: $stageError ==');
       await _finishRealAfterHold(
@@ -4465,6 +4693,14 @@ class AppController extends ChangeNotifier {
     _setInstruction('Original backup saved. Preparing the patch...');
     final rawMetadataPath = _writeDumpMetadata(raw);
     _maybeSecondCopy(raw, sidecarPath: rawMetadataPath);
+    final attempt = _CompatAttempt(
+      File(raw).readAsBytesSync(),
+      raw,
+      rawMetadataPath,
+      null,
+    );
+    _compatAttempt = attempt;
+    _log('== Compat original SHA-256: ${attempt.originalDigest} ==');
 
     // Step 1b — identify what is actually installed, BEFORE touching it.
     // Until now compat patched whatever it dumped: its only test was that the
@@ -4474,7 +4710,7 @@ class AppController extends ChangeNotifier {
       raw,
       metadataPath: rawMetadataPath,
     );
-    if (identity == null) return;
+    if (identity == null || runId != _compatRunId) return;
 
     // Step 2 — patch (pure Dart, no hardware).
     _showOpenOcdProgress(eyebrow: 'Patching');
@@ -4497,6 +4733,7 @@ class AppController extends ChangeNotifier {
     _showOpenOcdProgress(eyebrow: 'Patching');
     _setInstruction('SHU patch applied. Ready to flash...');
     await Future.delayed(const Duration(milliseconds: 900));
+    if (runId != _compatRunId) return;
 
     // Snapshot and revalidate the generated image immediately before the
     // write. OpenOCD consumes [patched] while native-library backends consume
@@ -4518,12 +4755,14 @@ class AppController extends ChangeNotifier {
       return;
     }
     final programCheck = Firmware.validateFullImageBytes(programBytes);
-    final signatureOk =
-        CompatPatch.keyState(programBytes) == FwKeyState.defaultKey;
-    if (!programCheck.ok || !signatureOk) {
+    final changeCheck = CompatPatch.validateChange(
+      attempt.original,
+      programBytes,
+    );
+    if (!programCheck.ok || !changeCheck.ok) {
       final reason = !programCheck.ok
           ? programCheck.message
-          : 'The SHU compatibility signature is missing at 0x1420.';
+          : changeCheck.message;
       _log('== patched snapshot validation FAILED: $reason ==');
       await _finishRealAfterHold(
         false,
@@ -4539,6 +4778,10 @@ class AppController extends ChangeNotifier {
     // Step 3 — flash the patched image back.
     _showOpenOcdProgress(eyebrow: 'Flashing');
     _setInstruction('Flashing it back to the chip...');
+    attempt.patchedDigest = crypto.sha256.convert(programBytes).toString();
+    attempt.status = _CompatStatus.flashing;
+    _log('== Compat patched SHA-256: ${attempt.patchedDigest} ==');
+    if (runId != _compatRunId) return;
     final f = await _runRealCore(
       HardwareRequest(
         operation: HardwareOperation.flashFull,
@@ -4550,9 +4793,17 @@ class AppController extends ChangeNotifier {
       guided: guided,
       title: 'Flashing SHU-compatible firmware…',
     );
-    if (f == null) return;
+    if (f == null || runId != _compatRunId) return;
     _showOpenOcdProgress(eyebrow: 'Validating');
     final flashOk = _flashConfirmed(f);
+    if (!flashOk) {
+      _finishCompatRecovery(
+        detail: _compatFlashFailure(f),
+        verified: f.evidence.wrote && f.evidence.verified,
+      );
+      return;
+    }
+    _compatAttempt = null;
     const okMsg =
         'SHU-compatible firmware flashed and verified. The original backup was saved.';
     String? zipNote;
@@ -4594,6 +4845,7 @@ class AppController extends ChangeNotifier {
     String rawPath, {
     String? metadataPath,
   }) async {
+    final runId = _compatRunId;
     _setInstruction('Identifying the installed firmware...');
     final List<int> bytes;
     try {
@@ -4665,6 +4917,7 @@ class AppController extends ChangeNotifier {
             ..sort();
       final ask = _askMcuModel;
       final picked = ask == null ? null : await ask(models);
+      if (runId != _compatRunId) return null;
       if (picked == null) {
         await _finishRealAfterHold(
           false,
@@ -4725,52 +4978,19 @@ class AppController extends ChangeNotifier {
     }
 
     if (fw.uncertain) {
-      final finding = fw.verdict == FwVerdict.ambiguous
-          ? 'The installed firmware gave contradictory version evidence '
-                '(${fw.matches.join(', ')}).'
-          : 'x3utils does not recognise the installed firmware version'
-                '${modelDeclared ? ' for the $model MCU you selected' : ''}.';
-      // Name the ceiling for THIS model rather than talking about ceilings in
-      // the abstract: the operator is being asked to judge a version we could
-      // not read, so the one number that would have decided it is the useful
-      // thing to hand them.
-      //
-      // When no ceiling is recorded for a model/type, say THAT rather than
-      // leaving a gap where another controller gets a number. Silence there
-      // reads as reassurance; absence of data is a different thing.
-      final floor = FwVersionMatrix.refusedFrom(model, type);
-      final ceiling = floor == null
-          ? ' x3utils has no $type version ceiling recorded at all, so it '
-                'cannot tell you whether this build is affected.'
-          : ' On ${model.toUpperCase()} $type, $floor and newer are known not '
-                'to work.';
-      // An unrecognised build is always the OPERATOR's call, never a silent
-      // refusal and never a silent pass. A missing callback fails closed: no
-      // way to ask means no way to consent.
-      final ask = _confirmUnidentified;
-      final proceed = ask != null && await ask(finding, ceiling.trim());
-      if (!proceed) {
-        await _finishRealAfterHold(
-          false,
-          '',
-          'Nothing was written — $finding$ceiling It stopped rather than patch '
-              'a build it cannot place. The backup was saved.',
-          reseat: false,
-          finding: true,
-          outputPath: rawPath,
-          outputMetadataPath: metadataPath,
-        );
-        return null;
-      }
-      _log('== operator continued past an unidentified firmware version ==');
-      // No version to carry: anything named from this run says so rather than
-      // inheriting a number nobody established.
-      return CompatIdentity(
-        model: model,
-        type: type,
-        version: null,
-        modelDeclared: modelDeclared,
+      await _finishRealAfterHold(
+        false,
+        '',
+        'This attempt did not write to the controller. SHU compatibility '
+            'requires an identified, supported firmware version. '
+            'A dump of the current contents was saved; this does not establish '
+            'that the firmware works.',
+        reseat: false,
+        finding: true,
+        outputPath: rawPath,
+        outputMetadataPath: metadataPath,
       );
+      return null;
     }
 
     _setInstruction(

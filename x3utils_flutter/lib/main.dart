@@ -60,6 +60,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _onStart() async {
     final a = c.action;
+    if (a.id == 'flash_compat' && c.compatRecoveryPending) {
+      await c.start(); // Return to recovery without offering another patch run.
+      return;
+    }
     // Get file info reads a local file and shows a dialog. It deliberately
     // never reaches `c.start()`: that path owns the busy surface, the stage
     // machine and `lastConnect`, and nothing here touches a target — a PASS
@@ -123,8 +127,6 @@ class _HomeScreenState extends State<HomeScreen> {
       confirmFileReplace: _showZip3ReplaceConfirm,
       confirmTrash: _showTrashConfirm,
       askMcuModel: (models) => _showMcuModelPicker(context, models),
-      confirmUnidentified: (finding, ceiling) =>
-          _showUnidentifiedConfirm(context, finding, ceiling),
     );
   }
 
@@ -2989,6 +2991,13 @@ class _HeroStageState extends State<_HeroStage>
                 ],
                 if (c.resultPath != null) ...[
                   const SizedBox(height: 14),
+                  if (c.resultPathLabel != null) ...[
+                    Text(
+                      c.resultPathLabel!,
+                      style: const TextStyle(color: AppColors.dim),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
                   ConstrainedBox(
                     constraints: const BoxConstraints(
                       maxWidth: kHeroBlockWidth,
@@ -4143,7 +4152,7 @@ class _StageButtons extends StatelessWidget {
             centerText: centerText,
           ),
         );
-        if (!c.failureNeedsInput) {
+        if (!c.failureNeedsInput || c.showingCompatRecovery) {
           children.add(
             _PillButton(
               label: 'Dismiss',
@@ -4275,104 +4284,6 @@ Future<String?> _showMcuModelPicker(BuildContext context, List<String> models) {
       ),
     ),
   );
-}
-
-/// Shown only when the "ask when firmware is unrecognised" setting is on. The
-/// backup is already saved by the time this appears, which is why continuing is
-/// offered at all.
-Future<bool> _showUnidentifiedConfirm(
-  BuildContext context,
-  String finding,
-  String ceiling,
-) async {
-  final ok = await showDialog<bool>(
-    context: context,
-    barrierColor: const Color(0xB3040A0F),
-    builder: (ctx) => Dialog(
-      backgroundColor: AppColors.panel,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: AppColors.line2),
-      ),
-      child: Container(
-        width: 500,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Unrecognised firmware',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.txt,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              finding,
-              style: const TextStyle(
-                fontSize: 13,
-                height: 1.45,
-                color: AppColors.dim,
-              ),
-            ),
-            // The ceiling is the fact that decides this, so it gets the weight
-            // the rest of the paragraph does not.
-            if (ceiling.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                ceiling,
-                style: const TextStyle(
-                  fontSize: 13,
-                  height: 1.45,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.danger,
-                ),
-              ),
-            ],
-            const SizedBox(height: 10),
-            const Text(
-              'On a build x3utils cannot place, patching may do nothing except '
-              'overwrite the key the scooter needs for its own updates. Your '
-              'backup has already been saved.',
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.45,
-                color: AppColors.dim,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                _PillButton(
-                  label: 'Stop',
-                  onTap: () => Navigator.pop(ctx, false),
-                  bg: AppColors.line,
-                  fg: AppColors.txt,
-                  border: AppColors.line2,
-                  small: true,
-                ),
-                const SizedBox(width: 10),
-                // Red, not amber: this proceeds against evidence we could not
-                // read, on a chip whose key it is about to overwrite.
-                _PillButton(
-                  label: 'Patch anyway',
-                  onTap: () => Navigator.pop(ctx, true),
-                  gradient: const [Color(0xFFFF6472), AppColors.danger],
-                  fg: Colors.white,
-                  small: true,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-  return ok ?? false;
 }
 
 Future<bool?> _showShuCompatWarning(BuildContext context) {

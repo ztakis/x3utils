@@ -23,6 +23,7 @@ class _RecordingRunner extends OpenOcdRunner {
 
   final List<int> dumpBytes;
   final List<List<String>> calls = [];
+  bool failFlash = false;
 
   /// True once an erase/write actually reached the runner.
   bool get wroteFlash => calls.any(
@@ -49,6 +50,8 @@ class _RecordingRunner extends OpenOcdRunner {
       final path = RegExp(r'\{(.+)\}').firstMatch(dump)!.group(1)!;
       File(path).writeAsBytesSync(dumpBytes);
       lines.add('dumped 131072 bytes');
+    } else if (failFlash) {
+      lines.add('[FAIL] flash verification failed');
     } else {
       lines
         ..add('erased 128 KiB')
@@ -60,7 +63,7 @@ class _RecordingRunner extends OpenOcdRunner {
       evidence.record(line);
       onLine(line);
     }
-    return OpenOcdResult(0, evidence);
+    return OpenOcdResult(dump.isEmpty && failFlash ? 1 : 0, evidence);
   }
 
   @override
@@ -192,50 +195,51 @@ void main() {
     expect(compatFiles('.json'), hasLength(1));
   });
 
-  test('an unrecognised version fails closed with no way to ask', () async {
-    // A supported banner, but no version constant we can place — and no
-    // confirmation callback, so there is no way to obtain consent. Refusing is
-    // the only safe reading of silence.
-    final runner = _RecordingRunner(_dump(banner: 'SCOOTER_VCU_xxG3'));
-    final c = await compatRunner(runner);
+  test(
+    'an unrecognised version refuses and keeps only the original backup',
+    () async {
+      final runner = _RecordingRunner(_dump(banner: 'SCOOTER_VCU_xxG3'));
+      final c = await compatRunner(runner);
+      await c.start();
+      expect(c.stage, StageState.fail);
+      expect(
+        c.sub,
+        contains('requires an identified, supported firmware version'),
+      );
+      expect(c.sub, contains('does not establish that the firmware works'));
+      expect(runner.wroteFlash, isFalse);
+      expect(compatFiles('.bin'), hasLength(1));
+      expect(compatFiles('_patched.bin'), isEmpty);
+    },
+  );
 
-    await c.start();
-
-    expect(c.stage, StageState.fail);
-    expect(c.sub, contains('does not recognise'));
-    expect(runner.wroteFlash, isFalse);
-    expect(compatFiles('.bin'), isNotEmpty);
-  });
-
-  test('an unrecognised build asks, and the operator may continue', () async {
-    final runner = _RecordingRunner(_dump(banner: 'SCOOTER_VCU_xxG3'));
-    final c = await compatRunner(runner);
-    var asked = false;
-
-    await c.start(
-      confirmUnidentified: (finding, ceiling) async {
-        asked = true;
-        expect(finding, contains('does not recognise'));
-        // The ceiling arrives separately so the view can weight it — it is the
-        // number that would have decided this, and the operator reads it first.
-        expect(ceiling, contains('On G3 VCU, 1.6.3 and newer'));
-        return true;
-      },
-    );
-
-    expect(asked, isTrue);
-    expect(runner.wroteFlash, isTrue, reason: 'operator approved the patch');
-  });
-
-  test('an unrecognised build stops when the operator declines', () async {
-    final runner = _RecordingRunner(_dump(banner: 'SCOOTER_VCU_xxG3'));
-    final c = await compatRunner(runner);
-
-    await c.start(confirmUnidentified: (_, _) async => false);
-
-    expect(c.stage, StageState.fail);
-    expect(runner.wroteFlash, isFalse);
-  });
+  test(
+    'OpenOCD flash failure routes recovery to the original file without another dump',
+    () async {
+      final runner = _RecordingRunner(
+        _dump(banner: 'SCOOTER_VCU_xxG3', versionValue: 0x155),
+      )..failFlash = true;
+      final c = await compatRunner(runner);
+      await c.start();
+      expect(c.showingCompatRecovery, isTrue);
+      expect(c.sub, contains('Restore a known-good full image'));
+      expect(c.sub, isNot(contains('press Retry')));
+      final originalPath = c.resultPath!;
+      expect(originalPath, isNot(endsWith('_patched.bin')));
+      await c.retry();
+      expect(runner.calls, hasLength(2));
+      expect(c.firmwarePath, originalPath);
+      runner.failFlash = false;
+      await c.start();
+      expect(c.stage, StageState.ok);
+      expect(c.compatRecoveryPending, isFalse);
+      expect(runner.calls, hasLength(3));
+      expect(
+        runner.calls.last.join(' '),
+        contains(originalPath.replaceAll('\\', '/')),
+      );
+    },
+  );
 
   test('a known good version proceeds to patch and flash', () async {
     // g3 VCU 1.5.5 — known, and not on the blacklist.
@@ -337,23 +341,16 @@ void main() {
   );
 
   test(
-    'a waved-through build is not named as though it were identified',
+    'unidentified firmware cannot produce optional Compat packages',
     () async {
-      // Operator continues past a version x3utils cannot place, so
-      // there is no version to put in the name.
       final runner = _RecordingRunner(
         _dump(banner: 'SCOOTER_VCU_xxG3', zpPayloadLength: 58436),
       );
       final c = await compatRunner(runner);
       c.setCompatMakeZip3(true);
-
-      await c.start(confirmUnidentified: (_, _) async => true);
-
-      expect(runner.wroteFlash, isTrue);
-      expect(zipNames(), [
-        'g3_vcu_unknownfw_compat_zip3.zip',
-        'g3_vcu_unknownfw_stock_zip3.zip',
-      ]);
+      await c.start();
+      expect(runner.wroteFlash, isFalse);
+      expect(zipNames(), isEmpty);
     },
   );
 
@@ -438,28 +435,19 @@ void main() {
       },
     );
 
-    test('the declared MCU model selects its compatibility floor', () async {
-      // MCU firmware cannot name the scooter model, so the declaration selects
-      // the ROM version policy.
-      // ZT3 MCU 1.6.0 and newer is the current protective boundary.
-      final runner = _RecordingRunner(_dump(banner: 'SCOOTER_MCU_0001'));
-      final c = await compatRunner(runner);
-      String? shown;
-      String? shownCeiling;
-
-      await c.start(
-        askMcuModel: (_) async => 'zt3',
-        confirmUnidentified: (finding, ceiling) async {
-          shown = finding;
-          shownCeiling = ceiling;
-          return false;
-        },
-      );
-
-      expect(shown, contains('zt3 MCU you selected'));
-      expect(shownCeiling, contains('On ZT3 MCU, 1.6.0 and newer'));
-      expect(runner.wroteFlash, isFalse);
-    });
+    test(
+      'an unidentified MCU refuses even with an operator-declared model',
+      () async {
+        final runner = _RecordingRunner(_dump(banner: 'SCOOTER_MCU_0001'));
+        final c = await compatRunner(runner);
+        await c.start(askMcuModel: (_) async => 'zt3');
+        expect(
+          c.sub,
+          contains('requires an identified, supported firmware version'),
+        );
+        expect(runner.wroteFlash, isFalse);
+      },
+    );
 
     test('declaring GT3 is refused like a GT3 banner', () async {
       final runner = _RecordingRunner(_dump(banner: 'SCOOTER_MCU_0001'));
