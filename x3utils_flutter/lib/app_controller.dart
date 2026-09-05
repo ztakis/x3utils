@@ -1680,7 +1680,15 @@ class AppController extends ChangeNotifier {
   void _finishCompatRecovery({String? detail, bool verified = false}) {
     final attempt = _compatAttempt;
     if (attempt == null || !attempt.unresolved) return;
-    if (detail != null) attempt.failure = detail;
+    // The raw backend status belongs in the console, not on the result card:
+    // it overflowed the phone hero and pushed Dismiss off-screen. Logged here
+    // rather than at each call site so EVERY detail source lands in the log —
+    // some of these come from the ST-Link layer and are not otherwise echoed,
+    // and dropping one outright would hide it.
+    if (detail != null) {
+      attempt.failure = detail;
+      _log(detail);
+    }
     if (verified) {
       attempt.status = _CompatStatus.verifiedResetUnconfirmed;
     } else if (attempt.status == _CompatStatus.flashing) {
@@ -1710,8 +1718,11 @@ class AppController extends ChangeNotifier {
       'Recovery',
       resetFailed
           ? 'Image verified; reset unconfirmed'
-          : 'SHU compatibility was not completed',
-      attempt.failure == null ? guidance : '$guidance\n${attempt.failure}',
+          // Short enough to stay on ONE line in the 30 px hero on a phone; the
+          // old wording wrapped to two and helped push Dismiss off-screen.
+          : 'SHU compat failed',
+      // Guidance only. The failure detail is in the console/log above.
+      guidance,
     );
     messageTone = MessageTone.danger;
     notifyListeners();

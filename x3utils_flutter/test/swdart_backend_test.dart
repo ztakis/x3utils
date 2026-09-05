@@ -87,7 +87,7 @@ Uint8List _identifiedMcuSram({required int versionValue}) {
   const offset = 0x420;
   bytes[offset] = 0x5c;
   bytes[offset + 1] = 0x51;
-  bytes.setRange(offset + 0x20, offset + 0x30, 'Z025B4G25BM30168'.codeUnits);
+  bytes.setRange(offset + 0x20, offset + 0x30, 'Z025XXXXXXXXXXXX'.codeUnits);
   bytes[offset + 0x32] = versionValue & 0xff;
   bytes[offset + 0x33] = versionValue >> 8;
   return bytes;
@@ -1718,7 +1718,7 @@ void main() {
         versionValue: 0x157,
         banner: 'SCOOTER_MCU_0001',
       );
-      const controllerSnMn = 'Z025B4G25BM30168';
+      const controllerSnMn = 'Z025XXXXXXXXXXXX';
       bytes.setRange(
         kControllerSnMnOffset,
         kControllerSnMnOffset + kControllerSnMnLength,
@@ -1763,13 +1763,13 @@ void main() {
       expect(firmware['modelSource'], 'operatorDeclared');
       expect(firmware['mcuModelUserProvided'], isTrue);
       expect(firmware['version'], '1.5.7');
-      // SN/MN is no longer emitted anywhere — not the flash controllerSnMn in
-      // rom.identity, and not the RAM candidates in the ram section.
+      // Flash-derived SN/MN belongs in rom.identity; the RAM section still
+      // emits no SN/MN, pending a cross-check against fresh RAM dumps.
       final ram = extra['ram'] as Map;
       expect(ram.containsKey('controllerSnMnCandidates'), isFalse);
       final identity = (extra['rom'] as Map)['identity'] as Map;
       expect(identity['scooterSerial'], isNull);
-      expect(identity.containsKey('controllerSnMn'), isFalse);
+      expect(identity.containsKey('controllerSnMn'), isTrue);
     },
   );
 

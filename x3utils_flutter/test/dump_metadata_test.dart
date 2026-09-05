@@ -57,7 +57,8 @@ void _writeZp(List<int> bytes, int payloadLength) {
 void main() {
   test('reads known VCU metadata and UID words from a full dump', () {
     final bytes = _dump('SCOOTER_VCU_xxG3');
-    const serial = '1CGCC9926C8115';
+    const serial = '1CGCXXXXXXXXXX';
+    const boardSnMn = 'Z03BXXXXXXXXXXXX';
     final uid = [
       0x9B,
       0xC4,
@@ -81,6 +82,17 @@ void main() {
       kSerialBackupOffset,
       kSerialBackupOffset + kSerialLength,
       serial.codeUnits,
+    );
+    // A VCU's own board SN/MN sits one record field past the scooter serial.
+    bytes.setRange(
+      kBoardSnMnOffset,
+      kBoardSnMnOffset + kControllerSnMnLength,
+      boardSnMn.codeUnits,
+    );
+    bytes.setRange(
+      kBoardSnMnBackupOffset,
+      kBoardSnMnBackupOffset + kControllerSnMnLength,
+      boardSnMn.codeUnits,
     );
     bytes.setRange(
       DumpMetadata.uidPrimaryOffset,
@@ -121,7 +133,9 @@ void main() {
     expect(info['scooterSerial'], serial);
     // 'real' is the boring default and is intentionally not emitted.
     expect(info.containsKey('scooterSerialState'), isFalse);
-    expect(info.containsKey('controllerSnMn'), isFalse);
+    // A VCU carries its own board SN/MN at 0x1F040, behind the scooter serial.
+    expect(info['controllerSnMn'], boardSnMn);
+    expect(info.containsKey('controllerSnMnState'), isFalse);
     expect(info.containsKey('serial'), isFalse);
     expect(info['uid'], 'C49B0DB900002193A70705E8');
     expect(info['uidState'], 'matched');
@@ -177,7 +191,7 @@ void main() {
 
   test('does not infer an MCU model and records conflicting UID copies', () {
     final bytes = _dump('SCOOTER_MCU_0001');
-    const controllerSnMn = 'Z025B4G25BM30168';
+    const controllerSnMn = 'Z025XXXXXXXXXXXX';
     bytes.setRange(
       kControllerSnMnOffset,
       kControllerSnMnOffset + kControllerSnMnLength,
@@ -210,8 +224,9 @@ void main() {
     expect(info['versionVerdict'], 'modelRequired');
     expect(info['scooterSerial'], isNull);
     expect(info['scooterSerialState'], isNull);
-    // controllerSnMn is intentionally not emitted (dropped as low-value).
-    expect(info.containsKey('controllerSnMn'), isFalse);
+    // Both identity copies agree, so `matched` stays the unstated default.
+    expect(info['controllerSnMn'], controllerSnMn);
+    expect(info.containsKey('controllerSnMnState'), isFalse);
     expect(info.containsKey('serial'), isFalse);
     expect(info['uid'], isNull);
     expect(info['uidState'], 'conflict');
@@ -358,18 +373,69 @@ void main() {
       expect(value(absent, 'XTEA'), '— (not detected)');
     });
 
-    test('MCU rows hide both scooter serial and controller SN/MN', () {
+    test('MCU rows keep SN/MN out of the Serial label but do show it', () {
       final rows = DumpMetadata.rows({
         'type': 'MCU',
         'backup': 'dump.bin',
         'scooterSerial': null,
-        'controllerSnMn': 'Z025B4G25BM30168',
+        'controllerSnMn': 'Z025XXXXXXXXXXXX',
         'controllerSnMnState': 'matched',
       });
 
       expect(rows.any((row) => row.label == 'Serial'), isFalse);
-      expect(rows.any((row) => row.label == 'SN/MN'), isFalse);
       expect(rows.any((row) => row.label == 'Part Number'), isFalse);
+      final snMn = rows.firstWhere((row) => row.label == 'SN/MN');
+      expect(snMn.display(revealed: true), 'Z025XXXXXXXXXXXX (matched)');
+      expect(snMn.secret, isTrue);
+    });
+
+    test(
+      'a matched SN/MN is stated in the modal even though the JSON omits it',
+      () {
+        final rows = DumpMetadata.rows({
+          'type': 'MCU',
+          'backup': 'dump.bin',
+          'controllerSnMn': 'Z025XXXXXXXXXXXX',
+        });
+
+        expect(rows.firstWhere((row) => row.label == 'SN/MN').state, 'matched');
+      },
+    );
+
+    test('a sidecar written before SN/MN was recorded says so', () {
+      final rows = DumpMetadata.rows({'type': 'MCU', 'backup': 'dump.bin'});
+
+      final snMn = rows.firstWhere((row) => row.label == 'SN/MN');
+      expect(snMn.display(revealed: true), '— (not recorded)');
+    });
+
+    test('a VCU gets its own board SN/MN row alongside the scooter serial', () {
+      final rows = DumpMetadata.rows({
+        'type': 'VCU',
+        'backup': 'dump.bin',
+        'scooterSerial': '1EFE0000000001',
+        'controllerSnMn': 'Z03BXXXXXXXXXXXX',
+      });
+
+      expect(rows.any((row) => row.label == 'Serial'), isTrue);
+      expect(
+        rows.firstWhere((row) => row.label == 'SN/MN').display(revealed: true),
+        'Z03BXXXXXXXXXXXX (matched)',
+      );
+    });
+
+    test('a genericized SN/MN is shown but never read as the sticker', () {
+      final rows = DumpMetadata.rows({
+        'type': 'VCU',
+        'backup': 'dump.bin',
+        'controllerSnMn': 'Z03B000000000001',
+        'controllerSnMnState': 'generic',
+      });
+
+      expect(
+        rows.firstWhere((row) => row.label == 'SN/MN').display(revealed: true),
+        'Z03B000000000001 (factory-generic)',
+      );
     });
   });
 }

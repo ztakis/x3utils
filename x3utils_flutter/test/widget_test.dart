@@ -1366,7 +1366,7 @@ void main() {
   "model": "g3",
   "version": "1.6.1",
   "versionVerdict": "identified",
-  "serial": "1CGCC9926C8115",
+  "serial": "1CGCXXXXXXXXXX",
   "serialState": "real",
   "uid": "C49B0DB900002193A70705E8",
   "uidState": "matched",
@@ -1411,9 +1411,10 @@ void main() {
     await tester.pump();
     expect(find.text('Backup info'), findsOneWidget);
     expect(find.text('UID'), findsOneWidget);
-    // Ten rows, not eleven: a sidecar only exists for a dump that already
-    // validated, so a Verdict row could only ever say `ok`.
-    expect(find.byType(SelectableText), findsNWidgets(10));
+    // Eleven rows, not twelve: a sidecar only exists for a dump that already
+    // validated, so a Verdict row could only ever say `ok`. The eleventh is
+    // the board SN/MN, which a VCU carries as well as its scooter serial.
+    expect(find.byType(SelectableText), findsNWidgets(11));
     expect(find.text('Verdict'), findsNothing);
     expect(find.text('Key ASCII'), findsOneWidget);
     expect(find.text('Key hex'), findsOneWidget);
@@ -1441,7 +1442,7 @@ void main() {
     await tester.tap(find.text('Reveal'));
     await tester.pump();
     expect(shownValues(), contains('C49B 0DB9 0000 2193 A707 05E8 (matched)'));
-    expect(shownValues(), contains('1CGCC9926C8115'));
+    expect(shownValues(), contains('1CGCXXXXXXXXXX'));
     expect(shownValues(), contains('OmZhXbB2MgUo2t3E'));
     expect(
       shownValues(),
@@ -1470,7 +1471,8 @@ void main() {
       '''
 Backup      dump.bin
 Firmware    G3 VCU 1.6.1 (identified)
-Serial      1CGCC9926C8115
+Serial      1CGCXXXXXXXXXX
+SN/MN       — (not recorded)
 UID         C49B 0DB9 0000 2193 A707 05E8 (matched)
 Key ASCII   OmZhXbB2MgUo2t3E
 Key hex     4F 6D 5A 68 58 62 42 32 4D 67 55 6F 32 74 33 45
@@ -1565,7 +1567,7 @@ ZP          59028 payload / 59032 encoded (readable)'''
     expect(find.text('Backup info'), findsOneWidget);
     expect(find.textContaining('operator-declared'), findsOneWidget);
     expect(find.text('Serial'), findsNothing);
-    expect(find.text('SN/MN'), findsNothing);
+    expect(find.text('SN/MN'), findsOneWidget);
     expect(find.text('Part Number'), findsNothing);
     final persisted = DumpMetadata.readJson(sidecar);
     expect(persisted['model'], 'g3');

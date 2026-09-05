@@ -55,8 +55,8 @@ Uint8List _slotBin({String? banner}) {
 
 void main() {
   // Bench-confirmed real/generic pairs (14 chars — the on-flash length).
-  const realZt3 = '1K1EA2510P1673';
-  const realG3 = '1CGCC9926C8115';
+  const realZt3 = '1K1EXXXXXXXXXX';
+  const realG3 = '1CGCXXXXXXXXXX';
   const genericZt3 = '1K1E0000000001';
   const genericG3 = '1CGC0000000001';
 
@@ -122,7 +122,7 @@ void main() {
   });
 
   group('readControllerSnMn classification', () {
-    const snMn = 'Z025B4G25BM30168';
+    const snMn = 'Z025XXXXXXXXXXXX';
 
     test('preserves two matching 16-character copies', () {
       final identity = DeviceSpec.readControllerSnMn(
@@ -401,7 +401,7 @@ void main() {
     });
 
     test('MCU full image keeps SN/MN separate from scooter serial', () {
-      const snMn = 'Z025B4G25BM30168';
+      const snMn = 'Z025XXXXXXXXXXXX';
       final id = DeviceSpec.describeBin(
         _fullImage(banner: _mcuBanner, controllerSnMn: snMn),
         slotBin: false,

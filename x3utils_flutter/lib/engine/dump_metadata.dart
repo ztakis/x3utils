@@ -87,6 +87,15 @@ class DumpMetadata {
       // boring default and just clutters the sidecar.
       if (identity.serial != null && identity.serial!.state.name != 'real')
         'scooterSerialState': identity.serial!.state.name,
+      // The board's own SN/MN — an MCU keeps it at 0x1F020, a VCU at 0x1F040
+      // behind the scooter serial. Present-but-null says this analyzer looked
+      // and found nothing readable; an absent key would mean an older analyzer
+      // never knew about it. `matched` is the boring default and is left
+      // unstated, exactly as for the scooter serial above.
+      'controllerSnMn': identity.controllerSnMn?.value,
+      if (identity.controllerSnMn != null &&
+          identity.controllerSnMn!.state != ControllerSnMnState.matched)
+        'controllerSnMnState': identity.controllerSnMn!.state.name,
       'uid': uid.value,
       'uidState': uid.state,
       'uidPrimary': uid.primary,
@@ -302,9 +311,9 @@ class DumpMetadata {
           infoText(metadata['model']).toUpperCase(),
           state: 'operator-declared; MCU firmware does not encode it',
         ),
-      // Scooter serial is a VCU identity and region indicator. MCU controller
-      // SN/MN is retained in JSON only; showing it here as Serial confused a
-      // controller manufacturing identifier with the scooter identity.
+      // Scooter serial is a VCU identity and region indicator. The controller
+      // SN/MN gets its OWN labelled row below: showing it as `Serial` was what
+      // confused a board manufacturing identifier with the scooter identity.
       if (metadata['type'] == 'VCU')
         InfoRow(
           'Serial',
@@ -314,6 +323,28 @@ class DumpMetadata {
             'cleared' => 'cleared',
             'none' => 'unreadable',
             _ => null,
+          },
+          secret: true,
+        ),
+      // The board's own SN/MN, as printed on its sticker — VCU and MCU alike.
+      // Unlike the JSON, `matched` IS shown here: the operator is comparing
+      // this against a physical label, so "both copies agree" is worth seeing.
+      // A sidecar written while the field was unrecorded says so rather than
+      // rendering an empty row as if the board had no SN/MN.
+      if (metadata['type'] != null)
+        InfoRow(
+          'SN/MN',
+          infoText(metadata['controllerSnMn']),
+          state: switch (metadata['controllerSnMnState'] as String?) {
+            // Shape-valid but not a printed number: still shown, never
+            // presented as the sticker value. Deliberately says WHAT it is and
+            // not how it got that way — boards observed 2026-09-05 carry a
+            // real serial AND a real SN/MN, so provisioning does not explain
+            // it and the row must not claim a mechanism.
+            'generic' => 'factory-generic',
+            final String state => state,
+            null when metadata['controllerSnMn'] == null => 'not recorded',
+            null => 'matched',
           },
           secret: true,
         ),

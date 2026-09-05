@@ -307,6 +307,15 @@ class ExtraBackupMetadata {
           'scooterSerial': scooterSerial,
           if (scooterSerialState != null && scooterSerialState != 'real')
             'scooterSerialState': scooterSerialState,
+          // The board's own SN/MN, the scooter serial's sibling: an MCU keeps
+          // it at 0x1F020, a VCU at 0x1F040 behind the serial. Same read and
+          // same state idiom as the ordinary sidecar — `matched` is the boring
+          // default and stays unstated; `generic` marks a shape-valid value
+          // that is NOT the number printed on the board.
+          'controllerSnMn': rom.controllerSnMn?.value,
+          if (rom.controllerSnMn != null &&
+              rom.controllerSnMn!.state != ControllerSnMnState.matched)
+            'controllerSnMnState': rom.controllerSnMn!.state.name,
           'uidState': backupMetadata['uidState'],
           'zpState': backupMetadata['zpState'],
         },
@@ -502,6 +511,12 @@ class ExtraBackupMetadata {
       'version': runtime?.version?.toString(),
       'tableOffsets': runtime?.tableOffsets.map(_hexOffset).toList(),
       'scooterSerial': runtime?.serial,
+      // The VALUE is carried, not just a match-state: on a read-protected
+      // controller `rom` is null and this is the only board identity that
+      // exists. The state says how far to trust it — `generic` is a firmware
+      // constant, `conflict` means the tables disagreed and none was chosen.
+      'boardSnMn': runtime?.boardSnMn,
+      'boardSnMnState': runtime?.boardSnMnState.name,
     };
   }
 

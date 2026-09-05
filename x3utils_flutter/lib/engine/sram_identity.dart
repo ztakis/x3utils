@@ -1,9 +1,28 @@
+import 'device_spec.dart';
 import 'fw_version.dart';
 
 const int kSramBase = 0x20000000;
 const int kAt32f415SramLength = 32 * 1024;
 
 enum SramIdentityVerdict { identified, notFound, conflicting }
+
+/// How much a runtime board SN/MN is worth. RAM has no flash to check against
+/// on the capture that matters most — a read-protected controller — so the
+/// state, not a comparison, is what tells a reader how far to trust the value.
+enum SramSnMnState {
+  /// Exactly one non-generic value across every runtime table.
+  resolved,
+
+  /// Every table carried a known factory-generic value ([kGenericBoardSnMn]).
+  /// Reported, but it is not the number printed on the board.
+  generic,
+
+  /// Two or more DIFFERENT non-generic values. Never silently pick one.
+  conflict,
+
+  /// No table carried a shape-valid SN/MN field.
+  notFound,
+}
 
 class SramIdentity {
   const SramIdentity({
@@ -15,6 +34,8 @@ class SramIdentity {
     this.regionCode,
     this.regionLabel,
     this.controllerSnMnCandidates = const [],
+    this.boardSnMn,
+    this.boardSnMnState = SramSnMnState.notFound,
   });
 
   final String type;
@@ -34,6 +55,16 @@ class SramIdentity {
   final String? regionCode;
   final String? regionLabel;
   final List<String> controllerSnMnCandidates;
+
+  /// The board's own SN/MN as the RUNNING firmware holds it — a VCU keeps it
+  /// at marker+0x40 behind the scooter serial, an MCU at marker+0x20. Read
+  /// structurally, with no flash involved, so it survives a read-protected
+  /// controller where no backup exists at all.
+  ///
+  /// Null unless [boardSnMnState] is [SramSnMnState.resolved] or
+  /// [SramSnMnState.generic]; a conflict deliberately exposes no value.
+  final String? boardSnMn;
+  final SramSnMnState boardSnMnState;
 
   String get displayModel => serialModel?.toUpperCase() ?? 'UNKNOWN MODEL';
 }
@@ -129,6 +160,12 @@ class SramIdentityParser {
             version: _versionAt(bytes, offset + _vcuVersionOffset),
             offset: offset,
             identityText: serial,
+            // A VCU's own SN/MN sits past the scooter serial, at +0x40.
+            boardSnMn: _asciiAt(
+              bytes,
+              offset + _secondIdOffset,
+              _mcuSnMnLength,
+            ),
           ),
         );
         continue;
@@ -145,6 +182,8 @@ class SramIdentityParser {
             version: _versionAt(bytes, offset + _mcuVersionOffset),
             offset: offset,
             identityText: controllerSnMn,
+            // An MCU's SN/MN IS its +0x20 id; +0x40 is empty on this component.
+            boardSnMn: controllerSnMn,
           ),
         );
       }
@@ -196,6 +235,7 @@ class SramIdentityParser {
     final prefix = serial?.substring(0, 3);
     final regionCode = serial?.substring(3, 4);
     final regionKey = serial?.substring(0, 4);
+    final snMn = _resolveBoardSnMn(candidates);
     return SramIdentityResult(
       SramIdentityVerdict.identified,
       identity: SramIdentity(
@@ -207,8 +247,40 @@ class SramIdentityParser {
         regionCode: regionCode,
         regionLabel: regionKey == null ? null : regionLabels[regionKey],
         controllerSnMnCandidates: controllerSnMnCandidates,
+        boardSnMn: snMn.value,
+        boardSnMnState: snMn.state,
       ),
     );
+  }
+
+  /// Reduce every table's SN/MN to one answer, PREFERRING THE NON-GENERIC.
+  ///
+  /// Runtime tables genuinely disagree: an MCU on firmware 1.5.2 carries the
+  /// compiled-in default `Z025000000000000` in one table and its real SN/MN in
+  /// the others (measured on two controllers of DIFFERENT families, 2026-09-05,
+  /// which is what proves it a firmware constant rather than a per-board or
+  /// awaiting-binding value). Taking the first table would report the default
+  /// as if it were the board.
+  ///
+  /// A read-protected controller has no flash to arbitrate with, so the rule
+  /// cannot be "whichever matches flash": drop known-generic values, and if
+  /// what remains still disagrees, say so instead of choosing.
+  static ({String? value, SramSnMnState state}) _resolveBoardSnMn(
+    List<_SramCandidate> candidates,
+  ) {
+    final all = candidates
+        .map((candidate) => candidate.boardSnMn)
+        .whereType<String>()
+        .toSet();
+    if (all.isEmpty) return (value: null, state: SramSnMnState.notFound);
+    final real = all.where((v) => !kGenericBoardSnMn.contains(v)).toSet();
+    if (real.isEmpty) {
+      return (value: all.first, state: SramSnMnState.generic);
+    }
+    if (real.length > 1) {
+      return (value: null, state: SramSnMnState.conflict);
+    }
+    return (value: real.single, state: SramSnMnState.resolved);
   }
 
   static String? _asciiAt(List<int> bytes, int offset, int length) {
@@ -245,10 +317,14 @@ class _SramCandidate {
     required this.version,
     required this.offset,
     required this.identityText,
+    this.boardSnMn,
   });
 
   final String type;
   final FwVersion? version;
   final int offset;
   final String identityText;
+
+  /// This table's board SN/MN, whichever field held it for the component.
+  final String? boardSnMn;
 }

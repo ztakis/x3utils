@@ -156,7 +156,10 @@ void main() {
           expect(c.autoRetryArmed, isFalse);
           expect(c.sub, contains('Restore a known-good full image'));
           expect(c.sub, isNot(contains('press Retry')));
-          expect(c.sub, contains('simulated interrupted flash'));
+          // The raw failure detail stays OUT of the hero — it overflowed the
+          // phone card — but must still be reachable in the console.
+          expect(c.sub, isNot(contains('simulated interrupted flash')));
+          expect(c.console.join('\n'), contains('simulated interrupted flash'));
           final originalPath = c.resultPath;
           final originalCount = backend.requests.length;
           await c.retry(auto: true);

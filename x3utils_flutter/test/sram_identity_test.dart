@@ -69,7 +69,7 @@ void main() {
   test('identifies MCU from agreeing tables with different SN/MN values', () {
     final bytes = Uint8List(kAt32f415SramLength);
     _putTable(bytes, 0x420, version: 0x152, identity: 'Z025000000000000');
-    _putTable(bytes, 0x1d84, version: 0x152, identity: 'Z025B4G25BM30168');
+    _putTable(bytes, 0x1d84, version: 0x152, identity: 'Z025XXXXXXXXXXXX');
 
     final result = SramIdentityParser.parse(bytes);
 
@@ -80,8 +80,69 @@ void main() {
     expect(result.identity!.serialModel, isNull);
     expect(result.identity!.controllerSnMnCandidates, [
       'Z025000000000000',
-      'Z025B4G25BM30168',
+      'Z025XXXXXXXXXXXX',
     ]);
+    // Measured layout: firmware 1.5.2 keeps its compiled-in default in the
+    // 0x420 table and the board's real SN/MN in the other. Taking the first
+    // table would report the default as the board.
+    expect(result.identity!.boardSnMn, 'Z025XXXXXXXXXXXX');
+    expect(result.identity!.boardSnMnState, SramSnMnState.resolved);
+  });
+
+  test('a VCU resolves its board SN/MN from the +0x40 field', () {
+    final bytes = Uint8List(kAt32f415SramLength);
+    _putTable(
+      bytes,
+      0x1ab0,
+      marker2: 0x51,
+      version: 0x155,
+      identity: '1K1UXXXXXXXXXX',
+      secondField: 'Z03XXXXXXXXXXXXX',
+    );
+
+    final result = SramIdentityParser.parse(bytes);
+
+    expect(result.identity!.serial, '1K1UXXXXXXXXXX');
+    expect(result.identity!.boardSnMn, 'Z03XXXXXXXXXXXXX');
+    expect(result.identity!.boardSnMnState, SramSnMnState.resolved);
+  });
+
+  test('every table generic reports the value but not as the board', () {
+    final bytes = Uint8List(kAt32f415SramLength);
+    _putTable(bytes, 0x420, version: 0x152, identity: 'Z025000000000000');
+
+    final result = SramIdentityParser.parse(bytes);
+
+    expect(result.identity!.boardSnMn, 'Z025000000000000');
+    expect(result.identity!.boardSnMnState, SramSnMnState.generic);
+  });
+
+  test('two different real SN/MN values conflict instead of picking one', () {
+    final bytes = Uint8List(kAt32f415SramLength);
+    _putTable(bytes, 0x420, version: 0x152, identity: 'Z025XXXXXXXXXXXX');
+    _putTable(bytes, 0x1d84, version: 0x152, identity: 'Z07XXXXXXXXXXXXX');
+
+    final result = SramIdentityParser.parse(bytes);
+
+    expect(result.identity!.boardSnMnState, SramSnMnState.conflict);
+    expect(result.identity!.boardSnMn, isNull);
+  });
+
+  test('a VCU with no +0x40 field reports notFound, not a wrong value', () {
+    final bytes = Uint8List(kAt32f415SramLength);
+    _putTable(
+      bytes,
+      0x1ab0,
+      marker2: 0x51,
+      version: 0x155,
+      identity: '1K1UXXXXXXXXXX',
+    );
+
+    final result = SramIdentityParser.parse(bytes);
+
+    expect(result.identity!.serial, '1K1UXXXXXXXXXX');
+    expect(result.identity!.boardSnMn, isNull);
+    expect(result.identity!.boardSnMnState, SramSnMnState.notFound);
   });
 
   test('rejects marker bytes without a valid identity table', () {
@@ -142,7 +203,7 @@ void main() {
       0x420,
       marker2: 0x51,
       version: 0x152,
-      identity: 'Z025B4G25BM30168',
+      identity: 'Z025XXXXXXXXXXXX',
     );
 
     final result = SramIdentityParser.parse(bytes);

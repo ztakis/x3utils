@@ -12,7 +12,7 @@ void main() {
     test('reports supported full-image evidence without certifying it', () {
       final image = _fullImage(
         banner: 'SCOOTER_VCU_xxU2',
-        serial: '1K1EA2510P1673',
+        serial: '1K1EXXXXXXXXXX',
         zpPayloadLength: 51204,
       );
 
@@ -116,7 +116,7 @@ void main() {
     test('conflicting ZP evidence uses simple wording', () {
       final image = _fullImage(
         banner: 'SCOOTER_VCU_xxU2',
-        serial: '1K1EA2510P1673',
+        serial: '1K1EXXXXXXXXXX',
       );
       _writeZpRecord(image, 0x1F100, 51204);
       _writeZpRecord(image, 0x1F300, 52004);

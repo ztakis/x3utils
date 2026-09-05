@@ -154,8 +154,15 @@ void main() {
       expect(_value(initial.report.rows, 'Firmware'), startsWith('MCU'));
       expect(_has(initial.report.rows, 'Model'), isFalse);
       expect(_has(initial.report.rows, 'Serial'), isFalse);
-      expect(_has(initial.report.rows, 'SN/MN'), isFalse);
       expect(_has(initial.report.rows, 'Part Number'), isFalse);
+      // The fixture is all zeros at the identity page, so the row is present
+      // and explicitly blank rather than silently missing.
+      expect(
+        initial.report.rows
+            .firstWhere((row) => row.label == 'SN/MN')
+            .display(revealed: true),
+        '— (blank)',
+      );
 
       final declared = FileInfo.inspect(file.path, declaredMcuModel: 'g3');
       expect(declared.needsMcuModel, isFalse);
@@ -317,12 +324,12 @@ void main() {
     test('a secret row masks its value but never its state', () {
       const row = InfoRow(
         'Serial',
-        '1CGCC9926C8115',
+        '1CGCXXXXXXXXXX',
         state: 'real',
         secret: true,
       );
       expect(row.display(revealed: false), '•••••••••••••• (real)');
-      expect(row.display(revealed: true), '1CGCC9926C8115 (real)');
+      expect(row.display(revealed: true), '1CGCXXXXXXXXXX (real)');
     });
 
     test('an absent value is never masked', () {

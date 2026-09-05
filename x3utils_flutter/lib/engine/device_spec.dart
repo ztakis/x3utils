@@ -101,8 +101,11 @@ const kSerialPrefixToModel = <String, String>{
 /// overwrites them with the bound serial on "did you replace a part?").
 /// Known strings only — add per model/region as they are observed on real
 /// parts; an unknown-but-valid serial is simply treated as real.
-/// Bench-confirmed real/generic pairs: ZT3 org 1K1EA2510P1673, G3 org
-/// 1CGCC9926C8115.
+///
+/// Each entry below was confirmed against a bench board carrying the matching
+/// real serial. Those per-unit values are NOT recorded here: this is a public
+/// repository, and a generic string is shared by every replacement part while
+/// a real serial identifies one owner's vehicle.
 const kGenericSerials = <String>{
   '1K1E0000000001', // ZT3, Europe
   '1CGC0000000001', // G3
@@ -119,6 +122,33 @@ const kControllerSnMnOffset = 0x1F020;
 const kControllerSnMnBackupOffset = 0x1F420;
 const kControllerSnMnLength = 16;
 final _controllerSnMnRe = RegExp(r'^[0-9A-Za-z]{16}$');
+
+/// A VCU carries its OWN board SN/MN one record field further along, at
+/// marker+0x40, because marker+0x20 is already spent on the scooter serial.
+/// Bench-confirmed 2026-09-05: a pre-provisioning F3 dashboard read
+/// `Z03B…` at this offset matching its physical sticker byte-for-byte, while
+/// its scooter serial was still the factory-generic `1EF…`.
+const kBoardSnMnOffset = 0x1F040;
+const kBoardSnMnBackupOffset = 0x1F440;
+
+/// Factory-generic board SN/MN values, the SN/MN counterpart of
+/// [kGenericSerials]: shape-valid, but not the number printed on the board.
+///
+/// WHY a board carries one is UNEXPLAINED. Provisioning is NOT the cause —
+/// of five boards read 2026-09-05, three had a real scooter serial AND a real
+/// SN/MN, and a boxed pre-provisioning spare also had a real SN/MN. Only one
+/// G3 dashboard was generic. Do not encode a mechanism here until one is
+/// evidenced; the state says what the value is, not how it got there.
+///
+/// Known strings only — never a zeros-pattern guess, exactly as for serials.
+const kGenericBoardSnMn = <String>{
+  'Z03B000000000001', // dashboard/VCU board family, seen in flash
+  // MCU firmware 1.5.2 carries this compiled-in: it appeared in one runtime
+  // table on TWO controllers of different families (`Z07X…` and `Z025…`),
+  // alongside each board's real SN/MN in the other tables. Same string on
+  // different boards is what makes it a firmware constant, not identity.
+  'Z025000000000000',
+};
 
 /// What a serial region turned out to hold.
 enum SerialState {
@@ -155,6 +185,10 @@ enum ControllerSnMnState {
   conflict,
   blank,
   unreadable,
+
+  /// A known factory-generic value ([kGenericBoardSnMn]). Shape-valid, but it
+  /// is NOT the number printed on the board, so it must never be read as one.
+  generic,
 }
 
 /// MCU-only controller SN/MN evidence from both full-flash identity copies.
@@ -385,9 +419,19 @@ class DeviceSpec {
       bannerSupported: supportedBanner != null,
       slotBin: slotBin,
       serial: !slotBin && bannerType == 'VCU' ? readSerial(bytes) : null,
-      controllerSnMn: !slotBin && bannerType == 'MCU'
-          ? readControllerSnMn(bytes)
-          : null,
+      // Both components carry a board SN/MN, just in different record fields:
+      // an MCU at marker+0x20, a VCU at marker+0x40 behind its scooter serial.
+      controllerSnMn: slotBin || bannerType == null
+          ? null
+          : readControllerSnMn(
+              bytes,
+              primaryOffset: bannerType == 'MCU'
+                  ? kControllerSnMnOffset
+                  : kBoardSnMnOffset,
+              backupOffset: bannerType == 'MCU'
+                  ? kControllerSnMnBackupOffset
+                  : kBoardSnMnBackupOffset,
+            ),
     );
   }
 
@@ -413,16 +457,24 @@ class DeviceSpec {
     return const SerialInfo(SerialState.none);
   }
 
-  /// Read the two MCU controller SN/MN copies without treating either as the
-  /// scooter serial. A value is exposed only when at least one complete,
-  /// shape-valid 16-character copy exists; conflicts preserve both copies.
-  static ControllerSnMnInfo readControllerSnMn(List<int> b) {
-    final primary = _controllerSnMnTextAt(b, kControllerSnMnOffset);
-    final backup = _controllerSnMnTextAt(b, kControllerSnMnBackupOffset);
+  /// Read the two board SN/MN copies without treating either as the scooter
+  /// serial. A value is exposed only when at least one complete, shape-valid
+  /// 16-character copy exists; conflicts preserve both copies.
+  ///
+  /// The offsets differ by component — an MCU keeps its SN/MN at marker+0x20,
+  /// a VCU at marker+0x40 — so the caller supplies them rather than this
+  /// reader assuming the MCU layout.
+  static ControllerSnMnInfo readControllerSnMn(
+    List<int> b, {
+    int primaryOffset = kControllerSnMnOffset,
+    int backupOffset = kControllerSnMnBackupOffset,
+  }) {
+    final primary = _controllerSnMnTextAt(b, primaryOffset);
+    final backup = _controllerSnMnTextAt(b, backupOffset);
     if (primary != null && backup != null) {
       return primary == backup
           ? ControllerSnMnInfo(
-              ControllerSnMnState.matched,
+              _matchedOrGeneric(primary),
               value: primary,
               primary: primary,
               backup: backup,
@@ -447,12 +499,20 @@ class DeviceSpec {
         backup: backup,
       );
     }
-    if (_regionBlank(b, kControllerSnMnOffset, kControllerSnMnLength) &&
-        _regionBlank(b, kControllerSnMnBackupOffset, kControllerSnMnLength)) {
+    if (_regionBlank(b, primaryOffset, kControllerSnMnLength) &&
+        _regionBlank(b, backupOffset, kControllerSnMnLength)) {
       return const ControllerSnMnInfo(ControllerSnMnState.blank);
     }
     return const ControllerSnMnInfo(ControllerSnMnState.unreadable);
   }
+
+  /// Some boards carry a shape-valid SN/MN that is not the one on their
+  /// sticker. The value is still reported — it is what the flash says — but
+  /// the state stops it being read as the printed number.
+  static ControllerSnMnState _matchedOrGeneric(String value) =>
+      kGenericBoardSnMn.contains(value)
+      ? ControllerSnMnState.generic
+      : ControllerSnMnState.matched;
 
   /// A human note when this flash changes the device serial (full-image writes
   /// only — [incoming] null means a slot write, which preserves user space).

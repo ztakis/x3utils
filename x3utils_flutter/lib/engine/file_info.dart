@@ -240,8 +240,8 @@ class FileInfo {
           state: version.verdict,
         ),
         if (mcuModel != null) _declaredMcuModelRow(mcuModel),
-        // Scooter serial is VCU-only. MCU controller SN/MN remains available
-        // in JSON metadata but is deliberately absent from user-facing info.
+        // Scooter serial is VCU-only; the controller SN/MN gets its own row
+        // below rather than borrowing the `Serial` label.
         if (identity.bannerType == 'VCU')
           InfoRow(
             'Serial',
@@ -251,6 +251,19 @@ class FileInfo {
               'cleared' => 'cleared',
               'none' => 'unreadable',
               _ => null,
+            },
+            secret: true,
+          ),
+        // Read fresh from the bytes, so `matched` is always determinable here —
+        // no "not recorded" case, unlike a sidecar written by an older build.
+        if (identity.bannerType != null)
+          InfoRow(
+            'SN/MN',
+            infoText(facts['controllerSnMn']),
+            state: switch (facts['controllerSnMnState'] as String?) {
+              'generic' => 'factory-generic',
+              final String state => state,
+              null => 'matched',
             },
             secret: true,
           ),
