@@ -138,28 +138,52 @@ class At32Flash implements FlashDriver {
   /// Nothing re-enables the channels afterwards — the core is halted and the
   /// only code it runs from here is our own loader.
   ///
-  /// Best-effort per channel: a part that does not implement DMA2, or a
-  /// register that faults, must not sink a flash run that would otherwise
-  /// succeed. The staged-buffer check in [_programViaLoader] is what actually
-  /// guarantees the bytes.
+  /// Supported AT32F415 parts implement both DMA controllers. A failed read
+  /// leaves the channel's state unknown; it does not establish absence. Every
+  /// channel must be confirmed disabled before programming can proceed.
+  ///
+  /// The disable is read back rather than assumed. A write that faults, or one
+  /// the controller ignores, would otherwise leave a live channel behind while
+  /// the log claimed it was stopped — and the staged-buffer check cannot cover
+  /// that, being a point-in-time comparison: DMA can land between the readback
+  /// and the loader consuming the buffer.
   Future<void> quiesceBusMasters() async {
     var stopped = 0;
+    final unresolved = <String>[];
     for (final base in const [_dma1Base, _dma2Base]) {
       for (var channel = 0; channel < _dmaChannels; channel++) {
         final ctrl = base + _dmaChannelCtrl + channel * _dmaChannelStride;
+        final int value;
         try {
-          final value = await _probe.readDebugReg(ctrl);
-          if (value & _dmaChannelEnable == 0) continue;
+          value = await _probe.readDebugReg(ctrl);
+        } catch (error) {
+          unresolved.add('${hex(ctrl)} (read failed: $error)');
+          continue;
+        }
+        if (value & _dmaChannelEnable == 0) continue;
+        try {
           await _probe.writeDebugReg(ctrl, value & ~_dmaChannelEnable);
+          final after = await _probe.readDebugReg(ctrl);
+          if (after & _dmaChannelEnable != 0) {
+            unresolved.add('${hex(ctrl)} (still enabled, CTRL=${hex(after)})');
+            continue;
+          }
           stopped++;
-        } catch (_) {
-          // Absent controller or unreadable register — nothing to stop.
+        } catch (error) {
+          unresolved.add('${hex(ctrl)} ($error)');
         }
       }
     }
     if (stopped != 0) {
       onLog?.call(
         '[flash] stopped $stopped active DMA channel(s) before staging',
+      );
+    }
+    if (unresolved.isNotEmpty) {
+      throw SwdException(
+        'could not confirm ${unresolved.length} DMA channel(s) disabled before '
+        'staging: ${unresolved.join(', ')}. Programming aborted — a live DMA '
+        'channel can overwrite the loader buffer and put its data into flash.',
       );
     }
   }

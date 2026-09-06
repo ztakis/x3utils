@@ -84,7 +84,13 @@ class CortexM {
     await halt();
     await _probe.writeDebugReg(demcr, _vcCorereset);
     try {
-      await _probe.writeDebugReg(dhcsr, _dbgkey | _cDebugen);
+      // C_HALT stays SET across the reset request. Writing DHCSR with only
+      // C_DEBUGEN would resume the core between here and the AIRCR write, and
+      // firmware running in that window can disable SWD — blocking both the
+      // reset and the fallback below. The vector catch would still stop the
+      // core once a reset landed, but only if the reset can still be issued.
+      // Same ordering as pyOCD's set_reset_catch/_perform_reset.
+      await _probe.writeDebugReg(dhcsr, _dbgkey | _cDebugen | _cHalt);
       await _probe.writeDebugReg(aircr, _aircrSysresetreq);
       await waitHalted(1000);
     } catch (_) {

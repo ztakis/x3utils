@@ -110,6 +110,102 @@ class _RecordingProbe implements DebugProbe {
   }
 }
 
+/// A probe whose flash controller honours the unlock key sequences, so more
+/// than one erase/program cycle can run against it. The plain recording probe
+/// leaves `OPLK` set once `_deinitFlash` relocks, which fails the second
+/// unlock.
+class _FlashCapableProbe extends _RecordingProbe {
+  bool _sawFlashKey1 = false;
+  bool _sawUsdKey1 = false;
+
+  @override
+  Future<void> writeDebugReg(int address, int value) async {
+    if (address == 0x40022004 && value == 0x45670123) {
+      _sawFlashKey1 = true;
+    } else if (address == 0x40022004 && value == 0xcdef89ab && _sawFlashKey1) {
+      registers[0x40022010] = (registers[0x40022010] ?? 0) & ~(1 << 7);
+      _sawFlashKey1 = false;
+    }
+    if (address == 0x40022008 && value == 0x45670123) {
+      _sawUsdKey1 = true;
+    } else if (address == 0x40022008 && value == 0xcdef89ab && _sawUsdKey1) {
+      registers[0x40022010] = (registers[0x40022010] ?? 0) | (1 << 9);
+      _sawUsdKey1 = false;
+    }
+    await super.writeDebugReg(address, value);
+  }
+}
+
+/// DMA1 channel 1 reports itself enabled and ignores the disable, so the
+/// read-back proof in `quiesceBusMasters` cannot be satisfied.
+///
+/// With [failReads] the register faults instead, leaving its state unknown.
+class _StuckDmaProbe extends _FlashCapableProbe {
+  _StuckDmaProbe({this.failReads = false, this.channelCtrl = 0x40020008});
+
+  final bool failReads;
+  final int channelCtrl;
+
+  @override
+  Future<int> readDebugReg(int address) async {
+    if (address == channelCtrl) {
+      if (failReads) throw SwdException('DMA register read failed');
+      return 1; // CHEN, and the disable below never clears it.
+    }
+    return super.readDebugReg(address);
+  }
+
+  @override
+  Future<void> writeDebugReg(int address, int value) async {
+    if (address == channelCtrl) {
+      debugWrites.add((address, value));
+      return; // Swallowed by the controller.
+    }
+    await super.writeDebugReg(address, value);
+  }
+}
+
+/// Mimics a live bus master writing the staging buffer: the first
+/// [corruptions] readbacks come back with one byte altered.
+class _StagingCorruptionProbe extends _FlashCapableProbe {
+  _StagingCorruptionProbe({required this.corruptions});
+
+  static const _bufferAddr = 0x20000800;
+
+  final int corruptions;
+  int _corrupted = 0;
+
+  @override
+  Future<Uint8List> readMem32(int address, int length) async {
+    final bytes = await super.readMem32(address, length);
+    if (address == _bufferAddr && _corrupted < corruptions && length > 0) {
+      _corrupted++;
+      bytes[0] = 0x7d; // The ADC sample byte from the field failure.
+    }
+    return bytes;
+  }
+}
+
+/// Shutdown succeeds before erase, but an active channel cannot be disabled
+/// when the corrupted staging buffer triggers another shutdown attempt.
+class _RestagingDmaFailureProbe extends _StagingCorruptionProbe {
+  _RestagingDmaFailureProbe() : super(corruptions: 1);
+
+  @override
+  Future<int> readDebugReg(int address) async {
+    if (address == 0x40020008 && _corrupted > 0) return 1;
+    return super.readDebugReg(address);
+  }
+
+  @override
+  Future<void> writeDebugReg(int address, int value) async {
+    if (address == 0x40020008 && _corrupted > 0) {
+      throw SwdException('DMA disable failed');
+    }
+    await super.writeDebugReg(address, value);
+  }
+}
+
 class _UnderResetProbe extends _RecordingProbe {
   final connectEvents = <String>[];
 
@@ -1009,6 +1105,183 @@ void main() {
     expect(debugProbe.resetEvents, ['system reset', 'watchdog freeze']);
     expect(debugProbe.registers[0xe0042004], 0x307);
     await probe.disconnect();
+  });
+
+  test('reset-halt never resumes the core before requesting reset', () async {
+    // Regression: DHCSR was written with C_DEBUGEN alone, which clears C_HALT
+    // and resumes the firmware until the AIRCR write lands one USB transaction
+    // later. Firmware running in that window can disable SWD and block both
+    // the reset request and the nRST fallback.
+    final probe = _RecordingProbe();
+
+    await CortexM(probe).resetHalt();
+
+    const aircrAddress = 0xe000ed0c;
+    final aircrIndex = probe.debugWrites.indexWhere(
+      (write) => write.$1 == aircrAddress,
+    );
+    expect(aircrIndex, greaterThanOrEqualTo(0), reason: 'no reset requested');
+    const cHalt = 1 << 1;
+    for (var i = 0; i < aircrIndex; i++) {
+      final write = probe.debugWrites[i];
+      if (write.$1 != dhcsr) continue;
+      expect(
+        write.$2 & cHalt,
+        cHalt,
+        reason:
+            'DHCSR write 0x${write.$2.toRadixString(16)} before SYSRESETREQ '
+            'clears C_HALT and resumes the core',
+      );
+    }
+  });
+
+  test('a DMA channel that will not stop aborts before any erase', () async {
+    final debugProbe = _StuckDmaProbe()..registers[0xe0042000] = 0x700301c5;
+    final probe = Probe.withDebugProbe(debugProbe, useAt32Loader: true);
+    await probe.connect(ConnectMode.normal);
+
+    await expectLater(
+      probe.program(0x08000000, Uint8List(8192)),
+      throwsA(
+        isA<SwdException>().having(
+          (error) => error.toString(),
+          'message',
+          allOf(
+            contains('could not confirm'),
+            contains('still enabled'),
+            contains('Programming aborted'),
+          ),
+        ),
+      ),
+    );
+
+    // The point of failing here rather than at the final verify: the flash is
+    // still intact. SECERS|ERSTR is the page-erase trigger.
+    const eraseTrigger = (1 << 1) | (1 << 6);
+    expect(
+      debugProbe.debugWrites.any(
+        (write) =>
+            write.$1 == 0x40022010 && write.$2 & eraseTrigger == eraseTrigger,
+      ),
+      isFalse,
+      reason: 'flash was erased despite an unstoppable DMA channel',
+    );
+    await probe.disconnect();
+  });
+
+  test('unreadable DMA1 or DMA2 blocks before preflight and erase', () async {
+    for (final channelCtrl in [0x40020008, 0x40020408]) {
+      final debugProbe = _StuckDmaProbe(
+        failReads: true,
+        channelCtrl: channelCtrl,
+      )..registers[0xe0042000] = 0x700301c5;
+      final probe = Probe.withDebugProbe(debugProbe, useAt32Loader: true);
+      final stages = <FlashProgramStage>[];
+      await probe.connect(ConnectMode.normal);
+      try {
+        await expectLater(
+          probe.program(0x08000000, Uint8List(8192), onStage: stages.add),
+          throwsA(
+            isA<SwdException>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(
+                contains('could not confirm'),
+                contains(channelCtrl.toRadixString(16)),
+                contains('DMA register read failed'),
+              ),
+            ),
+          ),
+        );
+        expect(stages, isEmpty);
+        expect(debugProbe.memoryWrites, isEmpty);
+        expect(debugProbe.regWrites, isEmpty);
+        const eraseTrigger = (1 << 1) | (1 << 6);
+        expect(
+          debugProbe.debugWrites.where(
+            (write) =>
+                write.$1 == 0x40022010 &&
+                write.$2 & eraseTrigger == eraseTrigger,
+          ),
+          isEmpty,
+        );
+      } finally {
+        await probe.disconnect();
+      }
+    }
+  });
+
+  test('DMA failure during restaging reports abort after erase', () async {
+    final debugProbe = _RestagingDmaFailureProbe()
+      ..registers[0xe0042000] = 0x700301c5;
+    final probe = Probe.withDebugProbe(debugProbe, useAt32Loader: true);
+    final stages = <FlashProgramStage>[];
+    await probe.connect(ConnectMode.normal);
+    try {
+      await expectLater(
+        probe.program(0x08000000, Uint8List(8192), onStage: stages.add),
+        throwsA(
+          isA<SwdException>().having(
+            (error) => error.toString(),
+            'message',
+            allOf(
+              contains('DMA disable failed'),
+              contains('Programming aborted'),
+              isNot(contains('Nothing was erased')),
+            ),
+          ),
+        ),
+      );
+      expect(stages, [FlashProgramStage.ready, FlashProgramStage.erased]);
+      expect(
+        debugProbe.regWrites
+            .where((write) => write.$1 == 2)
+            .map((write) => write.$2),
+        [0],
+        reason: 'only the preflight may run; no programming chunk may launch',
+      );
+      expect(
+        debugProbe.memoryWrites.where(
+          (write) => write.$1 >= 0x08000000 && write.$1 < 0x08020000,
+        ),
+        isEmpty,
+        reason: 'a post-erase failure must not fall back to direct writes',
+      );
+    } finally {
+      await probe.disconnect();
+    }
+  });
+
+  test('one corrupted staging read is restaged, a second is fatal', () async {
+    final restaged = _StagingCorruptionProbe(corruptions: 1)
+      ..registers[0xe0042000] = 0x700301c5;
+    final okProbe = Probe.withDebugProbe(restaged, useAt32Loader: true);
+    final lines = <String>[];
+    okProbe.onLog(lines.add);
+    await okProbe.connect(ConnectMode.normal);
+    await okProbe.program(0x08000000, Uint8List(8192));
+    expect(lines.any((line) => line.contains('staging corrupted')), isTrue);
+    expect(lines.any((line) => line.contains('restaging')), isTrue);
+    await okProbe.disconnect();
+
+    final persistent = _StagingCorruptionProbe(corruptions: 99)
+      ..registers[0xe0042000] = 0x700301c5;
+    final failProbe = Probe.withDebugProbe(persistent, useAt32Loader: true);
+    await failProbe.connect(ConnectMode.normal);
+    await expectLater(
+      failProbe.program(0x08000000, Uint8List(8192)),
+      throwsA(
+        isA<SwdException>().having(
+          (error) => error.toString(),
+          'message',
+          allOf(
+            contains('staging corrupted'),
+            contains('flash was NOT completed'),
+          ),
+        ),
+      ),
+    );
+    await failProbe.disconnect();
   });
 
   test('genuine nRST attach catches the core at the reset vector', () async {

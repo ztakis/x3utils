@@ -171,7 +171,7 @@ The Dart orchestration is shared; each OS supplies its native backend:
 
 Version lives in four places — **keep them in sync**: `VERSION`,
 `pubspec.yaml` (`version:`), and `kAppVersion` in `lib/theme.dart` (drives the
-UI). Current: **2.1.6**. Also in installer/x3utils.iss `AppVer`. The release
+UI). Current: **2.1.7**. Also in installer/x3utils.iss `AppVer`. The release
 channel is a separate `kAppStage` in `lib/theme.dart` (`BETA`, or `''` for
 stable), kept out of those four strings so they stay byte-equal.
 
@@ -184,6 +184,37 @@ dart run tool/version.dart 1.2.1           # set version everywhere (+build bump
 dart run tool/version.dart 1.2.1 --stage BETA
 dart run tool/version.dart --stage ""      # keep version, clear the channel
 ```
+
+## Hardware stress tests
+
+Two destructive loader tests live in `test/hardware/`. Both refuse to run
+without their guarded launcher, capture the board's full flash before the first
+erase, stop on the first failure, and never retry after an erase. They leave the
+target halted — power-cycle it afterwards.
+
+```
+dart run tool/swdart_loader_stress.dart --confirm-sacrificial --cycles 20
+dart run tool/swdart_mcu_stress.dart    --confirm-sacrificial --cycles 100
+```
+
+The first targets a sacrificial **CBT7 (VCU)**, the second a sacrificial
+**RBT7 (MCU)**. Each is gated to its own IDCODE and refuses any other part.
+
+The MCU one is not a duplicate. The MCU firmware runs an ADC ring buffer at
+`0x20000FA8`, inside the loader's staging window at `0x20000800`; the VCU has
+active DMA too but its buffers sit outside that window. A regression in the
+reset catch therefore corrupts flash on the MCU and is invisible on the VCU. Per
+cycle it asserts the baseline `VTOR` is `0x00000000`, no DMA channel was live at
+staging, no staged chunk was restaged, all 16 loader chunks completed in order
+(so a silent fall back to direct word writes cannot pass), and an independent
+fresh-session readback matches the golden.
+
+Its log-parsing checks are themselves unit-tested and run in the normal suite,
+so a change to the engine's log wording fails fast instead of quietly making the
+stress test blind.
+
+Runs write a transcript, `summary.json` and the golden image under
+`build/loader_stress/` or `build/mcu_loader_stress/`.
 
 ## Safety
 

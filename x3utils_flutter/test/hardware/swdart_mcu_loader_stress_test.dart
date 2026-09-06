@@ -12,6 +12,7 @@
 //   2. no bus master was left live — no DMA channels stopped at staging
 //   3. no staged chunk was touched — no staging-corruption restage
 //   4. flash matches the golden    — independent fresh-session readback
+//   5. the loader did the writing  — all 16 chunks completed, no direct fallback
 //
 // (1) is the invariant the fix rests on: the core is caught at the reset vector,
 // so the firmware never runs and never configures DMA. (2) and (3) are the
@@ -41,12 +42,23 @@ const _cycles = int.fromEnvironment('X3UTILS_MCU_STRESS_CYCLES');
 const _outputOption = String.fromEnvironment('X3UTILS_MCU_STRESS_OUT');
 const _expectedIdcode = 0x700301c4; // AT32F415RBT7
 const _expectedFlashBytes = 128 * 1024;
+// Mirrors At32Flash.loaderBufferSize, which caps the staging buffer at 0x2000.
+// Deliberately asserted rather than derived: a silent change to the chunk size
+// changes what "all chunks completed" means. If that cap moves — e.g. to 16 KiB
+// to cut Android's round trips — update this and the count follows.
+const _loaderChunkBytes = 8 * 1024;
+const _expectedLoaderChunks = _expectedFlashBytes ~/ _loaderChunkBytes;
 
 /// Log shapes the cycle watcher keys on. Kept beside each other so a change to
 /// the engine's wording is a one-place fix and an obviously breaking one.
 final _reVtor = RegExp(r'baseline VTOR=0x([0-9A-Fa-f]{8})');
 final _reDmaStopped = RegExp(r'stopped (\d+) active DMA channel');
+final _reLoaderChunkCompleted = RegExp(
+  r'\[flash:loader\] chunk (\d+)/(\d+) complete '
+  r'dst=0x([0-9A-Fa-f]{8}), bytes=(\d+),',
+);
 const _stagingCorrupted = 'staging corrupted';
+const _directWriteFallback = 'using direct word writes';
 
 /// Per-cycle evidence scraped from the engine's own diagnostic lines.
 ///
@@ -57,6 +69,9 @@ class _CycleSignals {
   int? vtor;
   int dmaChannelsStopped = 0;
   int stagingCorruptions = 0;
+  int loaderChunksCompleted = 0;
+  bool directWriteFallback = false;
+  String? loaderChunkProblem;
   final findings = <String>[];
 
   void observe(String line) {
@@ -73,10 +88,40 @@ class _CycleSignals {
       stagingCorruptions++;
       findings.add(line);
     }
+    if (line.contains(_directWriteFallback)) {
+      directWriteFallback = true;
+      findings.add(line);
+    }
+    final chunkMatch = _reLoaderChunkCompleted.firstMatch(line);
+    if (chunkMatch != null) {
+      final index = int.parse(chunkMatch.group(1)!);
+      final total = int.parse(chunkMatch.group(2)!);
+      final destination = int.parse(chunkMatch.group(3)!, radix: 16);
+      final bytes = int.parse(chunkMatch.group(4)!);
+      final expectedIndex = loaderChunksCompleted + 1;
+      final expectedDestination =
+          0x08000000 + loaderChunksCompleted * _loaderChunkBytes;
+      if (index != expectedIndex ||
+          total != _expectedLoaderChunks ||
+          destination != expectedDestination ||
+          bytes != _loaderChunkBytes) {
+        loaderChunkProblem ??=
+            'unexpected loader chunk completion; expected chunk '
+            '$expectedIndex/$_expectedLoaderChunks at '
+            '0x${expectedDestination.toRadixString(16).padLeft(8, '0')} '
+            'with $_loaderChunkBytes bytes: $line';
+        findings.add(line);
+      }
+      loaderChunksCompleted++;
+    }
   }
 
   /// Null when the cycle is clean, otherwise why it is not.
   String? get problem {
+    if (directWriteFallback) {
+      return 'direct word-write fallback was used; this cycle does not '
+          'validate SRAM-loader programming';
+    }
     if (vtor == null) {
       return 'no "baseline VTOR=" line was emitted — loader diagnostics are '
           'off, or the programming path changed; the reset catch could not be '
@@ -95,6 +140,11 @@ class _CycleSignals {
       return '$stagingCorruptions staged chunk(s) came back corrupted; '
           'something wrote SRAM while the core was halted';
     }
+    if (loaderChunkProblem != null) return loaderChunkProblem;
+    if (loaderChunksCompleted != _expectedLoaderChunks) {
+      return 'observed $loaderChunksCompleted/$_expectedLoaderChunks loader '
+          'chunk completions; all $_expectedLoaderChunks chunks must complete';
+    }
     return null;
   }
 
@@ -104,6 +154,10 @@ class _CycleSignals {
         : '0x${vtor!.toRadixString(16).padLeft(8, '0')}',
     'dmaChannelsStopped': dmaChannelsStopped,
     'stagingCorruptions': stagingCorruptions,
+    'loaderChunksCompleted': loaderChunksCompleted,
+    'expectedLoaderChunks': _expectedLoaderChunks,
+    'directWriteFallback': directWriteFallback,
+    if (loaderChunkProblem != null) 'loaderChunkProblem': loaderChunkProblem,
     if (findings.isNotEmpty) 'findings': findings,
   };
 }
@@ -309,7 +363,8 @@ Future<void> _runStress() async {
   transcript.log('requested cycles=$_cycles; stop on first failure');
   transcript.log(
     'per cycle: VTOR must be 0x00000000, no DMA stops, no staging corruption, '
-    'readback must match golden',
+    'all $_expectedLoaderChunks loader chunks must complete with no direct '
+    'fallback, readback must match golden',
   );
   transcript.log(
     'target remains halted between program and readback; power-cycle it after '
@@ -402,6 +457,7 @@ Future<void> _runStress() async {
       transcript.log(
         'cycle $cycle PASS; program=${programWatch.elapsedMilliseconds} ms, '
         'readback=${readWatch.elapsedMilliseconds} ms, VTOR=0x00000000, '
+        'loader chunks=${signals.loaderChunksCompleted}/$_expectedLoaderChunks, '
         'sha256=$readbackHash',
       );
       await _writeSummary(summaryFile, summary);
@@ -434,6 +490,98 @@ Future<void> _runStress() async {
 }
 
 void main() {
+  group('MCU cycle signals', () {
+    String chunkLine(
+      int index, {
+      int total = 16,
+      int? destination,
+      int bytes = 8192,
+    }) {
+      final address = destination ?? 0x08000000 + (index - 1) * 8192;
+      return '[cycle-1-program] [flash:loader] chunk $index/$total complete '
+          'dst=0x${address.toRadixString(16).padLeft(8, '0')}, bytes=$bytes, '
+          'chunk=200 ms, elapsed=400 ms';
+    }
+
+    _CycleSignals cleanSignals({int chunks = 16}) {
+      final signals = _CycleSignals()
+        ..observe('[flash:loader] baseline VTOR=0x00000000, CRM_CTRLSTS=0');
+      for (var index = 1; index <= chunks; index++) {
+        signals.observe(chunkLine(index));
+      }
+      return signals;
+    }
+
+    test('accepts all 16 complete loader chunks', () {
+      final signals = cleanSignals();
+      expect(signals.problem, isNull);
+      expect(signals.toJson()['loaderChunksCompleted'], 16);
+      expect(signals.toJson()['directWriteFallback'], isFalse);
+    });
+
+    test('rejects missing or incomplete loader execution', () {
+      for (final count in [0, 15, 17]) {
+        final signals = cleanSignals(chunks: count);
+        expect(signals.problem, contains('$count/16'));
+      }
+    });
+
+    test('rejects direct fallback even with complete chunk evidence', () {
+      final signals = _CycleSignals()
+        ..observe(
+          '[flash] SRAM loader preflight failed before erase; '
+          'using direct word writes: preflight timeout',
+        )
+        ..observe('[flash:loader] baseline VTOR=0x00000000');
+      for (var index = 1; index <= 16; index++) {
+        signals.observe(chunkLine(index));
+      }
+      expect(signals.problem, contains('direct word-write fallback'));
+      expect(signals.toJson()['directWriteFallback'], isTrue);
+    });
+
+    test('rejects a duplicate instead of the last chunk', () {
+      final signals = cleanSignals(chunks: 15)..observe(chunkLine(15));
+      expect(signals.loaderChunksCompleted, 16);
+      expect(signals.problem, contains('unexpected loader chunk completion'));
+    });
+
+    test('rejects incorrect totals, addresses, or byte counts', () {
+      for (final invalid in [
+        chunkLine(16, total: 17),
+        chunkLine(16, destination: 0x08000000),
+        chunkLine(16, bytes: 4096),
+      ]) {
+        final signals = cleanSignals(chunks: 15)..observe(invalid);
+        expect(signals.problem, contains('unexpected loader chunk completion'));
+      }
+    });
+
+    test('chunk starts cannot substitute for completion', () {
+      final signals = cleanSignals(chunks: 0);
+      for (var index = 1; index <= 16; index++) {
+        signals.observe(chunkLine(index).replaceFirst(' complete ', ' start '));
+      }
+      expect(signals.problem, contains('0/16'));
+    });
+
+    test('complete loader evidence preserves the existing failure checks', () {
+      expect((cleanSignals()..vtor = null).problem, contains('no "baseline'));
+      expect((cleanSignals()..vtor = 0x1000).problem, contains('reset catch'));
+      expect(
+        (cleanSignals()..observe('[flash] stopped 1 active DMA channel(s)'))
+            .problem,
+        contains('1 DMA channel(s)'),
+      );
+      expect(
+        (cleanSignals()
+              ..observe('[flash:loader] staging corrupted — restaging'))
+            .problem,
+        contains('1 staged chunk(s)'),
+      );
+    });
+  });
+
   test(
     'sacrificial AT32 MCU SRAM-loader stress',
     _runStress,
