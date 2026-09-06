@@ -5,7 +5,7 @@
 
 ### Latest Downloads
 
-- **[GUI v2.1.7 BETA](https://github.com/ztakis/x3utils/releases/tag/gui-v2.1.7-beta)** — latest test build for Windows, Linux and macOS plus an arm64 Android APK for sideloading.
+- **[GUI v2.1.7 BETA](https://github.com/ztakis/x3utils/releases/tag/gui-v2.1.7-beta)** — latest test build for Windows, Linux and macOS plus arm64 Android APK.
 - **[GUI v2.1.0](https://github.com/ztakis/x3utils/releases/tag/gui-v2.1.0)** — desktop app for Windows, Linux and macOS, plus an arm64 Android APK for sideloading.
 - **[CLI v1.8.1](https://github.com/ztakis/x3utils/releases/tag/v1.8.1)** — terminal scripts for Windows, Linux and macOS.
 
