@@ -159,6 +159,7 @@ class FwVersionMatrix {
       '1.6.1',
       '1.6.2',
       '1.6.3',
+      '1.6.4',
     ], // all verified; list incomplete
     'g3/MCU': [
       '1.3.15',

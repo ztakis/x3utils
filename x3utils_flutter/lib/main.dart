@@ -371,9 +371,20 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       return;
     }
-    const group = XTypeGroup(label: 'firmware', extensions: ['bin']);
+    // Desktop slot 0 has ONE picker for both kinds: a .zip goes through the
+    // package loader, a .bin through the normal slot validator. The phone keeps
+    // its separate .bin and .zip buttons.
+    final combined = c.isSlotAction && !c.phoneMode;
+    final group = XTypeGroup(
+      label: combined ? 'firmware or zip3 package' : 'firmware',
+      extensions: combined ? const ['bin', 'zip'] : const ['bin'],
+    );
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
+    if (combined && file.name.toLowerCase().endsWith('.zip')) {
+      await _loadFirmwareZip(file);
+      return;
+    }
     // The controller validates for the current kind (plus the mainstream
     // banner gate) and remembers the bin + its identity note on success.
     final check = c.browserMode || c.androidMode
@@ -402,6 +413,10 @@ class _HomeScreenState extends State<HomeScreen> {
     const group = XTypeGroup(label: 'zip3 package', extensions: ['zip']);
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
+    await _loadFirmwareZip(file);
+  }
+
+  Future<void> _loadFirmwareZip(XFile file) async {
     final res = c.browserMode || c.androidMode
         ? c.loadSlotFirmwareFromZipBytes(file.name, await file.readAsBytes())
         : await c.loadSlotFirmwareFromZip(file.path);
@@ -2839,10 +2854,19 @@ class _HeroStage extends StatefulWidget {
 
 class _HeroStageState extends State<_HeroStage>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  )..repeat();
+  // Created in initState, not lazily: the compact picker pages never build the
+  // bolt visual, and a lazy controller first touched in dispose() would be
+  // created against a deactivated element.
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+  }
 
   @override
   void dispose() {
@@ -2932,6 +2956,12 @@ class _HeroStageState extends State<_HeroStage>
   }
 
   Widget _buildStagePage(AppController c, Color accent) {
+    // The compact picker pages (layout C, 2026-09-30): the two scoped flash
+    // actions and Get file info. Scope sits under the title, the bolt tile goes,
+    // and the file card narrows to kCompactPickerWidth.
+    final compactPicker =
+        c.stage == StageState.idle &&
+        (c.hasFlashScope || c.actionId == 'file_info');
     // Optical center: nudge the stack up from true middle so it reads as
     // balanced. Tall pages still fill and scroll inside their own viewport.
     return Align(
@@ -2964,6 +2994,10 @@ class _HeroStageState extends State<_HeroStage>
                     color: AppColors.txt,
                   ),
                 ),
+                if (compactPicker && c.hasFlashScope) ...[
+                  const SizedBox(height: 14),
+                  _FlashScopeControl(c: c),
+                ],
                 const SizedBox(height: 12),
                 _HeroMessage(
                   text: c.heroMessage,
@@ -2979,6 +3013,9 @@ class _HeroStageState extends State<_HeroStage>
                   icon: c.heroMessageWarn
                       ? Icons.warning_amber_rounded
                       : Icons.info_outline_rounded,
+                  maxWidth: compactPicker
+                      ? kCompactPickerWidth
+                      : kHeroBlockWidth,
                 ),
                 if (c.resultNote != null) ...[
                   const SizedBox(height: 14),
@@ -2987,6 +3024,9 @@ class _HeroStageState extends State<_HeroStage>
                     color: AppColors.hold,
                     callout: true,
                     icon: Icons.info_outline_rounded,
+                    maxWidth: compactPicker
+                        ? kCompactPickerWidth
+                        : kHeroBlockWidth,
                   ),
                 ],
                 if (c.resultPath != null) ...[
@@ -3027,8 +3067,9 @@ class _HeroStageState extends State<_HeroStage>
                 ],
                 // Pack zip3's idle hero is the picker + identity form, so the
                 // generic bolt is redundant there.
-                if (!(c.actionId == 'make_zip3' &&
-                    c.stage == StageState.idle)) ...[
+                if (!compactPicker &&
+                    !(c.actionId == 'make_zip3' &&
+                        c.stage == StageState.idle)) ...[
                   const SizedBox(height: 22),
                   _Visual(c: c, accent: accent, pulse: _pulse),
                 ],
@@ -3038,6 +3079,7 @@ class _HeroStageState extends State<_HeroStage>
                     c: c,
                     onPick: widget.onPickFirmware,
                     onPickZip: widget.onPickZip,
+                    compact: compactPicker,
                   ),
                 ],
                 if (c.stage == StageState.idle &&
@@ -3345,12 +3387,17 @@ class _HeroMessage extends StatelessWidget {
     required this.color,
     required this.callout,
     required this.icon,
+    this.maxWidth = kHeroBlockWidth,
   });
 
   final String text;
   final Color color;
   final bool callout;
   final IconData icon;
+
+  /// The compact picker pages pass [kCompactPickerWidth] so the callout lines
+  /// up with the file card below it.
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -3360,7 +3407,7 @@ class _HeroMessage extends StatelessWidget {
     }
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
+      constraints: BoxConstraints(maxWidth: maxWidth),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
@@ -5080,16 +5127,22 @@ class _FirmwareBar extends StatelessWidget {
     required this.onPick,
     required this.onPickZip,
     this.phone = false,
+    this.compact = false,
   });
   final AppController c;
   final Future<void> Function() onPick;
   final Future<void> Function() onPickZip;
   final bool phone;
+
+  /// Desktop layout C: one row (file name + one picker) in a narrow card. The
+  /// scope control lives under the hero title instead.
+  final bool compact;
   @override
   Widget build(BuildContext context) {
     final path = c.firmwarePath;
     final name = path?.split(RegExp(r'[\\/]')).last;
     final has = name != null;
+    if (compact && !phone) return _compactBar(name);
     // The two flash actions share the scoped two-line bar; every other firmware
     // action writes one fixed kind of file and keeps the single-line picker.
     // Retired flash_slot0 keeps the two-line bar (it needs the .zip button) but
@@ -5208,12 +5261,15 @@ class _FirmwareBar extends StatelessWidget {
             _FlashScopeControl(c: c),
             SizedBox(height: phone ? 8 : 10),
           ],
+          // Sized to their labels and centred, not stretched across the card.
+          // Flexible lets them shrink rather than overflow on a narrow phone or
+          // with a large system font.
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: SizedBox(
+              Flexible(
+                child: KeyedSubtree(
                   key: const ValueKey('firmware-pick-bin'),
-                  width: double.infinity,
                   child: _PillButton(
                     label: 'Choose .bin',
                     onTap: () => onPick(),
@@ -5227,10 +5283,9 @@ class _FirmwareBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(
-                child: SizedBox(
+              Flexible(
+                child: KeyedSubtree(
                   key: const ValueKey('firmware-pick-zip'),
-                  width: double.infinity,
                   child: _PillButton(
                     label: 'Choose .zip',
                     onTap: slot0 ? () => onPickZip() : null,
@@ -5257,6 +5312,81 @@ class _FirmwareBar extends StatelessWidget {
       ),
     );
   }
+
+  Widget _compactBar(String? name) {
+    final has = name != null;
+    final label = has
+        ? 'Change'
+        : c.actionId == 'file_info' || c.isSlotAction
+        ? 'Choose .bin / .zip'
+        : 'Choose .bin';
+    return Container(
+      key: const ValueKey('firmware-compact-bar'),
+      constraints: const BoxConstraints(maxWidth: kCompactPickerWidth),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: has ? AppColors.brand.withValues(alpha: 0.4) : AppColors.line2,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            has ? Icons.memory_rounded : Icons.folder_open_rounded,
+            size: 18,
+            color: has ? AppColors.brand : AppColors.mut,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            // A chosen name wraps to two lines in the smaller mono face before
+            // it truncates: dump names carry the timestamp at the start and the
+            // version and extension at the end, and both matter.
+            child: has
+                ? Tooltip(
+                    message: c.firmwarePath!,
+                    child: Text(
+                      name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: kMono,
+                        fontSize: 11.5,
+                        height: 1.35,
+                        color: AppColors.txt,
+                      ),
+                    ),
+                  )
+                : const Text(
+                    'No firmware chosen',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, color: AppColors.dim),
+                  ),
+          ),
+          const SizedBox(width: 10),
+          // Capped so the name always keeps room: a wider label (large system
+          // font) wraps inside the pill instead of overflowing the row.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
+            child: KeyedSubtree(
+              key: const ValueKey('firmware-pick'),
+              child: _PillButton(
+                label: label,
+                onTap: () => onPick(),
+                bg: AppColors.line,
+                fg: AppColors.txt,
+                border: AppColors.line2,
+                small: true,
+                centerText: true,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _FlashScopeControl extends StatelessWidget {
@@ -5274,7 +5404,9 @@ class _FlashScopeControl extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: AppColors.line2),
       ),
+      // Sized to the labels: the parent column centres it instead of stretching.
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           _item('Full image', FlashScope.fullImage),
           _item('Slot 0 only', FlashScope.slot0),
@@ -5285,7 +5417,9 @@ class _FlashScopeControl extends StatelessWidget {
 
   Widget _item(String label, FlashScope scope) {
     final selected = c.flashScope == scope;
-    return Expanded(
+    // Flexible, not Expanded: sized to the label, but may shrink (the label
+    // fades) instead of overflowing a narrow card.
+    return Flexible(
       child: Semantics(
         button: true,
         selected: selected,
@@ -5296,7 +5430,7 @@ class _FlashScopeControl extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 140),
-              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
                 color: selected ? AppColors.elev : Colors.transparent,
                 borderRadius: BorderRadius.circular(999),
@@ -5304,15 +5438,20 @@ class _FlashScopeControl extends StatelessWidget {
                   color: selected ? AppColors.line2 : Colors.transparent,
                 ),
               ),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.fade,
-                softWrap: false,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: selected ? AppColors.txt : AppColors.dim,
+              // widthFactor 1: centre vertically but keep the label's width.
+              // A plain centre alignment fills the offered width instead.
+              child: Align(
+                widthFactor: 1,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.fade,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? AppColors.txt : AppColors.dim,
+                  ),
                 ),
               ),
             ),

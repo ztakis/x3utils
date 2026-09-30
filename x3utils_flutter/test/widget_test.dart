@@ -23,6 +23,7 @@ import 'package:x3utils_flutter/engine/hardware_backend.dart';
 import 'package:x3utils_flutter/engine/pack_zip3.dart';
 import 'package:x3utils_flutter/engine/swdart_backend.dart';
 import 'package:x3utils_flutter/main.dart';
+import 'package:x3utils_flutter/theme.dart' show kCompactPickerWidth;
 import 'package:x3utils_flutter/models.dart';
 
 class _UsbProbeBackend implements HardwareBackend, HardwareDeviceBackend {
@@ -160,6 +161,31 @@ class _GuidedBackend implements HardwareBackend {
 
   @override
   void cancel() => complete();
+}
+
+/// Desktop layout C on a scoped flash action: the scope control sits above a
+/// narrow file card holding ONE centred picker, whose label follows the scope.
+Future<void> _expectCompactPicker(
+  WidgetTester tester,
+  AppController controller,
+) async {
+  final card = find.byKey(const ValueKey('firmware-compact-bar'));
+  final pick = find.byKey(const ValueKey('firmware-pick'));
+  expect(card, findsOneWidget);
+  expect(find.text('Choose .zip'), findsNothing);
+  expect(tester.getSize(card).width, lessThanOrEqualTo(kCompactPickerWidth));
+  expect(
+    tester.getBottomLeft(find.byKey(const ValueKey('firmware-scope'))).dy,
+    lessThan(tester.getTopLeft(card).dy),
+  );
+  final chooseBin = find.text('Choose .bin');
+  expect(chooseBin, findsOneWidget);
+  expect(tester.getCenter(chooseBin).dx, closeTo(tester.getCenter(pick).dx, 1));
+
+  controller.setFlashScope(FlashScope.slot0);
+  await tester.pump();
+  expect(find.text('Choose .bin / .zip'), findsOneWidget);
+  expect(tester.takeException(), isNull);
 }
 
 void main() {
@@ -956,26 +982,7 @@ void main() {
     await tester.pump();
     controller.selectAction('flash_backup');
     await tester.pump();
-
-    final chooseBin = find.text('Choose .bin');
-    final chooseZip = find.text('Choose .zip');
-    expect(chooseBin, findsOneWidget);
-    expect(chooseZip, findsOneWidget);
-    expect(
-      tester.getCenter(chooseBin).dx,
-      closeTo(
-        tester.getCenter(find.byKey(const ValueKey('firmware-pick-bin'))).dx,
-        1,
-      ),
-    );
-    expect(
-      tester.getCenter(chooseZip).dx,
-      closeTo(
-        tester.getCenter(find.byKey(const ValueKey('firmware-pick-zip'))).dx,
-        1,
-      ),
-    );
-    expect(tester.takeException(), isNull);
+    await _expectCompactPicker(tester, controller);
   });
 
   testWidgets('Extra Backup toggle is desktop Backup-only and transient', (
@@ -1029,26 +1036,7 @@ void main() {
     await tester.pump();
     controller.selectAction('flash_backup');
     await tester.pump();
-
-    final chooseBin = find.text('Choose .bin');
-    final chooseZip = find.text('Choose .zip');
-    expect(chooseBin, findsOneWidget);
-    expect(chooseZip, findsOneWidget);
-    expect(
-      tester.getCenter(chooseBin).dx,
-      closeTo(
-        tester.getCenter(find.byKey(const ValueKey('firmware-pick-bin'))).dx,
-        1,
-      ),
-    );
-    expect(
-      tester.getCenter(chooseZip).dx,
-      closeTo(
-        tester.getCenter(find.byKey(const ValueKey('firmware-pick-zip'))).dx,
-        1,
-      ),
-    );
-    expect(tester.takeException(), isNull);
+    await _expectCompactPicker(tester, controller);
   });
 
   testWidgets('Android SafeArea follows gesture and button navigation insets', (
@@ -1691,7 +1679,7 @@ ZP          59028 payload / 59032 encoded (readable)'''
     expect(find.text('Choose firmware'), findsOneWidget);
     expect(find.text('Full image'), findsOneWidget);
     expect(find.text('Slot 0 only'), findsOneWidget);
-    expect(find.text('Choose .zip'), findsOneWidget);
+    expect(find.text('Choose .bin'), findsOneWidget);
 
     await tester.tap(find.text('Slot 0 only'));
     await tester.pump(const Duration(milliseconds: 200));
@@ -1699,6 +1687,8 @@ ZP          59028 payload / 59032 encoded (readable)'''
       find.text('Choose a slot-sized .bin or zip3 package below.'),
       findsOneWidget,
     );
+    // Desktop slot 0 has one picker that takes both kinds.
+    expect(find.text('Choose .bin / .zip'), findsOneWidget);
   });
 
   testWidgets('ZIP3 tools use a locked three-page workspace', (

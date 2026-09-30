@@ -1086,8 +1086,10 @@ class AppController extends ChangeNotifier {
         return 'Choose the complete firmware .bin to package below.';
       }
       if (actionId == 'file_info') {
-        return 'Choose any firmware .bin or zip3 package below — nothing is '
-            'written and nothing is checked for flashing.';
+        // Kept under the 96-character callout threshold, so it renders as a
+        // plain sub-line rather than a boxed notice.
+        return 'Any firmware .bin or zip3 package. Nothing is written or '
+            'checked for flashing.';
       }
       if (isSlotAction) {
         return 'Choose a slot-sized .bin or zip3 package below.';

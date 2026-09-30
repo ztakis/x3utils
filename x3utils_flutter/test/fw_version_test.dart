@@ -112,7 +112,17 @@ void main() {
       expect(FwVersionMatrix.refusedFrom('g3', 'VCU').toString(), '1.6.3');
       // MCU policy is model-selected because its runtime table has no model.
       expect(FwVersionMatrix.refusedFrom('zt3', 'MCU').toString(), '1.6.0');
-      expect(FwVersionMatrix.refusedFrom('g3', 'MCU').toString(), '1.5.9');
+      expect(FwVersionMatrix.refusedFrom('g3', 'MCU').toString(), '1.6.0');
+    });
+
+    test('a release above the floor is refused by name', () {
+      final id = FwVersionScanner.identify(
+        _payloadWith({0x2000: _movw(0x164)}), // g3 VCU 1.6.4
+        model: 'g3',
+        type: 'VCU',
+      );
+      expect(id.verdict, FwVerdict.blacklisted);
+      expect(id.version.toString(), '1.6.4');
     });
 
     test('MCU blacklist candidates are detected for the declared model', () {
@@ -122,7 +132,7 @@ void main() {
         type: 'MCU',
       );
       final g3 = FwVersionScanner.identify(
-        _payloadWith({0x2000: _movw(0x159)}),
+        _payloadWith({0x2000: _movw(0x160)}),
         model: 'g3',
         type: 'MCU',
       );

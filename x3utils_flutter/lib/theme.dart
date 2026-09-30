@@ -109,8 +109,12 @@ const kMono = 'Consolas';
 /// edge-to-edge instead of stepping in and out at different widths.
 const kHeroBlockWidth = 500.0;
 
+/// The desktop file card on the compact picker pages (Backup + Flash, Flash
+/// Only, Get file info): sized to one name and one picker, not the hero block.
+const kCompactPickerWidth = 360.0;
+
 /// App version — single source of truth (keep pubspec.yaml `version:` in sync).
-const kAppVersion = '2.1.7';
+const kAppVersion = '2.1.8';
 // Release channel shown after the version (e.g. "v1.2.0 BETA"); '' for stable.
 // Kept OUT of kAppVersion so VERSION / pubspec / kAppVersion stay byte-equal —
 // package_macos.sh asserts that three-way match.
