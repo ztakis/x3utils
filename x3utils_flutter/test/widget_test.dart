@@ -359,7 +359,7 @@ void main() {
     expect(find.byKey(const ValueKey('android-actions-menu')), findsOneWidget);
     expect(find.text('Backup'), findsOneWidget);
     expect(find.text('Backup + Flash'), findsOneWidget);
-    expect(find.text('SHU compatible'), findsOneWidget);
+    expect(find.text('SHU compatible'), findsNothing);
     expect(find.text('Advanced'), findsOneWidget);
 
     final backupInk = tester.widget<InkWell>(
@@ -374,15 +374,8 @@ void main() {
         matching: find.byType(InkWell),
       ),
     );
-    final shuInk = tester.widget<InkWell>(
-      find.descendant(
-        of: find.byKey(const ValueKey('android-action-flash_compat')),
-        matching: find.byType(InkWell),
-      ),
-    );
     expect(backupInk.onTap, isNotNull);
     expect(flashInk.onTap, isNotNull);
-    expect(shuInk.onTap, isNotNull);
 
     final backup = find.byKey(const ValueKey('android-action-dump'));
     await tester.ensureVisible(backup);
@@ -556,7 +549,7 @@ void main() {
       expect(controller.isActionAvailable('dump'), isTrue);
       expect(controller.isActionAvailable('flash_only'), isTrue);
       expect(controller.isActionAvailable('flash_backup'), isTrue);
-      expect(controller.isActionAvailable('flash_compat'), isTrue);
+      expect(controller.isActionAvailable('flash_compat'), isFalse);
       expect(controller.isActionAvailable('rdp_check'), isTrue);
       expect(controller.isActionAvailable('rdp_rescue'), isFalse);
     },
@@ -744,48 +737,6 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
-
-  testWidgets('Android SHU selection uses the timed vertical phone warning', (
-    WidgetTester tester,
-  ) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(390, 844);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    final controller = AppController(androidMode: true);
-    addTearDown(controller.dispose);
-
-    await tester.pumpWidget(
-      MaterialApp(home: HomeScreen(controller: controller)),
-    );
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('android-check-action')));
-    await tester.pump(const Duration(milliseconds: 250));
-    final shu = find.byKey(const ValueKey('android-action-flash_compat'));
-    await tester.ensureVisible(shu);
-    await tester.tap(shu);
-    await tester.pump();
-
-    expect(find.text('ATTENTION'), findsOneWidget);
-    expect(find.text('I understand — continue (5s)'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('phone-timed-warning-actions')),
-      findsOneWidget,
-    );
-    expect(controller.actionId, 'check');
-    expect(
-      tester.getTopLeft(find.text('Cancel')).dy,
-      lessThan(tester.getTopLeft(find.text('I understand — continue (5s)')).dy),
-    );
-
-    await tester.pump(const Duration(seconds: 5));
-    await tester.tap(find.text('I understand — continue'));
-    await tester.pump(const Duration(milliseconds: 250));
-
-    expect(controller.actionId, 'flash_compat');
-    expect(tester.takeException(), isNull);
-  });
 
   testWidgets('Android Flash Only keeps the hard warning before writing', (
     WidgetTester tester,
@@ -1169,13 +1120,13 @@ void main() {
     expect(find.text('Power-race'), findsOneWidget);
     expect(find.text('ADVANCED'), findsOneWidget);
 
-    // Genuine nRST and SHU compat start in Advanced, like the desktop surface.
+    // Genuine nRST starts in Advanced, like the desktop surface. SHU compat is
+    // native desktop only, so the browser never lists it.
     expect(find.text('C45 · Genuine'), findsNothing);
-    expect(find.text('SHU compatible'), findsNothing);
     await tester.tap(find.text('ADVANCED'));
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('C45 · Genuine'), findsOneWidget);
-    expect(find.text('SHU compatible'), findsOneWidget);
+    expect(find.text('SHU compatible'), findsNothing);
     expect(find.text('Flash Only'), findsOneWidget);
   });
 

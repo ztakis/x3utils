@@ -1383,12 +1383,6 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
                 enabled: c.isActionAvailable('flash_backup'),
               ),
               const Divider(color: AppColors.line, height: 1),
-              _actionChoice(
-                c,
-                'flash_compat',
-                enabled: c.isActionAvailable('flash_compat'),
-              ),
-              const Divider(color: AppColors.line, height: 1),
               _AndroidChoiceRow(
                 key: const ValueKey('android-actions-advanced'),
                 icon: Icons.tune_rounded,

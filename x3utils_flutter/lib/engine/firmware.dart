@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:path/path.dart' as p;
 import 'package:universal_io/universal_io.dart';
 
@@ -951,28 +949,5 @@ class CompatPatch {
     }
     File(dstPath).writeAsBytesSync(bytes);
     return FirmwareCheck.valid;
-  }
-
-  /// In-memory variant: patch [bytes] in place and return them.
-  static (FirmwareCheck, Uint8List?) applyBytes(Uint8List bytes) {
-    if (bytes.length < offset + signature.length) {
-      return (
-        FirmwareCheck.fail('Dump too small to patch (${bytes.length} bytes).'),
-        null,
-      );
-    }
-    final patched = Uint8List.fromList(bytes);
-    for (var i = 0; i < signature.length; i++) {
-      patched[offset + i] = signature[i];
-    }
-    for (var i = 0; i < signature.length; i++) {
-      if (patched[offset + i] != signature[i]) {
-        return (
-          FirmwareCheck.fail('Patch verification failed after write.'),
-          null,
-        );
-      }
-    }
-    return (FirmwareCheck.valid, patched);
   }
 }

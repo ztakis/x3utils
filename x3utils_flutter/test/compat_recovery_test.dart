@@ -98,22 +98,13 @@ class _Backend implements HardwareBackend {
   void cancel() {} // Deliberately allow late completion to test generation guards.
 }
 
-Future<AppController> _controller(
-  _Backend backend,
-  Directory root, {
-  String platform = 'desktop',
-}) async {
+// SHU compat is native desktop only since 2026-09-30.
+Future<AppController> _controller(_Backend backend, Directory root) async {
   SharedPreferences.setMockInitialValues({
     'defaultAutoRetry': 0,
     'logToFile': false,
   });
-  final c = AppController(
-    backend: backend,
-    browserMode: platform == 'web',
-    androidMode: platform == 'android',
-    backupDownloader: (_, _) async {},
-    androidBackupPublisher: (_, name) async => name,
-  );
+  final c = AppController(backend: backend);
   await Future<void>.delayed(Duration.zero);
   c.setX3utilsRoot(root.path);
   c.setSecondCopy(false);
@@ -129,92 +120,77 @@ void main() {
     root.deleteSync(recursive: true);
   });
 
-  for (final platform in ['desktop', 'web', 'android']) {
-    for (final evidence in [
-      const HardwareEvidence(
-        caught: true,
-      ), // Interrupted erase, no completion marker.
-      const HardwareEvidence(
-        caught: true,
-        erased: true,
-      ), // Partial programming.
-      const HardwareEvidence(
-        caught: true,
-        erased: true,
-        wrote: true,
-      ), // Verify failed.
-    ]) {
-      test(
-        '$platform interrupted flash preserves original and Retry only prepares recovery: '
-        '${evidence.erased}/${evidence.wrote}',
-        () async {
-          final backend = _Backend()..outcome = HardwareResult(1, evidence);
-          final c = await _controller(backend, root, platform: platform);
-          addTearDown(c.dispose);
-          c.setDefaultAutoRetry(1);
-          await c.start();
-          expect(c.compatRecoveryPending, isTrue);
-          expect(c.showingCompatRecovery, isTrue);
-          expect(c.autoRetryArmed, isFalse);
-          expect(c.sub, contains('Restore a known-good full image'));
-          expect(c.sub, isNot(contains('press Retry')));
-          // The raw failure detail stays OUT of the hero — it overflowed the
-          // phone card — but must still be reachable in the console.
-          expect(c.sub, isNot(contains('simulated interrupted flash')));
-          expect(c.console.join('\n'), contains('simulated interrupted flash'));
-          final originalPath = c.resultPath;
-          final originalCount = backend.requests.length;
-          await c.retry(auto: true);
-          expect(backend.requests, hasLength(originalCount));
-          await c.retry();
-          expect(c.actionId, 'flash_only');
-          expect(c.flashScope, FlashScope.fullImage);
-          expect(backend.requests, hasLength(originalCount));
-          expect(
-            platform == 'desktop'
-                ? File(c.firmwarePath!).readAsBytesSync()
-                : c.firmwareBytes,
-            backend.original,
-          );
-          c.dismiss();
-          c.selectAction('check');
-          await c.start();
-          expect(c.compatRecoveryPending, isTrue);
-          c.selectAction('flash_compat');
-          await c.start();
-          expect(c.resultPath, originalPath);
-          expect(
-            backend.requests.where(
-              (r) => r.operation == HardwareOperation.dump,
-            ),
-            hasLength(1),
-          );
-          await c.retry();
-          backend.outcome = _success;
-          await c.start();
-          expect(c.stage, StageState.ok);
-          expect(c.compatRecoveryPending, isFalse);
-        },
-      );
-    }
-
+  for (final evidence in [
+    const HardwareEvidence(
+      caught: true,
+    ), // Interrupted erase, no completion marker.
+    const HardwareEvidence(caught: true, erased: true), // Partial programming.
+    const HardwareEvidence(
+      caught: true,
+      erased: true,
+      wrote: true,
+    ), // Verify failed.
+  ]) {
     test(
-      '$platform unidentified firmware cannot reach patch or flash',
+      'interrupted flash preserves original and Retry only prepares recovery: '
+      '${evidence.erased}/${evidence.wrote}',
       () async {
-        final backend = _Backend()..original = _image(identified: false);
-        final c = await _controller(backend, root, platform: platform);
+        final backend = _Backend()..outcome = HardwareResult(1, evidence);
+        final c = await _controller(backend, root);
         addTearDown(c.dispose);
+        c.setDefaultAutoRetry(1);
         await c.start();
-        expect(c.stage, StageState.fail);
+        expect(c.compatRecoveryPending, isTrue);
+        expect(c.showingCompatRecovery, isTrue);
+        expect(c.autoRetryArmed, isFalse);
+        expect(c.sub, contains('Restore a known-good full image'));
+        expect(c.sub, isNot(contains('press Retry')));
+        // The raw failure detail stays OUT of the hero — it overflowed the
+        // phone card — but must still be reachable in the console.
+        expect(c.sub, isNot(contains('simulated interrupted flash')));
+        expect(c.console.join('\n'), contains('simulated interrupted flash'));
+        final originalPath = c.resultPath;
+        final originalCount = backend.requests.length;
+        await c.retry(auto: true);
+        expect(backend.requests, hasLength(originalCount));
+        await c.retry();
+        expect(c.actionId, 'flash_only');
+        expect(c.flashScope, FlashScope.fullImage);
+        expect(backend.requests, hasLength(originalCount));
+        expect(File(c.firmwarePath!).readAsBytesSync(), backend.original);
+        c.dismiss();
+        c.selectAction('check');
+        await c.start();
+        expect(c.compatRecoveryPending, isTrue);
+        c.selectAction('flash_compat');
+        await c.start();
+        expect(c.resultPath, originalPath);
         expect(
-          c.sub,
-          contains('requires an identified, supported firmware version'),
+          backend.requests.where((r) => r.operation == HardwareOperation.dump),
+          hasLength(1),
         );
+        await c.retry();
+        backend.outcome = _success;
+        await c.start();
+        expect(c.stage, StageState.ok);
         expect(c.compatRecoveryPending, isFalse);
-        expect(backend.requests, hasLength(1));
       },
     );
   }
+
+  test('unidentified firmware cannot reach patch or flash', () async {
+    final backend = _Backend()..original = _image(identified: false);
+    final c = await _controller(backend, root);
+    addTearDown(c.dispose);
+    await c.start();
+    expect(c.stage, StageState.fail);
+    expect(
+      c.sub,
+      contains('requires an identified, supported firmware version'),
+    );
+    expect(c.compatRecoveryPending, isFalse);
+    expect(backend.requests, hasLength(1));
+  });
 
   test(
     'thrown USB disconnect enters recovery despite missing result evidence',
@@ -243,7 +219,7 @@ void main() {
     );
     backend.original.setRange(0x3000, 0x3004, [0x40, 0xf2, 0x4b, 0x10]);
     backend.original.setRange(0x3100, 0x3104, [0x40, 0xf2, 0x52, 0x10]);
-    final c = await _controller(backend, root, platform: 'web');
+    final c = await _controller(backend, root);
     addTearDown(c.dispose);
     await c.start();
     expect(
@@ -462,8 +438,13 @@ void main() {
     'patch comparison accepts only the intended field including an already-patched image',
     () {
       final original = _image();
-      final (_, patched) = CompatPatch.applyBytes(original);
-      expect(CompatPatch.validateChange(original, patched!).ok, isTrue);
+      final patched = Uint8List.fromList(original)
+        ..setRange(
+          CompatPatch.offset,
+          CompatPatch.offset + CompatPatch.signature.length,
+          CompatPatch.signature,
+        );
+      expect(CompatPatch.validateChange(original, patched).ok, isTrue);
       expect(CompatPatch.validateChange(patched, patched).ok, isTrue);
       for (final offset in [0, 0x141f, 0x1430, 0x1f020, 131071]) {
         final changed = Uint8List.fromList(patched)..[offset] ^= 1;
