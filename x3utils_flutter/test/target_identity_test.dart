@@ -250,16 +250,14 @@ void main() {
       expect(tm.note, isNull);
     });
 
-    test('MCU to MCU passes with an explicit model limitation', () {
+    test('MCU to MCU passes without a note', () {
       final tm = DeviceSpec.checkTargetMatch(
         dump: _fullImage(banner: _mcuBanner),
         firmware: _slotBin(banner: _mcuBanner),
         incomingIsSlotBin: true,
       );
       expect(tm.blocked, isFalse);
-      expect(tm.note, contains('does not encode the MCU model'));
-      expect(tm.note, contains('ZT3/GT3/G3 share MCU hardware'));
-      expect(tm.note, contains('F3 compatibility cannot be verified'));
+      expect(tm.note, isNull);
     });
   });
 

@@ -22,6 +22,7 @@ import 'engine/pack_zip3.dart';
 import 'engine/confirmed_file_writer.dart';
 import 'engine/dump_metadata.dart';
 import 'engine/extra_backup_metadata.dart';
+import 'engine/file_info.dart';
 import 'engine/fw_version.dart';
 import 'engine/sram_identity.dart';
 import 'engine/trash.dart';
@@ -3548,6 +3549,35 @@ class AppController extends ChangeNotifier {
     return metadataPath;
   }
 
+  /// Backup + Flash onto an MCU target. The shared MCU banner names no model,
+  /// so the operator declares it before anything is written. The answer is
+  /// recorded — the log, and on desktop the pre-flash backup's sidecar — and
+  /// never compared with anything, because nothing can confirm it. False
+  /// means the operator cancelled.
+  Future<bool> _declareFlashTargetMcuModel({
+    String? dumpPath,
+    String? metadataPath,
+  }) async {
+    final model = await _askMcuModel?.call(FileInfo.mcuModels);
+    if (model == null) {
+      _log('== no MCU model declared — flash cancelled ==');
+      return false;
+    }
+    _log('== operator declared MCU model: $model (not verifiable) ==');
+    if (dumpPath == null || metadataPath == null) return true;
+    try {
+      final metadata = DumpMetadata.readJson(metadataPath);
+      if (DumpMetadata.needsMcuModelDeclaration(metadata)) {
+        DumpMetadata.declareMcuModel(dumpPath, metadataPath, model);
+        // The 2nd copy was taken before this question; refresh its sidecar.
+        if (secondCopy) _backupSecondCopy(metadataPath);
+      }
+    } catch (e) {
+      _log('== MCU model not written to the backup info: $e ==');
+    }
+    return true;
+  }
+
   _BackupCopyResult _copyExtraBackup(String srcPath, Uint8List sourceBytes) {
     final destination = _backupSecondCopy(srcPath);
     if (destination == null) {
@@ -3988,6 +4018,24 @@ class AppController extends ChangeNotifier {
         return;
       }
       if (tm.note != null) _log('== ${tm.note} ==');
+      if (targetId.bannerType == 'MCU' &&
+          !await _declareFlashTargetMcuModel(
+            dumpPath: outPath,
+            metadataPath: backupMetadataPath,
+          )) {
+        await _finishRealAfterHold(
+          false,
+          '',
+          'Nothing was written — the target runs MCU firmware, which does not '
+              'say which model it belongs to, and no model was selected. The '
+              'pre-flash backup was saved.',
+          reseat: false,
+          finding: true,
+          outputPath: outPath,
+          outputMetadataPath: backupMetadataPath,
+        );
+        return;
+      }
     }
 
     // Ordinary Flash Only has no stored-digest or target-identity gate.
@@ -4247,6 +4295,21 @@ class AppController extends ChangeNotifier {
         return;
       }
       if (targetMatch.note != null) _log('== ${targetMatch.note} ==');
+      if (targetId.bannerType == 'MCU' &&
+          !await _declareFlashTargetMcuModel()) {
+        await _finishRealAfterHold(
+          false,
+          '',
+          'Nothing was written — the target runs MCU firmware, which does not '
+              'say which model it belongs to, and no model was selected. '
+              '${_androidMode ? 'The pre-flash backup was saved.' : 'The pre-flash backup download was started.'}',
+          reseat: false,
+          finding: true,
+          outputPath: backupPath,
+          outputNote: backupNote,
+        );
+        return;
+      }
 
       if (crypto.sha256.convert(firmwareBytes).toString() !=
           _firmwareSelectedDigest) {
@@ -4320,6 +4383,27 @@ class AppController extends ChangeNotifier {
   /// Memory-backed SHU-compat: dump → save the original backup → patch in
   /// memory → flash back. Browser downloads the backup; Android publishes it
   /// through MediaStore before anything is patched or written.
+  /// The route that works once compat refuses (proven 2026-09-30 on a G3 VCU
+  /// from factory 1.6.4). Kept to one line: the backup card already shows the
+  /// saved file, and the console carries the evidence.
+  static const _compatDowngradeHint =
+      'Use Backup + Flash, Slot 0, with a compat zip.';
+
+  /// SHU compat patches factory firmware only. Null when the key + rand have
+  /// the factory shape; otherwise the refusal, with the state in the console.
+  String? _compatNotFactoryMessage(List<int> bytes) {
+    final state = CompatPatch.factoryState(bytes);
+    _log('== ROM key field: ${state.name} ==');
+    return switch (state) {
+      CompatFactoryState.factory => null,
+      CompatFactoryState.alreadyCompatible =>
+        'Already SHU compatible. Nothing written.',
+      CompatFactoryState.cleared => 'Not factory firmware. Nothing written.',
+      CompatFactoryState.unknown =>
+        'Can’t confirm factory firmware. Nothing written.',
+    };
+  }
+
   Future<void> _runMemoryCompat(bool guided, int runId) async {
     _showOpenOcdProgress(eyebrow: 'Backing up');
     _setInstruction('Reading the chip before patching...');
@@ -4515,14 +4599,26 @@ class AppController extends ChangeNotifier {
     final xtea = CompatXtea.keyState(bytes);
     _log('== ROM XTEA field: ${xtea.name} ==');
     if (xtea == FwXteaState.present) {
-      const finding =
-          'An OEM-style XTEA key is present at 0x1440. This firmware '
-          'generation is not supported by SHU compatibility.';
       _log('== SHU compatibility blocked: XTEA present at 0x1440 ==');
       await _finishRealAfterHold(
         false,
         '',
-        'Nothing was written — $finding $backupResultText',
+        'Firmware too new for SHU compat. Nothing written. '
+            '$_compatDowngradeHint',
+        reseat: false,
+        finding: true,
+        outputPath: backupPath,
+        outputNote: backupNote,
+      );
+      return null;
+    }
+
+    final notFactory = _compatNotFactoryMessage(bytes);
+    if (notFactory != null) {
+      await _finishRealAfterHold(
+        false,
+        '',
+        notFactory,
         reseat: false,
         finding: true,
         outputPath: backupPath,
@@ -4607,9 +4703,8 @@ class AppController extends ChangeNotifier {
       await _finishRealAfterHold(
         false,
         '',
-        'Nothing was written — this chip runs '
-            '${model.toUpperCase()} $type ${fw.version}, and SHU compat does '
-            'not work on that firmware. $backupResultText',
+        '${model.toUpperCase()} $type ${fw.version} is too new for SHU '
+            'compat. Nothing written. $_compatDowngradeHint',
         reseat: false,
         finding: true,
         outputPath: backupPath,
@@ -4922,14 +5017,26 @@ class AppController extends ChangeNotifier {
     final xtea = CompatXtea.keyState(bytes);
     _log('== ROM XTEA field: ${xtea.name} ==');
     if (xtea == FwXteaState.present) {
-      const finding =
-          'An OEM-style XTEA key is present at 0x1440. This firmware '
-          'generation is not supported by SHU compatibility.';
       _log('== SHU compatibility blocked: XTEA present at 0x1440 ==');
       await _finishRealAfterHold(
         false,
         '',
-        'Nothing was written — $finding The backup was saved.',
+        'Firmware too new for SHU compat. Nothing written. '
+            '$_compatDowngradeHint',
+        reseat: false,
+        finding: true,
+        outputPath: rawPath,
+        outputMetadataPath: metadataPath,
+      );
+      return null;
+    }
+
+    final notFactory = _compatNotFactoryMessage(bytes);
+    if (notFactory != null) {
+      await _finishRealAfterHold(
+        false,
+        '',
+        notFactory,
         reseat: false,
         finding: true,
         outputPath: rawPath,
@@ -5021,10 +5128,8 @@ class AppController extends ChangeNotifier {
       await _finishRealAfterHold(
         false,
         '',
-        'Nothing was written — this chip runs '
-            '${model.toUpperCase()} $type ${fw.version}, and SHU compat does '
-            'not work on that firmware. Patching it would overwrite the key '
-            'without making the scooter SHU-compatible. The backup was saved.',
+        '${model.toUpperCase()} $type ${fw.version} is too new for SHU '
+            'compat. Nothing written. $_compatDowngradeHint',
         reseat: false,
         finding: true,
         outputPath: rawPath,

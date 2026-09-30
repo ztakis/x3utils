@@ -802,6 +802,21 @@ class CompatXtea {
       };
 }
 
+/// [CompatPatch.factoryState] of a chip's key + rand before SHU compat.
+enum CompatFactoryState {
+  /// 16 + 6 ASCII letters/digits: the factory shape. Compat proceeds.
+  factory,
+
+  /// The default SHU key is already there.
+  alreadyCompatible,
+
+  /// Key and rand both 0xFF: modded (a compat build or a clear-key tool).
+  cleared,
+
+  /// Anything else. Not provably factory, so compat does not touch it.
+  unknown,
+}
+
 /// The SHU-compatible patch (flash_compat step 2): inject a fixed 16-byte
 /// signature at 0x1420 into the chip's own firmware, then flash it back.
 class CompatPatch {
@@ -871,6 +886,38 @@ class CompatPatch {
       FwKeyState.blank => 'blank',
       FwKeyState.other => 'other',
     };
+  }
+
+  /// The 6-byte device rand that follows the key.
+  static const int randOffset = 0x1430;
+  static const int randLength = 6;
+
+  /// Whether the key + rand look like untouched factory firmware. SHU compat
+  /// exists for factory-state scooters only: on modded firmware the patch can
+  /// make things worse. Measured 2026-09-30 on every stock G3/ZT3 VCU/MCU dump
+  /// in the maintainer's set: 16 + 6 ASCII letters/digits, no exceptions.
+  static CompatFactoryState factoryState(List<int> image) {
+    switch (keyState(image)) {
+      case FwKeyState.defaultKey:
+        return CompatFactoryState.alreadyCompatible;
+      case FwKeyState.blank:
+        return _allFf(image, randOffset, randLength)
+            ? CompatFactoryState.cleared
+            : CompatFactoryState.unknown;
+      case FwKeyState.other:
+        return asciiAlphanumeric(image, offset, signature.length) &&
+                asciiAlphanumeric(image, randOffset, randLength)
+            ? CompatFactoryState.factory
+            : CompatFactoryState.unknown;
+    }
+  }
+
+  static bool _allFf(List<int> image, int at, int length) {
+    if (image.length < at + length) return false;
+    for (var i = 0; i < length; i++) {
+      if (image[at + i] != 0xFF) return false;
+    }
+    return true;
   }
 
   /// True when [length] bytes at [at] are all ASCII letters or digits.

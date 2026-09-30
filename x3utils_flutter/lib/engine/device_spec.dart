@@ -64,8 +64,7 @@ const kSupportedDevices = <SupportedDevice>[
 ];
 
 /// MCU firmware uses this one banner code across every model, so an MCU banner
-/// confirms the type but not which model. ZT3/GT3/G3 share MCU hardware; F3
-/// does not, but its identical banner leaves that mismatch undetectable here.
+/// confirms the type but not which model.
 const kMcuCode = '0001';
 
 /// The firmware banner is a fixed 16-byte ASCII string `SCOOTER_<TYPE>_<CODE>`
@@ -364,14 +363,6 @@ class DeviceSpec {
             'the target firmware identifies as ${target.label}, but the '
             'selected firmware identifies as ${incoming.label}. Incompatible '
             'firmware can brick the controller.',
-      );
-    }
-    if (target.type == 'MCU') {
-      return const TargetMatch(
-        note:
-            'Both banners identify MCU firmware. The banner does not encode '
-            'the MCU model: ZT3/GT3/G3 share MCU hardware, but F3 '
-            'compatibility cannot be verified.',
       );
     }
     return const TargetMatch();

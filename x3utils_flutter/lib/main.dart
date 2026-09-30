@@ -4443,8 +4443,8 @@ Future<String?> _showMcuModelPicker(BuildContext context, List<String> models) {
             const Text(
               'This is MCU firmware. Unlike the VCU, an MCU image does not say '
               'which model it belongs to, so x3utils cannot work it out from '
-              'the backup. Your answer only selects which firmware versions to '
-              'compare against — it is not checked.',
+              'the backup. Your answer is used as given — x3utils cannot '
+              'check it.',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.45,

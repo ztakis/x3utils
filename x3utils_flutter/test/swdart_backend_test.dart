@@ -59,6 +59,8 @@ Uint8List _identifiedCompatImage({
   String banner = 'SCOOTER_VCU_xxG3',
 }) {
   final bytes = _identifiedImage(banner: banner);
+  // Synthetic factory-shaped key + rand: compat only patches factory firmware.
+  bytes.setRange(0x1420, 0x1436, 'x3utilsTestKey00Rand00'.codeUnits);
   const at = 0x3000;
   final i = (versionValue >> 11) & 1;
   final imm3 = (versionValue >> 8) & 7;
@@ -2102,7 +2104,7 @@ void main() {
     expect(events, ['read', 'publish']);
     expect(session.sramAddress, isNull);
     expect(session.programBytes, isNull);
-    expect(controller.sub, contains('XTEA key is present'));
+    expect(controller.sub, contains('too new for SHU compat'));
     expect(
       controller.console.any(
         (line) => line.contains('ROM XTEA field: present'),
@@ -2155,48 +2157,83 @@ void main() {
   );
 
   test(
-    'Android SHU lets ROM version policy handle non-present XTEA layouts',
+    'Android SHU lets ROM version policy handle a cleared XTEA field',
     () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'defaultAutoRetry': 0,
       });
-      for (final entry in <(String, int, List<int>)>[
-        ('default TEA', CompatPatch.offset, CompatPatch.signature),
-        (
-          'cleared TEA',
-          CompatPatch.offset,
-          List<int>.filled(CompatPatch.signature.length, 0xFF),
-        ),
-        (
-          'cleared XTEA',
+      final backup = _identifiedCompatImage()
+        ..setRange(
           CompatXtea.offset,
+          CompatXtea.offset + CompatXtea.length,
           List<int>.filled(CompatXtea.length, 0xFF),
-        ),
-      ]) {
-        final backup = _identifiedCompatImage()
-          ..setRange(entry.$2, entry.$2 + entry.$3.length, entry.$3);
-        final session = _FakeSession(
-          bytes: backup,
-          sramBytes: _identifiedVcuSram(),
         );
-        final controller = AppController(
-          backend: SwdartBackend(sessionFactory: () => session),
-          androidMode: true,
-          androidBackupPublisher: (_, fileName) async =>
-              '$androidBackupDirectoryLabel/$fileName',
-        );
-        addTearDown(controller.dispose);
-        await Future<void>.delayed(Duration.zero);
+      final session = _FakeSession(
+        bytes: backup,
+        sramBytes: _identifiedVcuSram(),
+      );
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        androidMode: true,
+        androidBackupPublisher: (_, fileName) async =>
+            '$androidBackupDirectoryLabel/$fileName',
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
 
-        controller.selectAction('flash_compat');
-        await controller.start();
+      controller.selectAction('flash_compat');
+      await controller.start();
 
-        expect(controller.stage, StageState.ok, reason: entry.$1);
-        expect(session.programBytes, isNotNull, reason: entry.$1);
-        expect(session.sramAddress, isNull, reason: entry.$1);
-      }
+      expect(controller.stage, StageState.ok);
+      expect(session.programBytes, isNotNull);
+      expect(session.sramAddress, isNull);
     },
   );
+
+  test('Android SHU patches factory-shaped key + rand only', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    final ff = List<int>.filled(22, 0xFF);
+    for (final entry in <(String, List<int>, String)>[
+      (
+        'default key',
+        [...CompatPatch.signature, ...'Rand00'.codeUnits],
+        'Already SHU compatible',
+      ),
+      ('cleared key + rand', ff, 'Not factory firmware'),
+      (
+        'cleared key, rand kept',
+        [...ff.take(16), ...'Rand00'.codeUnits],
+        'Can’t confirm factory firmware',
+      ),
+      (
+        'binary key',
+        [...List<int>.generate(16, (i) => i), ...'Rand00'.codeUnits],
+        'Can’t confirm factory firmware',
+      ),
+    ]) {
+      final backup = _identifiedCompatImage()
+        ..setRange(CompatPatch.offset, CompatPatch.offset + 22, entry.$2);
+      final session = _FakeSession(bytes: backup);
+      final controller = AppController(
+        backend: SwdartBackend(sessionFactory: () => session),
+        androidMode: true,
+        androidBackupPublisher: (_, fileName) async =>
+            '$androidBackupDirectoryLabel/$fileName',
+      );
+      addTearDown(controller.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      controller.selectAction('flash_compat');
+      await controller.start();
+
+      expect(controller.stage, StageState.fail, reason: entry.$1);
+      expect(controller.sub, contains(entry.$3), reason: entry.$1);
+      expect(controller.sub, contains('Nothing written'), reason: entry.$1);
+      expect(session.programBytes, isNull, reason: entry.$1);
+    }
+  });
 
   test('Android SHU aborts before patching when backup save fails', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -2257,7 +2294,7 @@ void main() {
     expect(session.sramAddress, isNull);
     expect(session.programBytes, isNull);
     expect(controller.resultPath, startsWith(androidBackupDirectoryLabel));
-    expect(controller.sub, contains('does not work on that firmware'));
+    expect(controller.sub, contains('too new for SHU compat'));
   });
 
   test(
@@ -2324,7 +2361,7 @@ void main() {
     expect(events, ['read', 'publish']);
     expect(session.sramAddress, isNull);
     expect(session.programBytes, isNull);
-    expect(controller.sub, contains('does not work on that firmware'));
+    expect(controller.sub, contains('too new for SHU compat'));
   });
 
   test('Android slot-0 Backup + Flash accepts a matching ZIP3.2', () async {
@@ -2462,6 +2499,77 @@ void main() {
       expect(controller.sub, contains('Nothing was written'));
     },
   );
+
+  test('Android MCU Backup + Flash asks the model before writing', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    final events = <String>[];
+    final backup = _identifiedImage(banner: 'SCOOTER_MCU_0001');
+    final incoming = _identifiedImage(banner: 'SCOOTER_MCU_0001')
+      ..[0x2000] ^= 0x55;
+    final session = _FakeSession(bytes: backup, events: events);
+    final controller = AppController(
+      backend: SwdartBackend(sessionFactory: () => session),
+      androidMode: true,
+      androidBackupPublisher: (_, fileName) async {
+        events.add('publish');
+        return '$androidBackupDirectoryLabel/$fileName';
+      },
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    controller.selectAction('flash_backup');
+    expect(controller.selectFirmwareBytes('incoming.bin', incoming).ok, isTrue);
+    await controller.start(
+      askMcuModel: (_) async {
+        events.add('ask');
+        return 'zt3';
+      },
+    );
+
+    expect(controller.stage, StageState.ok);
+    expect(events, ['read', 'publish', 'ask', 'program', 'reset']);
+    expect(session.programBytes, incoming);
+  });
+
+  test('Android MCU Backup + Flash cancel keeps the backup only', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    var publishes = 0;
+    final session = _FakeSession(
+      bytes: _identifiedImage(banner: 'SCOOTER_MCU_0001'),
+    );
+    final controller = AppController(
+      backend: SwdartBackend(sessionFactory: () => session),
+      androidMode: true,
+      androidBackupPublisher: (_, fileName) async {
+        publishes++;
+        return '$androidBackupDirectoryLabel/$fileName';
+      },
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    controller.selectAction('flash_backup');
+    expect(
+      controller
+          .selectFirmwareBytes(
+            'incoming.bin',
+            _identifiedImage(banner: 'SCOOTER_MCU_0001'),
+          )
+          .ok,
+      isTrue,
+    );
+    await controller.start(askMcuModel: (_) async => null);
+
+    expect(controller.stage, StageState.fail);
+    expect(publishes, 1);
+    expect(session.programBytes, isNull);
+    expect(controller.sub, contains('no model was selected'));
+  });
 
   test(
     'Android full Flash Only writes without reading or saving a backup',

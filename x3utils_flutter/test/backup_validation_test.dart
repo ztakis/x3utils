@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:x3utils_flutter/app_controller.dart';
 import 'package:x3utils_flutter/engine/device_spec.dart';
+import 'package:x3utils_flutter/engine/dump_metadata.dart';
 import 'package:x3utils_flutter/engine/firmware.dart';
 import 'package:x3utils_flutter/engine/openocd_paths.dart';
 import 'package:x3utils_flutter/engine/openocd_runner.dart';
@@ -27,12 +28,14 @@ class _DumpingRunner extends OpenOcdRunner {
   final int exitCode;
   final List<int>? bytes; // null = OpenOCD wrote no file at all
   String? dumpPath;
+  int runs = 0;
 
   @override
   Future<OpenOcdResult> run(
     List<String> args,
     void Function(String line) onLine,
   ) async {
+    runs++;
     final dump = args.firstWhere(
       (a) => a.startsWith('dump_image'),
       orElse: () => '',
@@ -354,6 +357,62 @@ void main() {
       expect(c.resultMetadataPath, endsWith('.json'));
       expect(File(c.resultMetadataPath!).existsSync(), isTrue);
       expect(filesIn(backupDir, '.json'), hasLength(1));
+    });
+
+    Future<(AppController, _DumpingRunner)> mcuController() async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'defaultAutoRetry': 0,
+      });
+      List<int> mcuImage() => _image(131072)
+        ..setRange(
+          kSlotBannerOffset,
+          kSlotBannerOffset + kBannerLength,
+          'SCOOTER_MCU_0001'.codeUnits,
+        );
+      final runner = _DumpingRunner(
+        lines: ['target halted due to debug-request', 'dumped 131072 bytes'],
+        exitCode: 0,
+        bytes: mcuImage(),
+      );
+      final c = AppController(runner: runner);
+      addTearDown(c.dispose);
+      await Future<void>.delayed(Duration.zero);
+      c.setX3utilsRoot(rootDir.path);
+      c.setSecondCopy(false);
+      c.selectAction('flash_backup');
+      final fw = File(p.join(rootDir.path, 'incoming_mcu.bin'))
+        ..writeAsBytesSync(mcuImage()..[0x2000] ^= 0x55);
+      addTearDown(() => fw.existsSync() ? fw.deleteSync() : null);
+      c.setFirmware(fw.path);
+      return (c, runner);
+    }
+
+    test('an MCU target asks for the model and records it', () async {
+      final (c, runner) = await mcuController();
+      List<String>? offered;
+      await c.start(
+        askMcuModel: (models) async {
+          offered = models;
+          return 'g3';
+        },
+      );
+
+      expect(offered, contains('g3'));
+      expect(runner.runs, 2, reason: 'the backup, then the write');
+      final sidecar = DumpMetadata.readJson(c.resultMetadataPath!);
+      expect(sidecar['model'], 'g3');
+      expect(sidecar['modelSource'], 'operatorDeclared');
+    });
+
+    test('cancelling the MCU model question writes nothing', () async {
+      final (c, runner) = await mcuController();
+      await c.start(askMcuModel: (_) async => null);
+
+      expect(c.stage, StageState.fail);
+      expect(c.sub, contains('no model was selected'));
+      expect(runner.runs, 1, reason: 'the backup only');
+      expect(c.resultPath, endsWith('.bin'));
+      expect(File(c.resultPath!).existsSync(), isTrue);
     });
 
     test('an invalid pre-flash backup aborts before any write', () async {

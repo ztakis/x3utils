@@ -106,6 +106,8 @@ List<int> _dump({
     kSlotBannerOffset + kBannerLength,
     banner.codeUnits,
   );
+  // Synthetic factory-shaped key + rand: compat only patches factory firmware.
+  b.setRange(0x1420, 0x1436, 'x3utilsTestKey00Rand00'.codeUnits);
   if (versionValue != null) {
     // MOVW r0,#imm — planted at a fixed spot well inside slot 0 (0x1000-0xffff).
     const at = 0x3000;
@@ -165,7 +167,8 @@ void main() {
 
       expect(c.stage, StageState.fail);
       expect(c.sub, contains('1.6.3'));
-      expect(c.sub, contains('Nothing was written'));
+      expect(c.sub, contains('Nothing written'));
+      expect(c.sub, contains('Backup + Flash, Slot 0'));
       expect(runner.wroteFlash, isFalse, reason: 'must refuse before erasing');
       expect(compatFiles('.bin'), isNotEmpty, reason: 'backup must survive');
       expect(c.resultPath, isNotNull);
@@ -188,11 +191,26 @@ void main() {
     await c.start();
 
     expect(c.stage, StageState.fail);
-    expect(c.sub, contains('XTEA key is present'));
-    expect(c.sub, contains('Nothing was written'));
+    expect(c.sub, contains('too new for SHU compat'));
+    expect(c.sub, contains('Nothing written'));
+    expect(c.sub, contains('Backup + Flash, Slot 0'));
     expect(runner.wroteFlash, isFalse, reason: 'must refuse before erasing');
     expect(compatFiles('.bin'), isNotEmpty, reason: 'backup must survive');
     expect(compatFiles('.json'), hasLength(1));
+  });
+
+  test('a non-factory key aborts before ROM identity', () async {
+    final bytes = _dump(banner: 'SCOOTER_VCU_xxG3', versionValue: 0x155)
+      ..setRange(0x1420, 0x1436, List<int>.filled(22, 0xFF));
+    final runner = _RecordingRunner(bytes);
+    final c = await compatRunner(runner);
+
+    await c.start();
+
+    expect(c.stage, StageState.fail);
+    expect(c.sub, 'Not factory firmware. Nothing written.');
+    expect(runner.wroteFlash, isFalse, reason: 'must refuse before erasing');
+    expect(compatFiles('.bin'), isNotEmpty, reason: 'backup must survive');
   });
 
   test(

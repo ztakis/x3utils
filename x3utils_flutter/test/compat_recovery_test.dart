@@ -20,6 +20,8 @@ Uint8List _image({bool identified = true}) {
     kSlotBannerOffset + kBannerLength,
     'SCOOTER_VCU_xxG3'.codeUnits,
   );
+  // Synthetic factory-shaped key + rand: compat only patches factory firmware.
+  bytes.setRange(0x1420, 0x1436, 'x3utilsTestKey00Rand00'.codeUnits);
   if (identified) bytes.setRange(0x3000, 0x3004, [0x40, 0xf2, 0x55, 0x10]);
   return bytes;
 }
