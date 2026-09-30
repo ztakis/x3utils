@@ -873,17 +873,17 @@ void main() {
     },
   );
 
-  test('all swdart protection operations reject Power-race', () async {
-    final session = _FakeSession();
-    final backend = SwdartBackend(
-      sessionFactory: () => session,
-      enablePowerRace: true,
-    );
+  test('protection Check and Rescue attach through Power-race', () async {
+    for (final operation in HardwareProtectionOperation.values) {
+      final session = _FakeSession();
+      final backend = SwdartBackend(
+        sessionFactory: () => session,
+        enablePowerRace: true,
+      );
 
-    await expectLater(
-      backend.runProtection(
-        const HardwareProtectionRequest(
-          operation: HardwareProtectionOperation.rescue,
+      await backend.runProtection(
+        HardwareProtectionRequest(
+          operation: operation,
           mode: ConnectionMode.powerRace,
           countdown: 3,
         ),
@@ -892,10 +892,9 @@ void main() {
           onChunk: (_) {},
           onGuided: (_) {},
         ),
-      ),
-      throwsA(isA<UnsupportedError>()),
-    );
-    expect(session.connectMode, isNull);
+      );
+      expect(session.connectMode, swd.ConnectMode.attachRace);
+    }
   });
 
   group('classifySwdartProtection ladder', () {

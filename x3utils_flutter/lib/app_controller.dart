@@ -2503,19 +2503,6 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _runRdp(String verb) async {
-    if (mode == ConnectionMode.powerRace) {
-      running = false;
-      _realRun = false;
-      lastConnect = '—';
-      _set(
-        StageState.warn,
-        'Not supported',
-        '${action.name} is not supported in Power-race',
-        'RDP/protection work needs a stable OpenOCD session. Use Default SWD, C45 Clone, or C45 Genuine instead.',
-      );
-      return;
-    }
-
     final backend = _backend;
     final capabilities = backend?.capabilities;
     final supported = verb == 'Check'

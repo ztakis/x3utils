@@ -539,11 +539,6 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
     HardwareProtectionRequest request,
     HardwareProtectionCallbacks callbacks,
   ) async {
-    if (request.mode == ConnectionMode.powerRace) {
-      throw UnsupportedError(
-        '$name does not support protection operations in Power-race',
-      );
-    }
     if (!capabilities.supportsProtection(request.operation, request.mode)) {
       throw UnsupportedError(
         '$name does not support ${request.operation.name} in '
