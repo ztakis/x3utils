@@ -3089,9 +3089,9 @@ class _HeroStageState extends State<_HeroStage>
                 ],
                 if (c.stage == StageState.idle &&
                     c.actionId == 'dump' &&
-                    c.extraBackupAvailable) ...[
+                    c.backupZipAvailable) ...[
                   const SizedBox(height: 14),
-                  _ExtraBackupToggle(c: c),
+                  _BackupExtras(c: c),
                 ],
                 // The packer's idle page carries a file bar AND a form, so it
                 // gets a tighter pre-CTA gap than the other actions.
@@ -3101,13 +3101,10 @@ class _HeroStageState extends State<_HeroStage>
                       ? 18
                       : 26,
                 ),
+                // SHU compat's "Also make zip" boxes were removed on
+                // 2026-09-30: zips now come from Backup's EXTRAS. The
+                // controller path (compatMakeZip3/32) is kept and tested.
                 _StageButtons(c: c, onStart: widget.onStart),
-                if (c.stage == StageState.idle &&
-                    c.actionId == 'flash_compat' &&
-                    !c.browserMode) ...[
-                  const SizedBox(height: 14),
-                  _CompatZip3Toggle(c: c),
-                ],
               ],
             ),
           ),
@@ -3117,50 +3114,73 @@ class _HeroStageState extends State<_HeroStage>
   }
 }
 
-/// Standalone Backup BETA opt-in. It is deliberately action-local and
-/// transient: Backup + Flash and SHU compat never inherit this request.
-class _ExtraBackupToggle extends StatelessWidget {
-  const _ExtraBackupToggle({required this.c});
-
+/// The desktop Backup page's EXTRAS card: one folded row that names what is
+/// on, opening to the Extra backup and zip options. Both options are
+/// action-local and transient: Backup + Flash and SHU compat never inherit
+/// them. Extra needs the swdart backend and shows disabled without it.
+class _BackupExtras extends StatefulWidget {
+  const _BackupExtras({required this.c});
   final AppController c;
-
   @override
-  Widget build(BuildContext context) => ConstrainedBox(
-    constraints: const BoxConstraints(maxWidth: kHeroBlockWidth),
+  State<_BackupExtras> createState() => _BackupExtrasState();
+}
+
+class _BackupExtrasState extends State<_BackupExtras> {
+  bool _open = false;
+
+  AppController get c => widget.c;
+
+  Widget _check(bool on, {double size = 19, bool enabled = true}) => Icon(
+    on ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+    size: size,
+    color: on && enabled ? AppColors.brand : AppColors.mut,
+  );
+
+  Widget _option({
+    required Key key,
+    required bool on,
+    required bool enabled,
+    required String title,
+    String? detail,
+    required VoidCallback onTap,
+    Widget? below,
+  }) => Opacity(
+    opacity: enabled ? 1 : 0.5,
     child: InkWell(
-      key: const ValueKey('extra-backup-toggle'),
-      onTap: () => c.setExtraBackup(!c.extraBackup),
-      borderRadius: BorderRadius.circular(10),
+      key: key,
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(9),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 10),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              c.extraBackup
-                  ? Icons.check_box_rounded
-                  : Icons.check_box_outline_blank_rounded,
-              size: 19,
-              color: c.extraBackup ? AppColors.brand : AppColors.mut,
-            ),
-            const SizedBox(width: 9),
+            _check(on, enabled: enabled),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Extra backup (BETA)',
+                    title,
                     style: TextStyle(
-                      color: c.extraBackup ? AppColors.txt : AppColors.dim,
+                      color: on ? AppColors.txt : AppColors.dim,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Capture SRAM, read flash twice, compare every byte, and '
-                    'save a verified secondary copy plus _EXTRA.json.',
-                    style: TextStyle(color: AppColors.mut, fontSize: 11),
-                  ),
+                  if (detail != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      style: const TextStyle(
+                        color: AppColors.mut,
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                  ?below,
                 ],
               ),
             ),
@@ -3169,6 +3189,141 @@ class _ExtraBackupToggle extends StatelessWidget {
       ),
     ),
   );
+
+  Widget _format(Key key, String label, bool on, void Function(bool) set) =>
+      InkWell(
+        key: key,
+        onTap: () => set(!on),
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _check(on, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: on ? AppColors.txt : AppColors.dim,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final extraAvailable = c.extraBackupAvailable;
+    final on = [if (c.extraBackup) 'Extra', if (c.backupMakeZip) 'Zip'];
+    return Container(
+      key: const ValueKey('backup-extras'),
+      constraints: const BoxConstraints(maxWidth: kCompactPickerWidth),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.line2),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            key: const ValueKey('backup-extras-fold'),
+            onTap: () => setState(() => _open = !_open),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+              child: Row(
+                children: [
+                  const Text(
+                    'EXTRAS',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.7,
+                      color: AppColors.dim,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    on.isEmpty ? 'Off' : on.join(' · '),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: on.isEmpty ? AppColors.mut : AppColors.txt,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _open
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: AppColors.mut,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_open) ...[
+            const Divider(height: 1, color: AppColors.line),
+            Padding(
+              padding: const EdgeInsets.all(4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _option(
+                    key: const ValueKey('extra-backup-toggle'),
+                    on: c.extraBackup,
+                    enabled: extraAvailable,
+                    title: 'Extra backup',
+                    detail: extraAvailable
+                        ? 'Reads flash twice and compares every byte, captures '
+                              'SRAM, saves a verified second copy and a '
+                              'certificate.'
+                        : 'Needs the swdart backend. Switch in Settings.',
+                    onTap: () => c.setExtraBackup(!c.extraBackup),
+                  ),
+                  const Divider(height: 1, color: AppColors.line),
+                  _option(
+                    key: const ValueKey('backup-zip-toggle'),
+                    on: c.backupMakeZip,
+                    enabled: true,
+                    title: 'Also make zip files',
+                    onTap: () => c.setBackupMakeZip(!c.backupMakeZip),
+                    below: c.backupMakeZip
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Wrap(
+                              spacing: 14,
+                              runSpacing: 2,
+                              children: [
+                                _format(
+                                  const ValueKey('backup-zip3'),
+                                  'zip 3 · all SHU',
+                                  c.backupZip3,
+                                  c.setBackupZip3,
+                                ),
+                                _format(
+                                  const ValueKey('backup-zip32'),
+                                  'zip 3.2 · SHU 4.2+',
+                                  c.backupZip32,
+                                  c.setBackupZip32,
+                                ),
+                              ],
+                            ),
+                          )
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 /// Reveals local backup identity data only after the operator asks for it.
@@ -5658,70 +5813,6 @@ class _MakeZip3FormState extends State<_MakeZip3Form> {
           onChanged: onChanged,
         ),
       ),
-    );
-  }
-}
-
-/// Faint opt-ins under the "Make SHU compatible" pill: after the patched image
-/// flashes, also repackage BOTH the patched and the stock firmware as
-/// BLE-loadable packages. Each ticked format produces two files.
-///
-/// Two boxes rather than one because two generations of the BLE app are in the
-/// field — 3.x reads only legacy zip3, 4.x is expected to read both — and the
-/// operator, not x3utils, knows which one their phone is running. Off by
-/// default; MCU packages use the operator-declared model.
-class _CompatZip3Toggle extends StatelessWidget {
-  const _CompatZip3Toggle({required this.c});
-  final AppController c;
-
-  Widget _box(String label, bool on, void Function(bool) set) => InkWell(
-    onTap: () => set(!on),
-    borderRadius: BorderRadius.circular(8),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            on
-                ? Icons.check_box_rounded
-                : Icons.check_box_outline_blank_rounded,
-            size: 16,
-            color: on ? AppColors.brand : AppColors.mut,
-          ),
-          const SizedBox(width: 7),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: on ? AppColors.txt : AppColors.dim,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    // Both formats are offered: SHU 4.2 reads zip3.2, and legacy zip3 covers
-    // 3.x and 4.x, so the operator picks by the app version their scooter's
-    // phone is running. Each ticked box packs both the patched and stock images.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _box(
-          'Also make zip 3 (all SHU versions)',
-          c.compatMakeZip3,
-          c.setCompatMakeZip3,
-        ),
-        _box(
-          'Also make zip 3.2 (SHU 4.2+)',
-          c.compatMakeZip32,
-          c.setCompatMakeZip32,
-        ),
-      ],
     );
   }
 }

@@ -183,9 +183,29 @@ const kActions = <FlashAction>[
     okMsg: 'Flashed & verified. Backup saved first.',
     needsFirmware: true,
   ),
+  // A normal selectable action with a normal hero, so the page has somewhere
+  // to grow display options. What it does NOT share is the run machinery:
+  // Start opens a report dialog and never enters the stage/verdict path,
+  // because nothing here connects to a target. `okMsg` is therefore unused —
+  // there is no run outcome to announce. Moved up from Advanced on 2026-09-30.
+  FlashAction(
+    id: 'file_info',
+    section: Section.standard,
+    name: 'Get file info',
+    script: 'inspect · bin / zip3',
+    sub:
+        'Describe any local firmware .bin or zip3 package — identity, version and package metadata. Reads the file only.',
+    chips: [InfoChipData('read-only', ChipKind.ok)],
+    cta: 'Show file info',
+    okMsg: '',
+    needsFirmware: true,
+  ),
+  // ── Advanced ──────────────────────────────────────────────
+  // SHU compat moved here on 2026-09-30: most unpatched units now run
+  // blacklisted versions, and the main route is Backup + Flash of a mirror zip.
   FlashAction(
     id: 'flash_compat',
-    section: Section.standard,
+    section: Section.advanced,
     name: 'SHU compatible',
     script: 'flash_compat',
     sub:
@@ -198,7 +218,6 @@ const kActions = <FlashAction>[
     danger: DangerLevel.soft,
     okMsg: 'SHU-compatible firmware flashed & verified.',
   ),
-  // ── Advanced ──────────────────────────────────────────────
   FlashAction(
     id: 'flash_only',
     section: Section.advanced,
@@ -221,23 +240,6 @@ const kActions = <FlashAction>[
     chips: [InfoChipData('offline', ChipKind.ok)],
     cta: 'Pack zip 3.2',
     okMsg: 'zip3 package written.',
-    needsFirmware: true,
-  ),
-  // A normal selectable action with a normal hero, so the page has somewhere
-  // to grow display options. What it does NOT share is the run machinery:
-  // Start opens a report dialog and never enters the stage/verdict path,
-  // because nothing here connects to a target. `okMsg` is therefore unused —
-  // there is no run outcome to announce.
-  FlashAction(
-    id: 'file_info',
-    section: Section.advanced,
-    name: 'Get file info',
-    script: 'inspect · bin / zip3',
-    sub:
-        'Describe any local firmware .bin or zip3 package — identity, version and package metadata. Reads the file only.',
-    chips: [InfoChipData('read-only', ChipKind.ok)],
-    cta: 'Show file info',
-    okMsg: '',
     needsFirmware: true,
   ),
   FlashAction(

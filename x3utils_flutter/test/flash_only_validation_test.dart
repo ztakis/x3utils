@@ -700,10 +700,12 @@ void main() {
     expect(controller.heroEyebrow, 'Slot 0 only');
   });
 
-  test('SHU compatible sits in the standard rail section', () {
+  test('SHU compatible sits in Advanced; Get file info in the main rail', () {
     final compat = kActions.firstWhere((a) => a.id == 'flash_compat');
-    expect(compat.section, Section.standard);
+    expect(compat.section, Section.advanced);
     expect(compat.hidden, isFalse);
+    final info = kActions.firstWhere((a) => a.id == 'file_info');
+    expect(info.section, Section.standard);
   });
 
   test('no flash action carries a selected bin across an action switch', () {

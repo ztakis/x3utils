@@ -841,6 +841,35 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Backup's "Also make zip files" extra (desktop): after a validated backup,
+  // slice slot 0 by its ZP record and pack it. Best-effort like compat's, and
+  // transient: the master box resets on every action entry, both formats
+  // start ticked.
+  bool backupMakeZip = false;
+  bool backupZip3 = true; // legacy zip3, all SHU versions
+  bool backupZip32 = true; // zip3.2, SHU 4.2+
+
+  /// Desktop only: memory-backed platforms have no folder to write zips to.
+  bool get backupZipAvailable => !_browserMode && !_androidMode;
+
+  void setBackupMakeZip(bool v) {
+    if (running) return;
+    backupMakeZip = v && actionId == 'dump' && backupZipAvailable;
+    notifyListeners();
+  }
+
+  void setBackupZip3(bool v) {
+    if (running) return;
+    backupZip3 = v;
+    notifyListeners();
+  }
+
+  void setBackupZip32(bool v) {
+    if (running) return;
+    backupZip32 = v;
+    notifyListeners();
+  }
+
   void setZip3WorkspacePage(Zip3WorkspacePage page) {
     if (running || zip3WorkspacePage == page) return;
     zip3WorkspacePage = page;
@@ -1970,6 +1999,9 @@ class AppController extends ChangeNotifier {
     compatMakeZip3 = false; // the compat zip3 opt-ins are transient too
     compatMakeZip32 = false;
     extraBackup = false;
+    backupMakeZip = false;
+    backupZip3 = true;
+    backupZip32 = true;
     _firmwareSelected = null; // no action remembers a loaded bin
     _firmwareSelectedDigest = null;
     _firmwareSelectedBytes = null;
@@ -3285,8 +3317,14 @@ class AppController extends ChangeNotifier {
     var metadataPath = _writeDumpMetadata(outPath);
     String? outputNote;
     var extraArtifactsComplete = false;
-    if (useExtra) {
+    final makeZip =
+        backupMakeZip && backupZipAvailable && (backupZip3 || backupZip32);
+    // Asked BEFORE any second copy, so the copied sidecar carries the model.
+    // An MCU image names no model, and both Extra and the zip need one.
+    if (useExtra || makeZip) {
       metadataPath = await _maybeDeclareExtraMcuModel(outPath, metadataPath);
+    }
+    if (useExtra) {
       final copy = _copyExtraBackup(outPath, r.bytes!);
       // Persist the raw SRAM snapshot beside the dump. Flash can be re-read
       // from the .bin at any time; SRAM cannot, so saving it is the only way a
@@ -3351,6 +3389,11 @@ class AppController extends ChangeNotifier {
       }
     } else {
       _maybeSecondCopy(outPath, sidecarPath: metadataPath);
+    }
+    if (makeZip) {
+      final zipNote = _maybeBackupZip3(outPath, metadataPath);
+      outputNote = [outputNote, zipNote].whereType<String>().join(' ');
+      if (outputNote.isEmpty) outputNote = null;
     }
     await _finishRealAfterHold(
       true,
@@ -5104,6 +5147,73 @@ class AppController extends ChangeNotifier {
     return stockBuilt
         ? '$count Loading a stock package restores the original key.'
         : '$count No stock package — going back needs the ST-Link.';
+  }
+
+  /// Backup's "Also make zip files": pack the just-validated backup's slot 0
+  /// into `<dump>_zips/` beside it, one package per ticked format.
+  ///
+  /// Identity comes from the backup's own sidecar (banner-derived for a VCU,
+  /// operator-declared for an MCU). The slice trusts the ZP record, which an
+  /// ST-Link slot-0 write leaves stale; the packer cannot detect that.
+  /// Best-effort: the backup already succeeded, so nothing here demotes it, and
+  /// a package that could not be built is named rather than passed over.
+  String? _maybeBackupZip3(String dumpPath, String? metadataPath) {
+    String? type;
+    String? model;
+    String? version;
+    try {
+      if (metadataPath != null) {
+        final metadata = DumpMetadata.readJson(metadataPath);
+        type = metadata['type'] as String?;
+        model = metadata['model'] as String?;
+        version = metadata['version'] as String?;
+      }
+    } catch (e) {
+      _log('== backup zip skipped: backup info could not be read: $e ==');
+    }
+    if (type == null || model == null) {
+      _log('== backup zip skipped: firmware type/model unknown ==');
+      return 'No zip made: the firmware model is unknown.';
+    }
+
+    final Directory folder;
+    try {
+      folder = Directory(dumpPath.replaceFirst(RegExp(r'\.bin$'), '_zips'))
+        ..createSync(recursive: true);
+    } catch (e) {
+      _log('== backup zip skipped: could not create the zip folder: $e ==');
+      return 'No zip made: the zip folder could not be created.';
+    }
+
+    final stem = CompatIdentity(
+      model: model,
+      type: type,
+      version: version,
+      modelDeclared: false,
+    ).nameStem;
+    final built = <String>[];
+    for (final format in [
+      if (backupZip3) Zip3Format.legacy,
+      if (backupZip32) Zip3Format.rev2,
+    ]) {
+      final token = format == Zip3Format.legacy ? 'zip3' : 'zip32';
+      final file = _packCompatZip3(
+        dumpPath,
+        folder,
+        '${stem}_$token',
+        format,
+        type,
+        model,
+      );
+      if (file != null) built.add(file);
+    }
+    if (built.isEmpty) {
+      if (folder.listSync().isEmpty) folder.deleteSync();
+      return 'No zip made. See the console.';
+    }
+    final where = folder.path.split(RegExp(r'[\\/]')).last;
+    return '${built.length} package${built.length == 1 ? '' : 's'} saved in '
+        '$where.';
   }
 
   /// Build one zip3 from [binPath] into [folder] as `<name>.zip`, returning its

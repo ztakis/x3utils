@@ -1003,6 +1003,12 @@ void main() {
     controller.selectAction('dump');
     await tester.pump();
 
+    // EXTRAS starts folded and says nothing is on.
+    expect(find.byKey(const ValueKey('extra-backup-toggle')), findsNothing);
+    expect(find.text('Off'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('backup-extras-fold')));
+    await tester.pump();
+
     final toggle = find.byKey(const ValueKey('extra-backup-toggle'));
     expect(toggle, findsOneWidget);
     expect(controller.extraBackup, isFalse);
@@ -1010,8 +1016,17 @@ void main() {
     await tester.pump();
     expect(controller.extraBackup, isTrue);
 
+    // The zip formats appear only once the zip box is ticked.
+    expect(find.byKey(const ValueKey('backup-zip3')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('backup-zip-toggle')));
+    await tester.pump();
+    expect(controller.backupMakeZip, isTrue);
+    expect(find.byKey(const ValueKey('backup-zip3')), findsOneWidget);
+    expect(find.text('Extra · Zip'), findsOneWidget);
+
     controller.selectAction('flash_backup');
     await tester.pump();
+    expect(controller.backupMakeZip, isFalse);
     expect(find.byKey(const ValueKey('extra-backup-toggle')), findsNothing);
     expect(controller.extraBackup, isFalse);
   });
@@ -1149,16 +1164,18 @@ void main() {
     expect(find.text('AT32F415 · WebUSB'), findsOneWidget);
     expect(find.textContaining('swdart'), findsWidgets);
     expect(find.text('Backup + Flash'), findsOneWidget);
-    expect(find.text('SHU compatible'), findsOneWidget);
+    expect(find.text('Get file info'), findsOneWidget);
     expect(find.text('C45 · Clone'), findsOneWidget);
     expect(find.text('Power-race'), findsOneWidget);
     expect(find.text('ADVANCED'), findsOneWidget);
 
-    // Genuine nRST starts in Advanced, like the desktop surface.
+    // Genuine nRST and SHU compat start in Advanced, like the desktop surface.
     expect(find.text('C45 · Genuine'), findsNothing);
+    expect(find.text('SHU compatible'), findsNothing);
     await tester.tap(find.text('ADVANCED'));
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('C45 · Genuine'), findsOneWidget);
+    expect(find.text('SHU compatible'), findsOneWidget);
     expect(find.text('Flash Only'), findsOneWidget);
   });
 
@@ -1473,7 +1490,7 @@ ZP          59028 payload / 59032 encoded (readable)'''
     expect(find.text('Copied'), findsOneWidget);
   });
 
-  testWidgets('Get file info sits in Advanced between ZIP3 and protection', (
+  testWidgets('Get file info is in the main rail; SHU compat leads Advanced', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -1482,18 +1499,20 @@ ZP          59028 payload / 59032 encoded (readable)'''
     addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(const X3UtilsApp());
 
-    expect(find.text('Get file info'), findsNothing); // Advanced is collapsed
+    double top(String label) => tester.getTopLeft(find.text(label)).dy;
+    // Visible with Advanced collapsed, right under Backup + Flash.
+    expect(find.text('SHU compatible'), findsNothing);
+    expect(top('Get file info'), greaterThan(top('Backup + Flash')));
+
     await tester.tap(find.text('ADVANCED'));
     await tester.pump(const Duration(milliseconds: 250));
+    // SHU compat is the first Advanced action, straight after C45 · Genuine.
+    expect(top('SHU compatible'), greaterThan(top('C45 · Genuine')));
+    expect(top('SHU compatible'), lessThan(top('Flash Only')));
 
-    double top(String label) => tester.getTopLeft(find.text(label)).dy;
-    expect(top('Get file info'), greaterThan(top('ZIP3 tools')));
-    expect(top('Get file info'), lessThan(top('Check protection')));
-
-    // It selects like any other action and gets a normal hero page, which is
-    // where display options can live later. Fired through the tile's own
-    // callback because a fifth Advanced action sits below the fold of the
-    // 1024x768 rail, which scrolls.
+    // It selects like any other action and gets a normal hero page. Fired
+    // through the tile's own callback because the expanded 1024x768 rail
+    // scrolls.
     final tile = tester.widget<InkWell>(
       find
           .ancestor(
