@@ -153,6 +153,7 @@ class HardwareEvidence {
     this.verified = false,
     this.resetRunning = false,
     this.sramAttempted = false,
+    this.fapOn,
   });
 
   final bool caught;
@@ -162,6 +163,10 @@ class HardwareEvidence {
   final bool verified;
   final bool resetRunning;
   final bool sramAttempted;
+
+  /// FAP bit of the AT32 FLASH_USD register, read after a passed connection
+  /// check. Null when the backend did not read it (OpenOCD) or the read failed.
+  final bool? fapOn;
 }
 
 class HardwareResult {

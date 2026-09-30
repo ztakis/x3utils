@@ -18,6 +18,11 @@ const int _backupLength = 131072;
 const int _usdBase = 0x1ffff800;
 const int _fapUnlocked = 0xa5;
 
+/// FLASH_USD: the protection state the chip loaded at its last power-on reset.
+/// Bit 1 = FAP, bit 26 = FAP_HL (bit positions from upstream swdart). Evidence
+/// only — not a verdict input yet (hardware-seen on one board, 2026-09-30).
+const int _flashUsdReg = 0x4002201c;
+
 /// The small swdart surface needed by the x3utils WebUSB backend.
 ///
 /// Keeping this injectable lets controller/backend tests prove policy without
@@ -34,6 +39,9 @@ abstract interface class SwdartSession {
   Future<Uint8List> readFlash({required int address, required int length});
 
   Future<Uint8List> readSram({required int address, required int length});
+
+  /// One 32-bit read, for peripheral registers such as FLASH_USD.
+  Future<int> readWord(int address);
 
   Future<void> programFlash({
     required int address,
@@ -98,6 +106,10 @@ class SwdartProbeSession implements SwdartSession {
   @override
   Future<Uint8List> readSram({required int address, required int length}) =>
       _probe.readSram(address: address, length: length);
+
+  @override
+  Future<int> readWord(int address) async =>
+      _u32le(await _probe.readMemory(address, 4), 0);
 
   @override
   Future<void> programFlash({
@@ -318,7 +330,8 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
       callbacks.onProgress(const HardwareProgress(connected: true));
 
       if (request.operation == HardwareOperation.check) {
-        return const HardwareResult(0, HardwareEvidence(caught: true));
+        final fapOn = await _logFlashUsd(session, callbacks.onLine);
+        return HardwareResult(0, HardwareEvidence(caught: true, fapOn: fapOn));
       }
 
       if (isFlash) {
@@ -657,6 +670,7 @@ class SwdartBackend implements HardwareBackend, HardwareDeviceBackend {
     SwdartSession session,
     HardwareProtectionCallbacks callbacks,
   ) async {
+    await _logFlashUsd(session, callbacks.onLine);
     int? usdWord;
     try {
       final usd = await session.readFlash(address: _usdBase, length: 4);
@@ -807,6 +821,25 @@ String _hex8(int v) => '0x${v.toRadixString(16).padLeft(2, '0').toUpperCase()}';
     return (accessible: false, blocked: true, label: 'masked (all 0x00)');
   }
   return (accessible: false, blocked: false, label: 'unclassified');
+}
+
+/// Log the FLASH_USD register and return its FAP bit, or null when the read
+/// failed. Never throws, so it cannot fail the action it rides on.
+Future<bool?> _logFlashUsd(
+  SwdartSession session,
+  void Function(String line) onLine,
+) async {
+  try {
+    final v = await session.readWord(_flashUsdReg);
+    onLine(
+      '[protection] FLASH_USD @ 0x4002201C = ${_hex32(v)}  '
+      'FAP=${(v >> 1) & 1} FAP_HL=${(v >> 26) & 1}',
+    );
+    return (v >> 1) & 1 == 1;
+  } catch (error) {
+    onLine('[protection] FLASH_USD @ 0x4002201C unreadable: $error');
+    return null;
+  }
 }
 
 /// Print the raw reads behind the verdict, mirroring the OpenOCD rdp tool's

@@ -2422,6 +2422,9 @@ class AppController extends ChangeNotifier {
             r.ok,
             action.okMsg,
             '$backendName exited with code ${r.exitCode}. Check the console.',
+            outputNote: r.ok && r.evidence.fapOn == true
+                ? 'Flash is read-protected. Run Check protection.'
+                : null,
           );
         }
       case 'dump':

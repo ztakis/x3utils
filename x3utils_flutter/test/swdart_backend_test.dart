@@ -126,6 +126,8 @@ class _FakeSession implements SwdartSession {
     this.rescueError,
     this.continueResult = false,
     this.onRead,
+    this.flashUsd = 0,
+    this.flashUsdError,
     this.rescueStages = const [
       swd.ProtectionRescueStage.usdErased,
       swd.ProtectionRescueStage.fapProgrammed,
@@ -153,6 +155,12 @@ class _FakeSession implements SwdartSession {
   /// Optional per-address read stub for the FAP-check reads; when null the
   /// whole [bytes] image is returned as before.
   final Uint8List Function(int address, int length)? onRead;
+
+  /// FLASH_USD register value returned by [readWord]; [flashUsdError] makes
+  /// that read throw instead.
+  final int flashUsd;
+  final Object? flashUsdError;
+  final List<int> wordReads = [];
 
   final List<swd.ProtectionRescueStage> rescueStages;
   final List<swd.FlashProgramStage> programStages;
@@ -223,6 +231,14 @@ class _FakeSession implements SwdartSession {
     events?.add('sram');
     log?.call('[sram] fake read');
     return sramBytes;
+  }
+
+  @override
+  Future<int> readWord(int address) async {
+    if (disconnects > 0) throw StateError('not connected');
+    wordReads.add(address);
+    if (flashUsdError != null) throw flashUsdError!;
+    return flashUsd;
   }
 
   @override
@@ -303,7 +319,7 @@ void main() {
   });
 
   test(
-    'Check accepts a known AT32F415 and forwards only session logs',
+    'Check accepts a known AT32F415 and adds only the FLASH_USD line',
     () async {
       final session = _FakeSession();
       final backend = SwdartBackend(sessionFactory: () => session);
@@ -321,11 +337,64 @@ void main() {
       expect(result.ok, isTrue);
       expect(result.evidence.caught, isTrue);
       expect(result.evidence.dumped, isFalse);
+      expect(result.evidence.fapOn, isFalse);
       expect(session.connectMode, swd.ConnectMode.normal);
-      expect(lines, ['[probe] fake ST-Link']);
+      expect(session.wordReads, [0x4002201c]);
+      expect(lines, [
+        '[probe] fake ST-Link',
+        '[protection] FLASH_USD @ 0x4002201C = 0x00000000  FAP=0 FAP_HL=0',
+      ]);
       expect(session.disconnects, 1);
     },
   );
+
+  test('Check reports FAP on from FLASH_USD bit 1', () async {
+    final session = _FakeSession(flashUsd: 0x00000002);
+    final backend = SwdartBackend(sessionFactory: () => session);
+    final lines = <String>[];
+
+    final result = await backend.run(
+      const HardwareRequest(
+        operation: HardwareOperation.check,
+        mode: ConnectionMode.defaultSwd,
+        countdown: 3,
+      ),
+      _callbacks(onLine: lines.add),
+    );
+
+    expect(result.ok, isTrue);
+    expect(result.evidence.fapOn, isTrue);
+    expect(
+      lines,
+      contains(
+        '[protection] FLASH_USD @ 0x4002201C = 0x00000002  FAP=1 FAP_HL=0',
+      ),
+    );
+  });
+
+  test('a failed FLASH_USD read never fails Check', () async {
+    final session = _FakeSession(flashUsdError: StateError('AP fault'));
+    final backend = SwdartBackend(sessionFactory: () => session);
+    final lines = <String>[];
+
+    final result = await backend.run(
+      const HardwareRequest(
+        operation: HardwareOperation.check,
+        mode: ConnectionMode.defaultSwd,
+        countdown: 3,
+      ),
+      _callbacks(onLine: lines.add),
+    );
+
+    expect(result.ok, isTrue);
+    expect(result.evidence.fapOn, isNull);
+    expect(
+      lines.where(
+        (l) => l.startsWith('[protection] FLASH_USD @ 0x4002201C unreadable'),
+      ),
+      hasLength(1),
+    );
+  });
 
   test('USB acquisition failures stay typed through swdart backend', () async {
     final session = _FakeSession(
@@ -982,6 +1051,7 @@ void main() {
     () async {
       final session = _FakeSession(
         onRead: (address, length) => Uint8List(length),
+        flashUsd: 0x00000002,
       );
       final backend = SwdartBackend(sessionFactory: () => session);
       final lines = <String>[];
@@ -1020,8 +1090,43 @@ void main() {
           '0x00000000 0x00000000 0x00000000 0x00000000 [masked (all 0x00)]',
         ),
       );
+      expect(session.wordReads, [0x4002201c]);
+      expect(
+        lines,
+        contains(
+          '[protection] FLASH_USD @ 0x4002201C = 0x00000002  FAP=1 FAP_HL=0',
+        ),
+      );
     },
   );
+
+  test('protection Check verdict ignores FLASH_USD (evidence only)', () async {
+    // Readable firmware with the FAP bit set: the verdict stays with the
+    // existing ladder until FLASH_USD has more hardware evidence behind it.
+    final firmware = Uint8List(16)..setAll(0, [0x90, 0x08, 0x00, 0x20]);
+    final usd = Uint8List(4)..setAll(0, [0xa5, 0x5a, 0xff, 0xff]);
+    final session = _FakeSession(
+      onRead: (address, length) => address == 0x1ffff800 ? usd : firmware,
+      flashUsd: 0x00000002,
+    );
+    final backend = SwdartBackend(sessionFactory: () => session);
+
+    final result = await backend.runProtection(
+      const HardwareProtectionRequest(
+        operation: HardwareProtectionOperation.check,
+        mode: ConnectionMode.defaultSwd,
+        countdown: 3,
+      ),
+      HardwareProtectionCallbacks(
+        onLine: (_) {},
+        onChunk: (_) {},
+        onGuided: (_) {},
+      ),
+    );
+
+    expect(result.verdict, HardwareProtectionVerdict.notProtected);
+    expect(result.exitCode, 0);
+  });
 
   test(
     'protection Check on an unidentified target is inconclusive, not thrown',
@@ -2384,6 +2489,28 @@ void main() {
 
     expect(controller.stage, StageState.ok);
     expect(session.connectMode, swd.ConnectMode.attachRace);
+    expect(controller.resultNote, isNull);
+  });
+
+  test('Check connection stays green and notes FAP when it is on', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    final session = _FakeSession(flashUsd: 0x00000002);
+    final controller = AppController(
+      backend: SwdartBackend(sessionFactory: () => session),
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    controller.selectAction('check');
+    await controller.start();
+
+    expect(controller.stage, StageState.ok);
+    expect(
+      controller.resultNote,
+      'Flash is read-protected. Run Check protection.',
+    );
   });
 
   test(
