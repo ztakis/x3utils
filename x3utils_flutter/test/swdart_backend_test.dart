@@ -1984,8 +1984,7 @@ void main() {
         'logToFile': true,
         'secondCopy': true,
       });
-      Uint8List? downloaded;
-      String? downloadName;
+      final downloads = <(String, Uint8List)>[];
       final controller = AppController(
         backend: SwdartBackend(
           sessionFactory: _FakeSession.new,
@@ -1995,8 +1994,7 @@ void main() {
         ),
         browserMode: true,
         backupDownloader: (bytes, fileName) async {
-          downloaded = bytes;
-          downloadName = fileName;
+          downloads.add((fileName, bytes));
         },
       );
       addTearDown(controller.dispose);
@@ -2005,7 +2003,8 @@ void main() {
       expect(controller.backendName, 'swdart');
       expect(controller.availableModes, ConnectionMode.values);
       expect(controller.defaultMode, ConnectionMode.cloneC45);
-      expect(controller.logToFile, isFalse);
+      // 2.2.0: Save log works on web (as a download) and honours the pref.
+      expect(controller.logToFile, isTrue);
       expect(controller.secondCopy, isFalse);
       expect(controller.hasAdvancedOptions, isFalse); // flat rail since 2.2.0
       expect(controller.isActionAvailable('check'), isTrue);
@@ -2022,34 +2021,43 @@ void main() {
       expect(controller.canStart, isTrue);
       await controller.start();
 
+      await Future<void>.delayed(Duration.zero); // the log download is async
+
       expect(controller.stage, StageState.ok);
-      expect(downloaded, _image());
-      expect(downloadName, endsWith('.bin'));
-      expect(controller.resultPath, downloadName);
+      expect(downloads, hasLength(2));
+      final (binName, binBytes) = downloads.first;
+      expect(binBytes, _image());
+      expect(binName, endsWith('.bin'));
+      expect(controller.resultPath, binName);
       expect(controller.resultMetadataPath, isNull);
       expect(controller.resultNote, contains('no metadata sidecar'));
-
-      // 2.2.0: the finished run's log is an on-demand browser download.
-      expect(controller.runLogDownloadAvailable, isTrue);
-      await controller.downloadRunLog();
-      expect(downloadName, startsWith('dump_'));
-      expect(downloadName, endsWith('.log'));
-      expect(utf8.decode(downloaded!), startsWith('x3utils v'));
+      final (logName, logBytes) = downloads.last;
+      expect(logName, startsWith('dump_'));
+      expect(logName, endsWith('.log'));
+      expect(utf8.decode(logBytes), startsWith('x3utils v'));
     },
   );
 
-  test('Save log download is web-only and needs a finished run', () async {
+  test('web Save log defaults off: a backup is one download', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'defaultAutoRetry': 0,
     });
+    final names = <String>[];
     final controller = AppController(
       backend: SwdartBackend(sessionFactory: _FakeSession.new),
       browserMode: true,
-      backupDownloader: (_, _) async {},
+      backupDownloader: (_, fileName) async => names.add(fileName),
     );
     addTearDown(controller.dispose);
     await Future<void>.delayed(Duration.zero);
-    expect(controller.runLogDownloadAvailable, isFalse); // no run yet
+    expect(controller.logToFile, isFalse);
+
+    controller.selectAction('dump');
+    await controller.start();
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.stage, StageState.ok);
+    expect(names, hasLength(1));
+    expect(names.single, endsWith('.bin'));
   });
 
   test('Android controller validates then publishes one backup bin', () async {

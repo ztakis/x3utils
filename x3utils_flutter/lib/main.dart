@@ -925,17 +925,27 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           const Divider(color: AppColors.line, height: 28),
-                          if (c.browserMode)
+                          if (c.browserMode) ...[
                             const Text(
                               'Browser backups are validated in memory and '
-                              'downloaded directly. No sidecar, second copy, '
-                              'or local log file is written.',
+                              'downloaded directly. No sidecar or second copy '
+                              'is written.',
                               style: TextStyle(
                                 color: AppColors.mut,
                                 fontSize: 12,
                               ),
-                            )
-                          else if (c.androidMode) ...[
+                            ),
+                            const SizedBox(height: 10),
+                            _AndroidStorageSwitch(
+                              label: 'Save log',
+                              folder: 'Browser download',
+                              value: c.logToFile,
+                              onChanged: (_) {
+                                c.toggleLogToFile();
+                                setLocal(() {});
+                              },
+                            ),
+                          ] else if (c.androidMode) ...[
                             const Text(
                               'Backups are saved to Downloads/x3utils/backup.',
                               style: TextStyle(
@@ -3079,17 +3089,6 @@ class _HeroStageState extends State<_HeroStage>
                     small: true,
                   ),
                 ],
-                if (c.runLogDownloadAvailable) ...[
-                  const SizedBox(height: 10),
-                  _PillButton(
-                    label: 'Save log',
-                    onTap: c.downloadRunLog,
-                    bg: AppColors.line,
-                    fg: AppColors.txt,
-                    border: AppColors.line2,
-                    small: true,
-                  ),
-                ],
                 // Pack zip3's idle hero is the picker + identity form, so the
                 // generic bolt is redundant there.
                 if (!compactPicker &&
@@ -5211,7 +5210,7 @@ class _ConsolePanelState extends State<_ConsolePanel> {
                   style: const TextStyle(color: AppColors.mut, fontSize: 12),
                 ),
                 const SizedBox(width: 14),
-                if (!widget.c.browserMode) _LogToggle(c: widget.c),
+                _LogToggle(c: widget.c),
                 const Spacer(),
                 _PinButton(c: widget.c),
                 const SizedBox(width: 14),
@@ -5889,7 +5888,9 @@ class _LogToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final on = c.logToFile;
     return Tooltip(
-      message: on
+      message: c.browserMode
+          ? (on ? 'Downloading each run\'s log' : 'Download each run\'s log')
+          : on
           ? 'Saving each run → ${Firmware.logsDirLabel}'
           : 'Save each run to a log file',
       child: InkWell(

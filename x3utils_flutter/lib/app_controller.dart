@@ -406,7 +406,9 @@ class AppController extends ChangeNotifier {
     // should already have its transcript on disk. Turning it off writes false
     // and keeps it off. Android publishes to Downloads/x3utils/logs (2.1.9);
     // the browser has nowhere to write and stays off.
-    logToFile = !_browserMode && (_prefs!.getBool('logToFile') ?? true);
+    // Web (2.2.0) downloads each run's log instead, default OFF: a Backup then
+    // means two automatic downloads, which Chrome asks to allow.
+    logToFile = _prefs!.getBool('logToFile') ?? !_browserMode;
     // ON by default from 2.1.0 on DESKTOP. The loader failure that took weeks
     // to find was intermittent, so a field recurrence must arrive with its
     // register baseline and per-chunk log already in the transcript — which
@@ -2252,34 +2254,12 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Web only: the browser cannot write a log folder, so a finished run's
-  /// transcript is offered as an on-demand download instead (2.2.0).
-  String? _lastRunAction;
-
-  bool get runLogDownloadAvailable =>
-      _browserMode &&
-      !running &&
-      _lastRunAction != null &&
-      _runLog.isNotEmpty &&
-      (stage == StageState.ok || stage == StageState.fail);
-
-  Future<void> downloadRunLog() async {
-    final action = _lastRunAction;
-    if (!runLogDownloadAvailable || action == null) return;
-    final name = Firmware.logFileName(action);
-    try {
-      await _backupDownloader(
-        Uint8List.fromList(utf8.encode(_runLog.join('\n'))),
-        name,
-      );
-      _log('== log downloaded → $name ==');
-    } catch (e) {
-      _log('== could not download log: $e ==');
-    }
-  }
-
   void _flushLog(String runAction) {
     if (_runLog.isEmpty) return;
+    if (_browserMode) {
+      unawaited(_downloadBrowserLog(runAction, _runLog.join('\n')));
+      return;
+    }
     if (_androidMode) {
       unawaited(_publishAndroidLog(runAction, _runLog.join('\n')));
       return;
@@ -2289,6 +2269,18 @@ class AppController extends ChangeNotifier {
       _log('== log saved → $path ==');
     } catch (e) {
       _log('== could not save log: $e ==');
+    }
+  }
+
+  /// Web (2.2.0): the browser cannot write a log folder, so with Save log on
+  /// each run's transcript is handed to Chrome as one more download.
+  Future<void> _downloadBrowserLog(String action, String content) async {
+    final name = Firmware.logFileName(action);
+    try {
+      await _backupDownloader(Uint8List.fromList(utf8.encode(content)), name);
+      _log('== log downloaded → $name ==');
+    } catch (e) {
+      _log('== could not download log: $e ==');
     }
   }
 
@@ -2449,7 +2441,6 @@ class AppController extends ChangeNotifier {
     _lastRunDuration = null;
     _lastExitCode = null;
     _runLog.clear();
-    _lastRunAction = runAction;
     _capturing = true;
     _log(contextHeader());
     // Every BETA3 Windows transcript identifies the comparison mode. A bypass
