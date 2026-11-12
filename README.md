@@ -11,8 +11,8 @@
 
 ### Web App
 
-- **[x3utils-web v2.1.9](https://x3utils-web.pages.dev/)** — Chrome and Edge desktop browsers.
-- **[x3utils-phone v2.1.9](https://x3utils-web.pages.dev/m/)** — Android phones using Chrome; a subset of the desktop tools with the Android layout.
+- **[x3utils-web v2.2.0](https://x3utils-web.pages.dev/)** — Chrome and Edge desktop browsers.
+- **[x3utils-phone v2.2.0](https://x3utils-web.pages.dev/m/)** — Android phones using Chrome; a subset of the desktop tools with the Android layout.
 
 WebUSB requires Chrome or Edge. Firefox and Safari are unsupported, and no iPhone or iPad browser will work.
 > [!CAUTION]
