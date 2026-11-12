@@ -1042,6 +1042,17 @@ class _HomeScreenState extends State<HomeScreen> {
               'flashing and every programming chunk, so an intermittent '
               'failure leaves full evidence.',
         ),
+      if (c.shuCompatToggleAvailable)
+        _advancedSwitch(
+          label: 'SHU compatible',
+          switchKey: const ValueKey('show-shu-compat-switch'),
+          value: c.showShuCompat,
+          onChanged: (value) {
+            c.setShowShuCompat(value);
+            setLocal(() {});
+          },
+          description: 'Shows the action. Deprecated.',
+        ),
     ];
     if (rows.isEmpty) return const <Widget>[];
     // Desktop ALWAYS keeps the caret, even when the swdart switch is the only
@@ -1239,7 +1250,6 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
     with SingleTickerProviderStateMixin {
   bool _connectionOpen = false;
   bool _actionsOpen = false;
-  bool _advancedActionsOpen = false;
 
   // Created in initState, not lazily: the compact picker pages never build the
   // bolt visual, and a lazy controller first touched in dispose() would be
@@ -1392,7 +1402,8 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
   }
 
   Widget _actionsPanel(AppController c) {
-    const advancedIds = ['flash_only', 'rdp_check'];
+    // 2.2.0: one flat list, no Advanced group; Flash Only (unguarded) last.
+    const tailIds = ['rdp_check', 'flash_only'];
     return _panel(
       key: const ValueKey('android-actions-menu'),
       child: ConstrainedBox(
@@ -1416,33 +1427,10 @@ class _AndroidCheckPageState extends State<_AndroidCheckPage>
                 _actionChoice(c, 'file_info', enabled: true),
                 const Divider(color: AppColors.line, height: 1),
               ],
-              _AndroidChoiceRow(
-                key: const ValueKey('android-actions-advanced'),
-                icon: Icons.tune_rounded,
-                iconColor: AppColors.brand,
-                title: 'Advanced',
-                subtitle: 'More tools',
-                enabled: true,
-                onTap: () => setState(
-                  () => _advancedActionsOpen = !_advancedActionsOpen,
-                ),
-                trailing: AnimatedRotation(
-                  turns: _advancedActionsOpen ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  child: const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: AppColors.mut,
-                    size: 22,
-                  ),
-                ),
-              ),
-              if (_advancedActionsOpen) ...[
-                const Divider(color: AppColors.line, height: 1),
-                for (final id in advancedIds) ...[
-                  _actionChoice(c, id, enabled: c.isActionAvailable(id)),
-                  if (id != advancedIds.last)
-                    const Divider(color: AppColors.line, height: 1),
-                ],
+              for (final id in tailIds) ...[
+                _actionChoice(c, id, enabled: c.isActionAvailable(id)),
+                if (id != tailIds.last)
+                  const Divider(color: AppColors.line, height: 1),
               ],
             ],
           ),
@@ -1857,7 +1845,6 @@ class _AndroidChoiceRow extends StatelessWidget {
     this.selected = false,
     this.enabled = false,
     this.onTap,
-    this.trailing,
   });
 
   final IconData icon;
@@ -1869,7 +1856,6 @@ class _AndroidChoiceRow extends StatelessWidget {
   final bool selected;
   final bool enabled;
   final VoidCallback? onTap;
-  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -1936,16 +1922,15 @@ class _AndroidChoiceRow extends StatelessWidget {
                 ],
               ),
             ),
-            trailing ??
-                Icon(
-                  selected
-                      ? Icons.check_rounded
-                      : enabled
-                      ? Icons.chevron_right_rounded
-                      : Icons.lock_outline_rounded,
-                  size: 18,
-                  color: selected ? AppColors.brand : AppColors.mut,
-                ),
+            Icon(
+              selected
+                  ? Icons.check_rounded
+                  : enabled
+                  ? Icons.chevron_right_rounded
+                  : Icons.lock_outline_rounded,
+              size: 18,
+              color: selected ? AppColors.brand : AppColors.mut,
+            ),
           ],
         ),
       ),
@@ -2198,12 +2183,7 @@ class _Rail extends StatelessWidget {
             ],
             const SizedBox(height: 20),
             const _RailLabel('Actions'),
-            for (final a in kActions.where(
-              (a) =>
-                  a.section == Section.standard &&
-                  !a.hidden &&
-                  c.isActionAvailable(a.id),
-            ))
+            for (final a in c.railActions(Section.standard))
               _ActionTile(c: c, action: a),
             if (c.hasAdvancedOptions) ...[
               const SizedBox(height: 14),
@@ -2219,12 +2199,7 @@ class _Rail extends StatelessWidget {
                           const SizedBox(height: 6),
                           for (final m in c.modesIn(Section.advanced))
                             _ModeTile(c: c, mode: m),
-                          for (final a in kActions.where(
-                            (a) =>
-                                a.section == Section.advanced &&
-                                !a.hidden &&
-                                c.isActionAvailable(a.id),
-                          ))
+                          for (final a in c.railActions(Section.advanced))
                             _ActionTile(c: c, action: a),
                         ],
                       )
@@ -3098,6 +3073,17 @@ class _HeroStageState extends State<_HeroStage>
                       c.resultPath!,
                       c.resultMetadataPath!,
                     ),
+                    bg: AppColors.line,
+                    fg: AppColors.txt,
+                    border: AppColors.line2,
+                    small: true,
+                  ),
+                ],
+                if (c.runLogDownloadAvailable) ...[
+                  const SizedBox(height: 10),
+                  _PillButton(
+                    label: 'Save log',
+                    onTap: c.downloadRunLog,
                     bg: AppColors.line,
                     fg: AppColors.txt,
                     border: AppColors.line2,

@@ -188,7 +188,9 @@ class PackV3 {
       'firmware': <String, dynamic>{
         'displayName': name,
         'models': [model],
-        'type': type.toLowerCase(),
+        // Published ZIPv3.2 spelling (VCU, MCU, ...). Utility V4 compares
+        // case-insensitively, so earlier lowercase packages still load.
+        'type': type,
         'compatible': boards,
         'md5': md5Hex(data),
       },
@@ -536,47 +538,66 @@ class PackV3 {
       throw const FormatException('info.json has no firmware record.');
     }
 
-    final String model;
+    // Declared models. Legacy carries one scalar `model`. ZIPv3.2 carries a
+    // non-empty `models` array (several allowed, no case-insensitive
+    // duplicates); an early schema-2 draft used a scalar `model`, still read.
+    final List<String> models;
     if (schemaVersion == 1) {
       final value = fw['model'];
       if (value is! String || value.trim().isEmpty) {
         throw const FormatException('info.json has no firmware.model.');
       }
-      model = value.trim();
+      models = [value.trim()];
     } else {
       final modelsValue = fw['models'];
       final scalarValue = fw['model'];
-      String? arrayModel;
+      List<String>? arrayModels;
       if (modelsValue != null) {
         if (modelsValue is! List ||
-            modelsValue.length != 1 ||
-            modelsValue.single is! String ||
-            (modelsValue.single as String).trim().isEmpty) {
+            modelsValue.isEmpty ||
+            modelsValue.any(
+              (value) => value is! String || value.trim().isEmpty,
+            )) {
           throw const FormatException(
-            'zip3.2 firmware.models must contain exactly one model.',
+            'zip3.2 firmware.models must be a non-empty list of models.',
           );
         }
-        arrayModel = (modelsValue.single as String).trim();
+        arrayModels = modelsValue
+            .cast<String>()
+            .map((value) => value.trim())
+            .toList(growable: false);
+        final seen = <String>{};
+        for (final value in arrayModels) {
+          if (!seen.add(value.toLowerCase())) {
+            throw FormatException(
+              'zip3.2 firmware.models lists $value more than once.',
+            );
+          }
+        }
       }
       final scalarModel = scalarValue is String && scalarValue.trim().isNotEmpty
           ? scalarValue.trim()
           : null;
-      if (arrayModel == null && scalarModel == null) {
+      if (arrayModels == null && scalarModel == null) {
         throw const FormatException('info.json has no firmware.models model.');
       }
-      if (arrayModel != null &&
+      if (arrayModels != null &&
           scalarModel != null &&
-          arrayModel.toLowerCase() != scalarModel.toLowerCase()) {
+          !arrayModels.any(
+            (value) => value.toLowerCase() == scalarModel.toLowerCase(),
+          )) {
         throw const FormatException(
           'zip3.2 firmware.model and firmware.models disagree.',
         );
       }
-      model = arrayModel ?? scalarModel!;
+      models = arrayModels ?? [scalarModel!];
     }
-    try {
-      validateModel(model);
-    } on ArgumentError catch (e) {
-      throw FormatException(e.message?.toString() ?? 'Invalid model.');
+    for (final value in models) {
+      try {
+        validateModel(value);
+      } on ArgumentError catch (e) {
+        throw FormatException(e.message?.toString() ?? 'Invalid model.');
+      }
     }
     final type = fw['type']?.toString().trim().toUpperCase();
     final allowedTypes = policy == Zip3UnpackPolicy.flash
@@ -589,17 +610,27 @@ class PackV3 {
       );
     }
 
-    if (policy == Zip3UnpackPolicy.flash) {
-      // A package armed for flashing stays on the strict VCU/MCU allow-list.
-      final verdict = DeviceSpec.evaluateZip3(model, type);
-      if (!verdict.ok) {
-        throw FormatException(verdict.reason);
+    // Models x3utils can act on. Other declared models are ignored; at least
+    // one must qualify. With none, report against the first declared model.
+    final supported = models
+        .where((value) {
+          if (policy == Zip3UnpackPolicy.flash) {
+            // A package armed for flashing stays on the strict VCU/MCU list.
+            return DeviceSpec.evaluateZip3(value, type).ok;
+          }
+          return kSupportedDevices.any(
+            (device) => device.model == value.toLowerCase(),
+          );
+        })
+        .toList(growable: false);
+    if (supported.isEmpty) {
+      if (policy == Zip3UnpackPolicy.flash) {
+        throw FormatException(
+          DeviceSpec.evaluateZip3(models.first, type).reason,
+        );
       }
-    } else if (!kSupportedDevices.any(
-      (device) => device.model == model.toLowerCase(),
-    )) {
       throw FormatException(
-        'This package is for ${model.toUpperCase()}. '
+        'This package is for ${models.first.toUpperCase()}. '
         'x3utils supports ${DeviceSpec.modelList()} only.',
       );
     }
@@ -618,17 +649,24 @@ class PackV3 {
         .cast<String>()
         .map((value) => value.trim())
         .toList(growable: false);
-    final expectedBoard = switch (type) {
+    // Several boards are allowed (ZIPv3.2). A model qualifies only when its
+    // own board is listed; other boards in the list are ignored.
+    String expectedBoard(String value) => switch (type) {
       'MCU' => 'x3_MCU_AT32',
       'BMS' => 'x3_BMS',
-      'BLE' => '${model.toLowerCase()}_BLE',
-      _ => '${model.toLowerCase()}_VCU_AT32',
+      'BLE' => '${value.toLowerCase()}_BLE',
+      _ => '${value.toLowerCase()}_VCU_AT32',
     };
-    if (compatible.length != 1 ||
-        compatible.single.toLowerCase() != expectedBoard.toLowerCase()) {
+    final listedBoards = compatible.map((value) => value.toLowerCase()).toSet();
+    final candidates = supported
+        .where(
+          (value) => listedBoards.contains(expectedBoard(value).toLowerCase()),
+        )
+        .toList(growable: false);
+    if (candidates.isEmpty) {
       final boards = compatible.join(', ');
       throw FormatException(
-        'Inconsistent JSON, "model" : ${model.toUpperCase()} $type, '
+        'Inconsistent JSON, "model" : ${supported.first.toUpperCase()} $type, '
         '"compatible" : $boards.',
       );
     }
@@ -704,12 +742,20 @@ class PackV3 {
 
     // VCU/MCU carry the known X3 banner. BMS/BLE use different image formats,
     // so extraction relies on package metadata plus the selected format's
-    // integrity checks instead.
+    // integrity checks instead. With several candidate models the banner
+    // picks the one the payload actually is (a VCU banner names its model;
+    // an MCU banner names none, so the first candidate stands).
+    var model = candidates.first;
     if (type == 'VCU' || type == 'MCU') {
-      final banner = DeviceSpec.verifyBanner(firmware, model, type!);
-      if (!banner.consistent) {
-        throw FormatException(banner.message);
+      final consistent = candidates.where(
+        (value) => DeviceSpec.verifyBanner(firmware, value, type!).consistent,
+      );
+      if (consistent.isEmpty) {
+        throw FormatException(
+          DeviceSpec.verifyBanner(firmware, model, type!).message,
+        );
       }
+      model = consistent.first;
     }
 
     return UnpackedV3(
@@ -793,8 +839,9 @@ class UnpackedV3 {
     return (n is String && n.isNotEmpty) ? n : 'firmware';
   }
 
-  /// Normalized scalar model accepted by [DeviceSpec] during unpack. Rev2's
-  /// `models` array is deliberately required to contain exactly one entry.
+  /// The one declared model x3utils resolved: supported, its board listed in
+  /// `compatible`, and (VCU/MCU) consistent with the payload banner. A rev2
+  /// `models` array may declare several; this is the one that qualified.
   String get model => normalizedModel;
 
   /// `info.json` firmware.type (accepted by [DeviceSpec] during unpack).

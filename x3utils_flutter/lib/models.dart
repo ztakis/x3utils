@@ -155,7 +155,7 @@ const kActions = <FlashAction>[
     section: Section.standard,
     name: 'Check connection',
     script: 'connect · probe',
-    sub: 'Probe the ST-LINK and the target. Reads nothing, writes nothing.',
+    sub: 'Probe the ST-LINK and the target. Read-only.',
     chips: [InfoChipData('read-only', ChipKind.ok)],
     cta: 'Check connection',
     okMsg: 'Target answered. You’re good to go.',

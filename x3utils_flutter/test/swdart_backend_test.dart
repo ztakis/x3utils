@@ -1457,6 +1457,7 @@ void main() {
       controller.selectMode(ConnectionMode.cloneC45);
       expect(controller.canStart, isFalse);
       controller.selectMode(ConnectionMode.defaultSwd);
+      controller.setShowShuCompat(true);
       controller.selectAction('flash_compat');
       expect(controller.canStart, isTrue);
     },
@@ -1949,6 +1950,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       controller.setX3utilsRoot(root.path);
       controller.setSecondCopy(false);
+      controller.setShowShuCompat(true);
       controller.selectAction('flash_compat');
 
       expect(controller.canStart, isTrue);
@@ -2005,7 +2007,7 @@ void main() {
       expect(controller.defaultMode, ConnectionMode.cloneC45);
       expect(controller.logToFile, isFalse);
       expect(controller.secondCopy, isFalse);
-      expect(controller.hasAdvancedOptions, isTrue);
+      expect(controller.hasAdvancedOptions, isFalse); // flat rail since 2.2.0
       expect(controller.isActionAvailable('check'), isTrue);
       expect(controller.isActionAvailable('dump'), isTrue);
       expect(controller.isActionAvailable('flash_backup'), isTrue);
@@ -2026,8 +2028,29 @@ void main() {
       expect(controller.resultPath, downloadName);
       expect(controller.resultMetadataPath, isNull);
       expect(controller.resultNote, contains('no metadata sidecar'));
+
+      // 2.2.0: the finished run's log is an on-demand browser download.
+      expect(controller.runLogDownloadAvailable, isTrue);
+      await controller.downloadRunLog();
+      expect(downloadName, startsWith('dump_'));
+      expect(downloadName, endsWith('.log'));
+      expect(utf8.decode(downloaded!), startsWith('x3utils v'));
     },
   );
+
+  test('Save log download is web-only and needs a finished run', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'defaultAutoRetry': 0,
+    });
+    final controller = AppController(
+      backend: SwdartBackend(sessionFactory: _FakeSession.new),
+      browserMode: true,
+      backupDownloader: (_, _) async {},
+    );
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.runLogDownloadAvailable, isFalse); // no run yet
+  });
 
   test('Android controller validates then publishes one backup bin', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{

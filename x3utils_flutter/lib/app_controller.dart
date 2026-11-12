@@ -154,7 +154,8 @@ class AppController extends ChangeNotifier {
     if (_browserMode) {
       _backend = SwdartBackend(
         enableCloneC45: true,
-        enableGenuineNrst: true,
+        // 2.2.0: no C45 Genuine on the web (/ and /m), matching Android.
+        enableGenuineNrst: false,
         enablePowerRace: true,
       );
       _configureDeviceBackend();
@@ -417,6 +418,26 @@ class AppController extends ChangeNotifier {
         _prefs!.getBool('loaderDiagnostics') ??
         (!_browserMode && !_androidMode);
     _applyLoaderDiagnostics();
+    showShuCompat =
+        shuCompatToggleAvailable && (_prefs!.getBool('showShuCompat') ?? false);
+    notifyListeners();
+  }
+
+  // ── SHU compatible visibility (persisted, desktop only) ───────────────────
+  // 2.2.0: the action ships hidden on native desktop; this Settings › Advanced
+  // switch reveals it. Web and Android never offer it (see isActionAvailable).
+  bool showShuCompat = false;
+
+  bool get shuCompatToggleAvailable => !_browserMode && !_androidMode;
+
+  void setShowShuCompat(bool value) {
+    if (running) return;
+    showShuCompat = value;
+    _prefs?.setBool('showShuCompat', value);
+    if (!value && actionId == 'flash_compat') {
+      selectAction('check');
+      return; // selectAction notifies
+    }
     notifyListeners();
   }
 
@@ -955,6 +976,8 @@ class AppController extends ChangeNotifier {
     // SHU compat left web and Android on 2026-09-30: it overwrites the factory
     // key, and those keep a single backup copy. Native desktop only.
     if (id == 'flash_compat' && (_browserMode || _androidMode)) return false;
+    // 2.2.0: hidden on desktop until Settings › Advanced › SHU compatible.
+    if (id == 'flash_compat' && !showShuCompat) return false;
     if (id == 'make_zip3') return !_browserMode;
     // Phone web (/m) stays the minimal tier: anyone after more tools uses the
     // desktop web at / or the APK. Android has it since 2.1.9.
@@ -1020,14 +1043,29 @@ class AppController extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  /// Web and Android show one flat rail (2.2.0): no Advanced group and no
+  /// user-movable connection modes. Native desktop keeps both.
+  bool get flatActionRail => _browserMode || _androidMode;
+
+  /// Visible, available actions for a rail section. On a flat rail every
+  /// action lands in [Section.standard], with Flash Only (unguarded) last.
+  List<FlashAction> railActions(Section s) {
+    bool shown(FlashAction a) => !a.hidden && isActionAvailable(a.id);
+    if (!flatActionRail) {
+      return kActions
+          .where((a) => a.section == s && shown(a))
+          .toList(growable: false);
+    }
+    if (s == Section.advanced) return const <FlashAction>[];
+    final all = kActions.where(shown).toList();
+    final flashOnly = all.where((a) => a.id == 'flash_only').toList();
+    all.removeWhere((a) => a.id == 'flash_only');
+    return [...all, ...flashOnly];
+  }
+
   bool get hasAdvancedOptions =>
       modesIn(Section.advanced).isNotEmpty ||
-      kActions.any(
-        (action) =>
-            action.section == Section.advanced &&
-            !action.hidden &&
-            isActionAvailable(action.id),
-      );
+      railActions(Section.advanced).isNotEmpty;
 
   /// Inspect a ZIP3 for standalone unpack. No output is written here: the
   /// package details and default filename are only armed after container,
@@ -1961,7 +1999,9 @@ class AppController extends ChangeNotifier {
 
   // ── Connection-mode rail sections (persisted, user-movable) ────────────────
   Section sectionOf(ConnectionMode m) =>
-      _advancedModes.contains(m) ? Section.advanced : Section.standard;
+      !flatActionRail && _advancedModes.contains(m)
+      ? Section.advanced
+      : Section.standard;
 
   /// Modes in a rail section, always in canonical `kModeOrder`, so display
   /// order is independent of the persisted enum order.
@@ -1972,7 +2012,7 @@ class AppController extends ChangeNotifier {
 
   /// Guardrail: never let the standard group be emptied.
   bool canMoveToAdvanced(ConnectionMode m) =>
-      modesIn(Section.standard).length > 1;
+      !flatActionRail && modesIn(Section.standard).length > 1;
 
   /// Move a mode between the standard and advanced rail groups (persisted).
   void moveMode(ConnectionMode m, Section to) {
@@ -2212,6 +2252,32 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Web only: the browser cannot write a log folder, so a finished run's
+  /// transcript is offered as an on-demand download instead (2.2.0).
+  String? _lastRunAction;
+
+  bool get runLogDownloadAvailable =>
+      _browserMode &&
+      !running &&
+      _lastRunAction != null &&
+      _runLog.isNotEmpty &&
+      (stage == StageState.ok || stage == StageState.fail);
+
+  Future<void> downloadRunLog() async {
+    final action = _lastRunAction;
+    if (!runLogDownloadAvailable || action == null) return;
+    final name = Firmware.logFileName(action);
+    try {
+      await _backupDownloader(
+        Uint8List.fromList(utf8.encode(_runLog.join('\n'))),
+        name,
+      );
+      _log('== log downloaded → $name ==');
+    } catch (e) {
+      _log('== could not download log: $e ==');
+    }
+  }
+
   void _flushLog(String runAction) {
     if (_runLog.isEmpty) return;
     if (_androidMode) {
@@ -2383,6 +2449,7 @@ class AppController extends ChangeNotifier {
     _lastRunDuration = null;
     _lastExitCode = null;
     _runLog.clear();
+    _lastRunAction = runAction;
     _capturing = true;
     _log(contextHeader());
     // Every BETA3 Windows transcript identifies the comparison mode. A bypass

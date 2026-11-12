@@ -139,6 +139,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     c.setX3utilsRoot(rootDir.path);
     c.setSecondCopy(false);
+    c.setShowShuCompat(true); // hidden by default since 2.2.0
     c.selectAction('flash_compat');
     return c;
   }

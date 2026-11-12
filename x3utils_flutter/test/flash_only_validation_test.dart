@@ -253,25 +253,37 @@ void main() {
       expect(unpacked.firmware, payload);
     });
 
-    test('zip3.2 models must resolve to exactly one consistent model', () {
+    test('zip3.2 models must be a non-empty list without duplicates', () {
       final payload = _payloadWithBanner('SCOOTER_VCU_xxU2');
-      for (final models in <List<String>>[
-        [],
-        ['zt3', 'g3'],
-      ]) {
-        expect(
-          () => PackV3.unpackV3(
-            _zip32(payload, model: 'zt3', type: 'VCU', models: models),
+      expect(
+        () => PackV3.unpackV3(
+          _zip32(payload, model: 'zt3', type: 'VCU', models: const []),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('non-empty list of models'),
           ),
-          throwsA(
-            isA<FormatException>().having(
-              (e) => e.message,
-              'message',
-              contains('exactly one model'),
-            ),
+        ),
+      );
+      expect(
+        () => PackV3.unpackV3(
+          _zip32(
+            payload,
+            model: 'zt3',
+            type: 'VCU',
+            models: const ['zt3', 'ZT3'],
           ),
-        );
-      }
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('more than once'),
+          ),
+        ),
+      );
       expect(
         () => PackV3.unpackV3(
           _zip32(
@@ -287,6 +299,68 @@ void main() {
             (e) => e.message,
             'message',
             contains('disagree'),
+          ),
+        ),
+      );
+    });
+
+    test('zip3.2 multi-model MCU package resolves to a listed model', () {
+      final payload = _payloadWithBanner('SCOOTER_MCU_0001');
+      final zip = _zip32(
+        payload,
+        model: 'g3',
+        type: 'MCU',
+        models: const ['g3', 'zt3', 'f3'],
+      );
+      for (final policy in Zip3UnpackPolicy.values) {
+        final unpacked = PackV3.unpackV3(zip, policy: policy);
+        expect(unpacked.model, 'g3');
+        expect(unpacked.type, 'MCU');
+        expect(unpacked.firmware, payload);
+      }
+    });
+
+    test('zip3.2 multi-model VCU package resolves by its banner', () {
+      final unpacked = PackV3.unpackV3(
+        _zip32(
+          _payloadWithBanner('SCOOTER_VCU_xxU2'),
+          model: 'g3',
+          type: 'VCU',
+          models: const ['g3', 'zt3'],
+          compatible: const ['g3_VCU_AT32', 'zt3_VCU_AT32'],
+        ),
+      );
+      expect(unpacked.model, 'zt3');
+    });
+
+    test('zip3.2 accepts extra boards and unsupported extra models', () {
+      final unpacked = PackV3.unpackV3(
+        _zip32(
+          _payloadWithBanner('SCOOTER_VCU_xxU2'),
+          model: 'zt3',
+          type: 'VCU',
+          models: const ['max', 'zt3'],
+          compatible: const ['zt3_VCU_AT32', 'zt3_VCU_AT32_EXT_FLASH'],
+        ),
+      );
+      expect(unpacked.model, 'zt3');
+    });
+
+    test('zip3.2 needs the model\'s own board in compatible', () {
+      expect(
+        () => PackV3.unpackV3(
+          _zip32(
+            _payloadWithBanner('SCOOTER_VCU_xxU2'),
+            model: 'zt3',
+            type: 'VCU',
+            compatible: const ['zt3_VCU_AT32_EXT_FLASH'],
+          ),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('Inconsistent JSON'),
           ),
         ),
       );
@@ -708,6 +782,31 @@ void main() {
     expect(info.section, Section.standard);
   });
 
+  test('SHU compatible ships hidden; the Settings switch reveals it', () async {
+    SharedPreferences.setMockInitialValues({});
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.shuCompatToggleAvailable, isTrue);
+    expect(controller.showShuCompat, isFalse);
+    expect(controller.isActionAvailable('flash_compat'), isFalse);
+
+    controller.setShowShuCompat(true);
+    expect(controller.isActionAvailable('flash_compat'), isTrue);
+    controller.selectAction('flash_compat');
+
+    // Hiding it while selected falls back to Check.
+    controller.setShowShuCompat(false);
+    expect(controller.isActionAvailable('flash_compat'), isFalse);
+    expect(controller.actionId, 'check');
+
+    // The choice persists.
+    controller.setShowShuCompat(true);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('showShuCompat'), isTrue);
+  });
+
   test('no flash action carries a selected bin across an action switch', () {
     SharedPreferences.setMockInitialValues({});
     final controller = AppController();
@@ -1098,6 +1197,7 @@ Uint8List _zip32(
   bool? enforceModel,
   String? md5Override,
   bool addEncryptedMember = false,
+  List<String>? compatible,
 }) {
   final expectedBoard = switch (type.toUpperCase()) {
     'MCU' => 'x3_MCU_AT32',
@@ -1111,7 +1211,7 @@ Uint8List _zip32(
   if (enforceModel != null) firmware['enforceModel'] = enforceModel;
   firmware
     ..['type'] = type.toLowerCase()
-    ..['compatible'] = [expectedBoard]
+    ..['compatible'] = compatible ?? [expectedBoard]
     ..['md5'] = md5Override ?? PackV3.md5Hex(payload);
   final info = <String, dynamic>{'schemaVersion': 2, 'firmware': firmware};
   final archive = Archive()

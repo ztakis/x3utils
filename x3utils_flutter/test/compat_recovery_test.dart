@@ -108,6 +108,7 @@ Future<AppController> _controller(_Backend backend, Directory root) async {
   await Future<void>.delayed(Duration.zero);
   c.setX3utilsRoot(root.path);
   c.setSecondCopy(false);
+  c.setShowShuCompat(true); // hidden by default since 2.2.0
   c.selectAction('flash_compat');
   return c;
 }

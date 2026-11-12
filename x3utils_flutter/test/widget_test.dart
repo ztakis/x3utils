@@ -361,7 +361,7 @@ void main() {
     expect(find.text('Backup + Flash'), findsOneWidget);
     expect(find.text('Get file info'), findsOneWidget);
     expect(find.text('SHU compatible'), findsNothing);
-    expect(find.text('Advanced'), findsOneWidget);
+    expect(find.text('Advanced'), findsNothing); // flat list since 2.2.0
     final fileInfoInk = tester.widget<InkWell>(
       find.descendant(
         of: find.byKey(const ValueKey('android-action-file_info')),
@@ -399,16 +399,22 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('android-check-action')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
-    final advanced = find.byKey(const ValueKey('android-actions-advanced'));
-    await tester.ensureVisible(advanced);
-    await tester.pump();
-    await tester.tap(advanced);
-    await tester.pump(const Duration(milliseconds: 250));
 
+    // Check protection, then Flash Only last.
     await tester.ensureVisible(
-      find.byKey(const ValueKey('android-action-rdp_check')),
+      find.byKey(const ValueKey('android-action-flash_only')),
     );
     await tester.pump();
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey('android-action-flash_only')))
+          .dy,
+      greaterThan(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('android-action-rdp_check')))
+            .dy,
+      ),
+    );
 
     expect(find.text('Flash Only'), findsOneWidget);
     expect(find.text('ZIP3 tools'), findsNothing);
@@ -707,8 +713,6 @@ void main() {
       );
       await tester.pump();
       await tester.tap(find.byKey(const ValueKey('android-check-action')));
-      await tester.pump(const Duration(milliseconds: 250));
-      await tester.tap(find.byKey(const ValueKey('android-actions-advanced')));
       await tester.pump(const Duration(milliseconds: 250));
       final flashOnly = find.byKey(const ValueKey('android-action-flash_only'));
       await tester.ensureVisible(flashOnly);
@@ -1061,7 +1065,7 @@ void main() {
     expect(controller.canStart, isTrue);
   });
 
-  testWidgets('browser UI exposes all swdart connection modes', (
+  testWidgets('browser UI: flat rail, no C45 Genuine, Flash Only last', (
     WidgetTester tester,
   ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -1089,16 +1093,28 @@ void main() {
     expect(find.text('Get file info'), findsOneWidget);
     expect(find.text('C45 · Clone'), findsOneWidget);
     expect(find.text('Power-race'), findsOneWidget);
-    expect(find.text('ADVANCED'), findsOneWidget);
 
-    // Genuine nRST starts in Advanced, like the desktop surface. SHU compat is
+    // 2.2.0: no Advanced group and no C45 Genuine on the web. SHU compat is
     // native desktop only, so the browser never lists it.
+    expect(find.text('ADVANCED'), findsNothing);
     expect(find.text('C45 · Genuine'), findsNothing);
-    await tester.tap(find.text('ADVANCED'));
-    await tester.pump(const Duration(milliseconds: 250));
-    expect(find.text('C45 · Genuine'), findsOneWidget);
+    expect(
+      controller.availableModes,
+      isNot(contains(ConnectionMode.genuineC45)),
+    );
     expect(find.text('SHU compatible'), findsNothing);
-    expect(find.text('Flash Only'), findsOneWidget);
+    expect(controller.railActions(Section.standard).map((a) => a.id).toList(), [
+      'check',
+      'dump',
+      'flash_backup',
+      'file_info',
+      'rdp_check',
+      'flash_only',
+    ]);
+    expect(controller.railActions(Section.advanced), isEmpty);
+    double top(String label) => tester.getTopLeft(find.text(label)).dy;
+    expect(top('Check protection'), greaterThan(top('Get file info')));
+    expect(top('Flash Only'), greaterThan(top('Check protection')));
   });
 
   testWidgets(
@@ -1440,6 +1456,10 @@ ZP          59028 payload / 59032 encoded (readable)'''
     tester.view.physicalSize = const Size(1024, 768);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
+    // Hidden by default since 2.2.0; Settings › Advanced reveals it.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'showShuCompat': true,
+    });
     await tester.pumpWidget(const X3UtilsApp());
 
     double top(String label) => tester.getTopLeft(find.text(label)).dy;
@@ -1574,6 +1594,9 @@ ZP          59028 payload / 59032 encoded (readable)'''
     tester.view.physicalSize = const Size(1024, 768);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'showShuCompat': true,
+    });
     await tester.pumpWidget(const X3UtilsApp());
 
     // SHU compat lives in Advanced, which is collapsed at boot.

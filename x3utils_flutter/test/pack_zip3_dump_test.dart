@@ -266,7 +266,7 @@ void main() {
       final fw = _fw(r.zipBytes);
       expect(fw.keys, ['displayName', 'models', 'type', 'compatible', 'md5']);
       expect(fw['models'], ['g3']);
-      expect(fw['type'], 'vcu');
+      expect(fw['type'], 'VCU');
       expect(fw.containsKey('enforceModel'), isFalse);
       expect(fw.containsKey('encryption'), isFalse);
       expect(fw['compatible'], ['g3_VCU_AT32']);
@@ -573,7 +573,7 @@ void main() {
           );
           final metadata = _fw(result.zipBytes);
           expect(metadata['compatible'], [item.board], reason: item.type);
-          expect(metadata['type'], item.type.toLowerCase(), reason: item.type);
+          expect(metadata['type'], item.type, reason: item.type);
           expect(metadata['models'], [item.model], reason: item.type);
           expect(metadata.containsKey('enforceModel'), isFalse);
           expect(metadata.containsKey('encryption'), isFalse);
